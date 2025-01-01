@@ -1,0 +1,10 @@
+build/
+demo/
+.vscode/
+bin/
+rpc/
+node_modules/
+.cache/
+*.o
+a.out
+
