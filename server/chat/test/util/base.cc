@@ -1,4 +1,5 @@
 #include "base.h"
+#include <cstring>
 
 
 namespace base {
@@ -53,19 +54,23 @@ void pushService(std::shared_ptr<net::ip::tcp::socket> socket,
     data["to"] = toID;
     data["message"] = message;
     auto package = data.toStyledString();
-    auto packageSize = package.size(); 
+    short packageSize = package.size(); 
+    serviceID = boost::asio::detail::socket_ops::network_to_host_short(serviceID);
+    packageSize = boost::asio::detail::socket_ops::network_to_host_short(packageSize);
+    
 
-    spdlog::info("[fromID {} -> toID {}] | message: {}", fromID, toID, message);
+    spdlog::info("[fromID {} -> toID {}] | message: {}, packageSize: {}", fromID, toID, message, packageSize);
 
-    char servicePackage[4096]{};  // 2 字节 serviceID + 2 字节 packageSize = 4 字节
+    char servicePackage[4096];  // 2 字节 serviceID + 2 字节 packageSize = 4 字节
+    memset(servicePackage, 0, 4096);
 
     // 将 serviceID (2 字节) 和 packageSize (2 字节) 写入 buf 中
-    memcpy(servicePackage, &serviceID, sizeof(short));  // 将 serviceID 的 2 字节复制到 buf
-    memcpy(servicePackage + 2, &packageSize, sizeof(short));  
-    memcpy(servicePackage + 4, &package, packageSize);
+    memcpy(servicePackage, &serviceID, 2);  // 将 serviceID 的 2 字节复制到 buf
+    memcpy(servicePackage + 2, &packageSize, 2);  
+    memcpy(servicePackage + 4, package.c_str(), packageSize);
 
 
-    net::write(*socket, net::buffer(servicePackage, strlen(servicePackage)));
+    net::write(*socket, net::buffer(servicePackage, packageSize + 4));
 
     spdlog::info("[service-package] {}",std::string(servicePackage));
   } catch (const std::exception &e) {

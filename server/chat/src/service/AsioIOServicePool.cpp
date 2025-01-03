@@ -1,7 +1,7 @@
 ﻿#include "IOServicePool.h"
 #include <iostream>
 
-IOServicePool::IOServicePool(std::size_t size) : _ioServices(size), _works(size), _nextIOService(0)
+ServicePool::ServicePool(std::size_t size) : _ioServices(size), _works(size), _nextIoService(0)
 {
 	for (std::size_t i = 0; i < size; ++i)
 		_works[i] = std::unique_ptr<Work>(new Work(_ioServices[i]));
@@ -12,20 +12,20 @@ IOServicePool::IOServicePool(std::size_t size) : _ioServices(size), _works(size)
 							  { _ioServices[i].run(); });
 }
 
-IOServicePool::~IOServicePool()
+ServicePool::~ServicePool()
 {
 	std::cout << "IOServicePool destruct" << endl;
 }
 
-boost::asio::io_context &IOServicePool::GetIOService()
+boost::asio::io_context &ServicePool::GetService()
 {
-	auto &service = _ioServices[_nextIOService++];
-	if (_nextIOService == _ioServices.size())
-		_nextIOService = 0;
+	auto &service = _ioServices[_nextIoService++];
+	if (_nextIoService == _ioServices.size())
+		_nextIoService = 0;
 	return service;
 }
 
-void IOServicePool::Stop()
+void ServicePool::Stop()
 {
 	// 因为仅仅执行work.reset并不能让iocontext从run的状态中退出
 	// 当iocontext已经绑定了读或写的监听事件后，还需要手动stop该服务。

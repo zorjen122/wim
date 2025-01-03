@@ -1,23 +1,23 @@
 #include "Configer.h"
 Configer::Configer()
 {
-	// »ñÈ¡µ±Ç°¹¤×÷Ä¿Â¼
+	// ï¿½ï¿½È¡ï¿½ï¿½Ç°ï¿½ï¿½ï¿½ï¿½Ä¿Â¼
 	boost::filesystem::path current_path = boost::filesystem::current_path();
-	// ¹¹½¨config.iniÎÄ¼þµÄÍêÕûÂ·¾¶
+	// ï¿½ï¿½ï¿½ï¿½config.iniï¿½Ä¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Â·ï¿½ï¿½
 	boost::filesystem::path config_path = current_path / "../config.ini";
 	std::cout << "Config path: " << config_path << "\n";
 
-	// Ê¹ÓÃBoost.PropertyTreeÀ´¶ÁÈ¡INIÎÄ¼þ
+	// Ê¹ï¿½ï¿½Boost.PropertyTreeï¿½ï¿½ï¿½ï¿½È¡INIï¿½Ä¼ï¿½
 	boost::property_tree::ptree pt;
 	boost::property_tree::read_ini(config_path.string(), pt);
 
-	// ±éÀúINIÎÄ¼þÖÐµÄËùÓÐsection
+	// ï¿½ï¿½ï¿½ï¿½INIï¿½Ä¼ï¿½ï¿½Ðµï¿½ï¿½ï¿½ï¿½ï¿½section
 	for (const auto &section_pair : pt)
 	{
 		const std::string &section_name = section_pair.first;
 		const boost::property_tree::ptree &section_tree = section_pair.second;
 
-		// ¶ÔÓÚÃ¿¸ösection£¬±éÀúÆäËùÓÐµÄkey-value¶Ô
+		// ï¿½ï¿½ï¿½ï¿½Ã¿ï¿½ï¿½sectionï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ðµï¿½key-valueï¿½ï¿½
 		std::map<std::string, std::string> section_config;
 		for (const auto &key_value_pair : section_tree)
 		{
@@ -27,11 +27,11 @@ Configer::Configer()
 		}
 		SectionInfo sectionInfo;
 		sectionInfo._section_datas = section_config;
-		// ½«sectionµÄkey-value¶Ô±£´æµ½config_mapÖÐ
+		// ï¿½ï¿½sectionï¿½ï¿½key-valueï¿½Ô±ï¿½ï¿½æµ½config_mapï¿½ï¿½
 		_config_map[section_name] = sectionInfo;
 	}
 
-	// Êä³öËùÓÐµÄsectionºÍkey-value¶Ô
+	// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ðµï¿½sectionï¿½ï¿½key-valueï¿½ï¿½
 	for (const auto &section_entry : _config_map)
 	{
 		const std::string &section_name = section_entry.first;

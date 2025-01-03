@@ -15,10 +15,10 @@ namespace protocol
 	class Package
 	{
 	public:
-		Package(short max_len) : total_len(max_len), cur_len(0)
+		Package(short size) : total(size), cur(0)
 		{
-			data = new char[total_len + 1]();
-			data[total_len] = '\0';
+			data = new char[total + 1]();
+			data[total] = '\0';
 		}
 
 		~Package()
@@ -29,12 +29,12 @@ namespace protocol
 
 		void Clear()
 		{
-			::memset(data, 0, total_len);
-			cur_len = 0;
+			::memset(data, 0, total);
+			cur = 0;
 		}
 
-		short cur_len;
-		short total_len;
+		short cur;
+		short total;
 		char *data;
 	};
 
@@ -44,7 +44,7 @@ namespace protocol
 		friend class LogicPackage;
 
 	public:
-		RecvPackage(short max_len, short msg_id);
+		RecvPackage(short packageLen, short msgID);
 
 		short id;
 	};

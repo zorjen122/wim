@@ -1,12 +1,11 @@
 ﻿#include <boost/asio/io_context.hpp>
 #include <csignal>
 #include <memory>
-#include <mutex>
 #include <thread>
 
 #include "ChatServer.h"
 #include "ChatSession.h"
-#include "Configer.h"
+#include "ConfigManager.h"
 #include "IOServicePool.h"
 #include "MysqlManager.h"
 #include "RedisManager.h"
@@ -15,7 +14,7 @@
 void poolInit() {
   RedisManager::GetInstance();
   MysqlManager::GetInstance();
-  // IOServicePool::GetInstance();
+  // ServicePool::GetInstance();
 }
 
 std::unique_ptr<grpc::Server> rpcStartServer(const std::string &rpcAddress) {
@@ -27,43 +26,60 @@ std::unique_ptr<grpc::Server> rpcStartServer(const std::string &rpcAddress) {
   builder.RegisterService(&service);
 
   // 构建并启动gRPC服务器
-  std::unique_ptr<grpc::Server> rpc_server(builder.BuildAndStart());
+  std::unique_ptr<grpc::Server> rpcServer(builder.BuildAndStart());
   std::cout << "RPC Server listening on " << rpcAddress << "\n";
 
-  return rpc_server;
+  return rpcServer;
 }
 
 int main() {
-  auto &config = Configer::GetInstance();
-  std::string rpc_address =
-      config["SelfServer"]["Host"] + ":" + config["SelfServer"]["RPCPort"];
-  auto server_name = config["SelfServer"]["Name"];
+  auto existConfig = ConfigManager::loadConfig("../config.yaml");
+  if (!existConfig) {
+    spdlog::error("Config load failed");
+    return 0;
+  }
+
+  auto config = ConfigManager::getConfig("Server");
+  if(!config || !config["Self"])
+  {
+    spdlog::error("Self config not found");
+    return 0;
+  }
+  std::string rpcAddress =
+      config["Self"]["Host"].as<std::string>() 
+      + ":" 
+      + config["Self"]["RpcPort"].as<std::string>();
+    std::string server_name = config["Self"]["Name"].as<std::string>();
+
+    spdlog::info("Server started on name: {}", server_name);
+    spdlog::info("Server started on host: {}", config["Self"]["Host"].as<std::string>());
+    spdlog::info("Server started on port: {}", config["Self"]["Port"].as<std::string>());
+    spdlog::info("Server started on rpc port: {}", config["Self"]["RpcPort"].as<std::string>());
 
   try {
     poolInit();
 
-    auto rpc_server = rpcStartServer(rpc_address);
-    auto server_pool = IOServicePool::GetInstance();
+    auto rpcServer = rpcStartServer(rpcAddress);
+    auto server_pool = ServicePool::GetInstance();
 
-    boost::asio::io_context io_context;
-    boost::asio::signal_set signals(io_context, SIGINT, SIGTERM);
-    signals.async_wait([&io_context, &server_pool, &rpc_server](auto, auto) {
-      io_context.stop();
+    boost::asio::io_context ioContext;
+    boost::asio::signal_set signals(ioContext, SIGINT, SIGTERM);
+    signals.async_wait([&ioContext, &server_pool, &rpcServer](auto, auto) {
+      ioContext.stop();
       server_pool->Stop();
-      rpc_server->Shutdown();
+      rpcServer->Shutdown();
     });
 
-    std::thread rpc_thread([&rpc_server]() { rpc_server->Wait(); });
+    std::thread rpcThread([&rpcServer]() { rpcServer->Wait(); });
 
-    auto port = config["SelfServer"]["Port"];
+    auto port = config["Self"]["Port"].as<std::string>();
     std::shared_ptr<ChatServer> server(
-        new ChatServer(io_context, atoi(port.c_str())));
+        new ChatServer(ioContext, atoi(port.c_str())));
 
     server->Start();
+    ioContext.run();
 
-    io_context.run();
-
-    rpc_thread.join();
+    rpcThread.join();
     RedisManager::GetInstance()->HDel(PREFIX_REDIS_USER_ACTIVE_COUNT,
                                       server_name);
     RedisManager::GetInstance()->Close();
@@ -73,4 +89,6 @@ int main() {
                                       server_name);
     RedisManager::GetInstance()->Close();
   }
+
+  return 0;
 }

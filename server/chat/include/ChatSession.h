@@ -32,9 +32,9 @@ class ChatSession : public std::enable_shared_from_this<ChatSession> {
   void Send(char *msg, short max_length, short msgid);
   void Send(std::string msg, short msgid);
   void Close();
-  std::shared_ptr<ChatSession> SharedSelf();
-  void AsyncReadBody(int length);
-  void AsyncReadHead(int total_len);
+  std::shared_ptr<ChatSession> GetSharedSelf();
+  void ReceivePackageBody(int length);
+  void ReceivePackageHead(int total_len);
 
  private:
   void asyncReadFull(
@@ -51,18 +51,16 @@ class ChatSession : public std::enable_shared_from_this<ChatSession> {
 
  private:
   tcp::socket _socket;
-  std::string _session_id;
-  char _data[MAX_LENGTH];
+  std::string _sessionID;
+  char _data[PACKAGE_MAX_LENGTH];
   ChatServer *_server;
-  bool _b_close;
+  bool _closeEnable;
   std::queue<std::shared_ptr<protocol::SendPackage>> _send_que;
-  std::mutex _send_lock;
+  std::mutex _sendMutex;
 
-  // 收到的消息结构
-  std::shared_ptr<protocol::RecvPackage> _recv_msg_node;
+  std::shared_ptr<protocol::RecvPackage> _packageNode;
   bool _b_head_parse;
 
-  // 收到的头部结构
   std::shared_ptr<protocol::Package> _recv_head_node;
   int _user_uid;
 };

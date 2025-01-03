@@ -18,7 +18,7 @@ ChatServer::~ChatServer() {
 }
 
 void ChatServer::Start() {
-  auto &io_context = IOServicePool::GetInstance()->GetIOService();
+  auto &io_context = ServicePool::GetInstance()->GetService();
   auto new_session = std::make_shared<ChatSession>(io_context, this);
   _acceptor.async_accept(new_session->GetSocket(),
                          std::bind(&ChatServer::HandleAccept, this, new_session,

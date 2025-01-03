@@ -5,40 +5,34 @@
 #include <json/value.h>
 
 #include <iostream>
-#include <sstream>
 
 #include "ChatServer.h"
 #include "ServiceSystem.h"
-#include "test.h"
+#include "spdlog/spdlog.h"
+#include <spdlog/spdlog.h>
 
 ChatSession::ChatSession(boost::asio::io_context &io_context,
                          ChatServer *server)
     : _socket(io_context),
       _server(server),
-      _b_close(false),
+      _closeEnable(false),
       _b_head_parse(false),
       _user_uid(0) {
-#ifdef TEST_IM
-  __test::idMap[__test::sessionId] = shared_from_this();
-  __test::idGroup.push_back(__test::sessionId);
-  __test::sessionId++;
-#else
 
-  boost::uuids::uuid a_uuid = boost::uuids::random_generator()();
-  _session_id = boost::uuids::to_string(a_uuid);
-  _recv_head_node = std::make_shared<protocol::Package>(HEAD_TOTAL_LEN);
-#endif
+  auto uuid = boost::uuids::random_generator()();
+  _sessionID = boost::uuids::to_string(uuid);
+  // _recv_head_node = std::make_shared<protocol::Package>(PACKAGE_TOTAL_LEN);
 }
 
 ChatSession::~ChatSession() { std::cout << "~ChatSession destruct" << endl; }
 
-void ChatSession::Start() { AsyncReadHead(HEAD_TOTAL_LEN); }
+void ChatSession::Start() { ReceivePackageHead(PACKAGE_TOTAL_LEN); }
 
 void ChatSession::Send(std::string msg, short msgid) {
-  std::lock_guard<std::mutex> lock(_send_lock);
+  std::lock_guard<std::mutex> lock(_sendMutex);
   int send_que_size = _send_que.size();
   if (send_que_size > MAX_SEND_QUEUE_LEN) {
-    std::cout << "session: " << _session_id << " send que fulled, size is "
+    std::cout << "session: " << _sessionID << " send que fulled, size is "
               << MAX_SEND_QUEUE_LEN << endl;
     return;
   }
@@ -50,16 +44,16 @@ void ChatSession::Send(std::string msg, short msgid) {
   }
   auto &package = _send_que.front();
   boost::asio::async_write(
-      _socket, boost::asio::buffer(package->data, package->total_len),
+      _socket, boost::asio::buffer(package->data, package->total),
       std::bind(&ChatSession::HandleWrite, this, std::placeholders::_1,
-                SharedSelf()));
+                GetSharedSelf()));
 }
 
 void ChatSession::Send(char *msg, short max_length, short msgid) {
-  std::lock_guard<std::mutex> lock(_send_lock);
+  std::lock_guard<std::mutex> lock(_sendMutex);
   int send_que_size = _send_que.size();
   if (send_que_size > MAX_SEND_QUEUE_LEN) {
-    std::cout << "session: " << _session_id << " send que fulled, size is "
+    std::cout << "session: " << _sessionID << " send que fulled, size is "
               << MAX_SEND_QUEUE_LEN << endl;
     return;
   }
@@ -71,110 +65,106 @@ void ChatSession::Send(char *msg, short max_length, short msgid) {
   }
   auto &package = _send_que.front();
   boost::asio::async_write(
-      _socket, boost::asio::buffer(package->data, package->total_len),
+      _socket, boost::asio::buffer(package->data, package->total),
       std::bind(&ChatSession::HandleWrite, this, std::placeholders::_1,
-                SharedSelf()));
+                GetSharedSelf()));
 }
 
 void ChatSession::Close() {
   _socket.close();
-  _b_close = true;
+  _closeEnable = true;
 }
 
-std::shared_ptr<ChatSession> ChatSession::SharedSelf() {
+std::shared_ptr<ChatSession> ChatSession::GetSharedSelf() {
   return shared_from_this();
 }
 
-void ChatSession::AsyncReadBody(int total_len) {
+void ChatSession::ReceivePackageBody(int size) {
   auto self = shared_from_this();
   asyncReadFull(
-      total_len, [self, this, total_len](const boost::system::error_code &ec,
-                                         std::size_t bytes_transfered) {
+      size, [self, this, size](const boost::system::error_code &ec,
+                                         std::size_t bytesTransfered) {
         try {
           if (ec) {
-            std::cout << "handle read failed, error is " << ec.what() << endl;
+            spdlog::error("handle read failed, error is {}", ec.what());
             Close();
-            _server->ClearSession(_session_id);
+            _server->ClearSession(_sessionID);
             return;
           }
 
-          if (bytes_transfered < total_len) {
-            std::cout << "read length not match, read [" << bytes_transfered
-                      << "] , total [" << total_len << "]" << endl;
+          if (bytesTransfered < size) {
+            std::cout << "read length not match, read [" << bytesTransfered
+                      << "] , total [" << size << "]" << endl;
             Close();
-            _server->ClearSession(_session_id);
+            _server->ClearSession(_sessionID);
             return;
           }
 
-          memcpy(_recv_msg_node->data, _data, bytes_transfered);
-          _recv_msg_node->cur_len += bytes_transfered;
-          _recv_msg_node->data[_recv_msg_node->total_len] = '\0';
-          std::cout << "receive data is " << _recv_msg_node->data << endl;
+          memcpy(_packageNode->data, _data, bytesTransfered);
+          _packageNode->cur += bytesTransfered;
+          _packageNode->data[_packageNode->total] = '\0';
+          
+          spdlog::info("receive data is {}", _packageNode->data);
+
           //此处将消息投递到逻辑队列中
           ServiceSystem::GetInstance()->PushLogicPackage(
               std::make_shared<protocol::LogicPackage>(shared_from_this(),
-                                                       _recv_msg_node));
+                                                       _packageNode));
           //继续监听头部接受事件
-          AsyncReadHead(HEAD_TOTAL_LEN);
+          ReceivePackageHead(PACKAGE_TOTAL_LEN);
         } catch (std::exception &e) {
-          std::cout << "Exception code is " << e.what() << endl;
+          spdlog::error("Exception code is {}" , e.what());
         }
       });
 }
 
-void ChatSession::AsyncReadHead(int total_len) {
+void ChatSession::ReceivePackageHead(int size) {
   auto self = shared_from_this();
-  asyncReadFull(HEAD_TOTAL_LEN, [self, this](
+  asyncReadFull(PACKAGE_TOTAL_LEN, [self, this](
                                     const boost::system::error_code &ec,
-                                    std::size_t bytes_transfered) {
+                                    std::size_t bytesTransfered) {
     try {
       if (ec) {
-        std::cout << "handle read failed, error is " << ec.what() << endl;
+        spdlog::error("handle read failed, error is {}" , ec.what());
         Close();
-        _server->ClearSession(_session_id);
+        _server->ClearSession(_sessionID);
         return;
       }
 
-      if (bytes_transfered < HEAD_TOTAL_LEN) {
-        std::cout << "read length not match, read [" << bytes_transfered
-                  << "] , total [" << HEAD_TOTAL_LEN << "]" << endl;
+      if (bytesTransfered < PACKAGE_TOTAL_LEN) {
+        std::cout << "read length not match, read [" << bytesTransfered
+                  << "] , total [" << PACKAGE_TOTAL_LEN << "]" << endl;
         Close();
-        _server->ClearSession(_session_id);
+        _server->ClearSession(_sessionID);
         return;
       }
 
-      _recv_head_node->Clear();
-      memcpy(_recv_head_node->data, _data, bytes_transfered);
-
-      //获取头部MSGID数据
-      short msg_id = 0;
-      memcpy(&msg_id, _recv_head_node->data, HEAD_ID_LEN);
-      //网络字节序转化为本地字节序
-      msg_id = boost::asio::detail::socket_ops::network_to_host_short(msg_id);
-      std::cout << "msg_id is " << msg_id << endl;
-      // id非法
-      if (msg_id > MAX_LENGTH) {
-        std::cout << "invalid msg_id is " << msg_id << endl;
-        _server->ClearSession(_session_id);
-        return;
-      }
-      short msg_len = 0;
-      memcpy(&msg_len, _recv_head_node->data + HEAD_ID_LEN, HEAD_DATA_LEN);
-      //网络字节序转化为本地字节序
-      msg_len = boost::asio::detail::socket_ops::network_to_host_short(msg_len);
-      std::cout << "msg_len is " << msg_len << endl;
-
-      // id非法
-      if (msg_len > MAX_LENGTH) {
-        std::cout << "invalid data length is " << msg_len << endl;
-        _server->ClearSession(_session_id);
+      short packageLen = 0, packageID = 0;
+      memcpy(&packageID, _data, PACKAGE_ID_LEN);
+      packageID = boost::asio::detail::socket_ops::network_to_host_short(packageID);
+      
+      // ID非法
+      if (packageID > PACKAGE_MAX_LENGTH) {
+        spdlog::info("invalid packageID is  {}", packageID);
+        _server->ClearSession(_sessionID);
         return;
       }
 
-      _recv_msg_node = std::make_shared<protocol::RecvPackage>(msg_len, msg_id);
-      AsyncReadBody(msg_len);
+      memcpy(&packageLen, _data + PACKAGE_ID_LEN, PACKAGE_DATA_LEN);
+      packageLen = boost::asio::detail::socket_ops::network_to_host_short(packageLen);
+
+      // 长度非法
+      if (packageLen > PACKAGE_MAX_LENGTH) {
+        spdlog::info("invalid data length is {}  ", packageLen);
+        _server->ClearSession(_sessionID);
+        return;
+      }
+      spdlog::info("receive packageID is {}, packageLen is {} ");
+
+      _packageNode = std::make_shared<protocol::RecvPackage>(packageLen, packageID);
+      ReceivePackageBody(packageLen);
     } catch (std::exception &e) {
-      std::cout << "Exception code is " << e.what() << endl;
+      spdlog::error( "Exception code is {}", e.what());
     }
   });
 }
@@ -184,21 +174,21 @@ void ChatSession::HandleWrite(const boost::system::error_code &error,
   // 增加异常处理
   try {
     if (!error) {
-      std::lock_guard<std::mutex> lock(_send_lock);
+      std::lock_guard<std::mutex> lock(_sendMutex);
       // std::cout << "send data " << _send_que.front()->data+HEAD_LENGTH <<
       // endl;
       _send_que.pop();
       if (!_send_que.empty()) {
         auto &package = _send_que.front();
         boost::asio::async_write(
-            _socket, boost::asio::buffer(package->data, package->total_len),
+            _socket, boost::asio::buffer(package->data, package->total),
             std::bind(&ChatSession::HandleWrite, this, std::placeholders::_1,
                       shared_self));
       }
     } else {
       std::cout << "handle write failed, error is " << error.what() << endl;
       Close();
-      _server->ClearSession(_session_id);
+      _server->ClearSession(_sessionID);
     }
   } catch (std::exception &e) {
     std::cerr << "Exception code : " << e.what() << endl;
@@ -210,7 +200,7 @@ void ChatSession::asyncReadFull(
     std::size_t maxLength,
     std::function<void(const boost::system::error_code &, std::size_t)>
         handler) {
-  ::memset(_data, 0, MAX_LENGTH);
+  ::memset(_data, 0, PACKAGE_MAX_LENGTH);
   asyncReadLen(0, maxLength, handler);
 }
 
@@ -243,7 +233,7 @@ void ChatSession::asyncReadLen(
 
 tcp::socket &ChatSession::GetSocket() { return _socket; }
 
-std::string &ChatSession::GetSessionId() { return _session_id; }
+std::string &ChatSession::GetSessionId() { return _sessionID; }
 
 void ChatSession::SetUserId(int uid) { _user_uid = uid; }
 

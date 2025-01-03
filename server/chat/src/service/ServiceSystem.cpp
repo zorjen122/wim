@@ -3,10 +3,10 @@
 #include "Const.h"
 #include "MysqlManager.h"
 #include "RedisManager.h"
-#include "RpcChatClient.h"
-#include "RpcStatusClient.h"
 #include "UserManager.h"
-#include "test.h"
+#include "RpcChatClient.h"
+#include <spdlog/spdlog.h>
+
 
 ServiceSystem::ServiceSystem() : _isStop(false) {
   init();
@@ -39,37 +39,29 @@ void ServiceSystem::init() {
   _serviceGroup[ID_TEXT_CHAT_MSG_REQ] =
       std::bind(&ServiceSystem::PushTextMessage, this, std::placeholders::_1,
                 std::placeholders::_2, std::placeholders::_3);
-
-  _serviceGroup[__test::TEST_PUSH_ID] =
-      std::bind(&ServiceSystem::testPush, this, std::placeholders::_1,
-                std::placeholders::_2, std::placeholders::_3);
 }
 
-void ServiceSystem::PushLogicPackage(
-    std::shared_ptr<protocol::LogicPackage> msg) {
-  std::unique_lock<std::mutex> unique_lk(_mutex);
+void ServiceSystem::PushLogicPackage(std::shared_ptr<protocol::LogicPackage> msg) {
+  std::unique_lock<std::mutex> lock(_mutex);
   _messageGroup.push(msg);
-  // ��0��Ϊ1����֪ͨ�ź�
   if (_messageGroup.size() == 1) {
-    unique_lk.unlock();
+    lock.unlock();
     _consume.notify_one();
   }
 }
 
 void ServiceSystem::DoActive() {
   for (;;) {
-    std::unique_lock<std::mutex> unique_lk(_mutex);
-    // �ж϶���Ϊ�������������������ȴ������ͷ���
+    std::unique_lock<std::mutex> lock(_mutex);
     while (_messageGroup.empty() && !_isStop) {
-      _consume.wait(unique_lk);
+      _consume.wait(lock);
     }
 
-    // �ж��Ƿ�Ϊ�ر�״̬���������߼�ִ��������˳�ѭ��
     if (_isStop) {
       while (!_messageGroup.empty()) {
         auto package = _messageGroup.front();
-        std::cout << "[ServiceSystem::DoActive] recv_msg id  is "
-                  << package->_recvPackage->id << "\n";
+        spdlog::info("[ServiceSystem::DoActive] recv_msg id  is {}", package->_recvPackage->id);
+
         auto call_back_iter = _serviceGroup.find(package->_recvPackage->id);
         if (call_back_iter == _serviceGroup.end()) {
           _messageGroup.pop();
@@ -77,26 +69,23 @@ void ServiceSystem::DoActive() {
         }
         call_back_iter->second(package->_session, package->_recvPackage->id,
                                std::string(package->_recvPackage->data,
-                                           package->_recvPackage->cur_len));
+                                           package->_recvPackage->cur));
         _messageGroup.pop();
       }
       break;
     }
 
-    // ���û��ͣ������˵��������������
     auto package = _messageGroup.front();
-    std::cout << "[ServiceSystem::DoActive] recv_msg id  is "
-              << package->_recvPackage->id << "\n";
-    auto call_back_iter = _serviceGroup.find(package->_recvPackage->id);
-    if (call_back_iter == _serviceGroup.end()) {
+    spdlog::info("[ServiceSystem::DoActive] recv_msg id  is {}", package->_recvPackage->id);
+    auto callbackIter = _serviceGroup.find(package->_recvPackage->id);
+    if (callbackIter == _serviceGroup.end()) {
       _messageGroup.pop();
-      std::cout << "msg id [" << package->_recvPackage->id
-                << "] handler not found" << std::endl;
+      spdlog::warn("[ServiceSystem::DoActive] recv msg id {}, handler not found");
       continue;
     }
-    call_back_iter->second(package->_session, package->_recvPackage->id,
+    callbackIter->second(package->_session, package->_recvPackage->id,
                            std::string(package->_recvPackage->data,
-                                       package->_recvPackage->cur_len));
+                                       package->_recvPackage->cur));
     _messageGroup.pop();
   }
 }
@@ -118,7 +107,6 @@ void ServiceSystem::LoginHandler(std::shared_ptr<ChatSession> session,
   std::cout << "user login uid is  " << uid << " user token  is " << token
             << "\n";
 
-  // ��redis��ȡ�û�token�Ƿ���ȷ
   std::string uid_str = std::to_string(uid);
   std::string token_key = PREFIX_REDIS_USER_TOKEN + uid_str;
   std::string token_value = "";
@@ -151,7 +139,6 @@ void ServiceSystem::LoginHandler(std::shared_ptr<ChatSession> session,
   rtvalue["sex"] = user_info->sex;
   rtvalue["icon"] = user_info->icon;
 
-  // �����ݿ��ȡ�����б�
   std::vector<std::shared_ptr<ApplyInfo>> apply_list;
   auto b_apply = GetFriendApplyInfo(uid, apply_list);
   if (b_apply) {
@@ -168,7 +155,6 @@ void ServiceSystem::LoginHandler(std::shared_ptr<ChatSession> session,
     }
   }
 
-  // ��ȡ�����б�
   std::vector<std::shared_ptr<UserInfo>> friend_list;
   bool b_friend_list = GetFriendList(uid, friend_list);
   for (auto &friend_ele : friend_list) {
@@ -184,7 +170,6 @@ void ServiceSystem::LoginHandler(std::shared_ptr<ChatSession> session,
   }
 
   auto server_name = Configer::GetInstance().GetValue("SelfServer", "Name");
-  // ����¼��������
   auto rd_res = RedisManager::GetInstance()->HGet(
       PREFIX_REDIS_USER_ACTIVE_COUNT, server_name);
   int count = 0;
@@ -196,12 +181,9 @@ void ServiceSystem::LoginHandler(std::shared_ptr<ChatSession> session,
   auto count_str = std::to_string(count);
   RedisManager::GetInstance()->HSet(PREFIX_REDIS_USER_ACTIVE_COUNT, server_name,
                                     count_str);
-  // session���û�uid
   session->SetUserId(uid);
-  // Ϊ�û����õ�¼ip server������
   std::string ipkey = PREFIX_REDIS_UIP + uid_str;
   RedisManager::GetInstance()->Set(ipkey, server_name);
-  // uid��session�󶨹���,�����Ժ����˲���
   UserManager::GetInstance()->SetUserSession(uid, session);
 
   return;
@@ -251,10 +233,8 @@ void ServiceSystem::AddFriendApply(std::shared_ptr<ChatSession> session,
     session->Send(return_str, ID_ADD_FRIEND_RSP);
   });
 
-  // �ȸ������ݿ�
   MysqlManager::GetInstance()->AddFriendApply(uid, touid);
 
-  // ��ѯredis ����touid��Ӧ��server ip
   auto to_str = std::to_string(touid);
   auto to_ip_key = PREFIX_REDIS_UIP + to_str;
   std::string to_ip_value = "";
@@ -265,11 +245,9 @@ void ServiceSystem::AddFriendApply(std::shared_ptr<ChatSession> session,
 
   auto &cfg = Configer::GetInstance();
   auto self_name = cfg["SelfServer"]["Name"];
-  // ֱ��֪ͨ�Է���������Ϣ
   if (to_ip_value == self_name) {
     auto session = UserManager::GetInstance()->GetSession(touid);
     if (session) {
-      // ���ڴ�����ֱ�ӷ���֪ͨ�Է�
       Json::Value notify;
       notify["error"] = ErrorCodes::Success;
       notify["applyuid"] = uid;
@@ -297,7 +275,6 @@ void ServiceSystem::AddFriendApply(std::shared_ptr<ChatSession> session,
     add_req.set_nick(apply_info->nick);
   }
 
-  // ����֪ͨ
   ChatGrpcClient::GetInstance()->NotifyAddFriend(to_ip_value, add_req);
 }
 
@@ -334,13 +311,10 @@ void ServiceSystem::AuthFriendApply(std::shared_ptr<ChatSession> session,
     session->Send(return_str, ID_AUTH_FRIEND_RSP);
   });
 
-  // �ȸ������ݿ�
   MysqlManager::GetInstance()->AuthFriendApply(uid, touid);
 
-  // �������ݿ����Ӻ���
   MysqlManager::GetInstance()->AddFriend(uid, touid, back_name);
 
-  // ��ѯredis ����touid��Ӧ��server ip
   auto to_str = std::to_string(touid);
   auto to_ip_key = PREFIX_REDIS_UIP + to_str;
   std::string to_ip_value = "";
@@ -351,11 +325,9 @@ void ServiceSystem::AuthFriendApply(std::shared_ptr<ChatSession> session,
 
   auto &cfg = Configer::GetInstance();
   auto self_name = cfg["SelfServer"]["Name"];
-  // ֱ��֪ͨ�Է�����֤ͨ����Ϣ
   if (to_ip_value == self_name) {
     auto session = UserManager::GetInstance()->GetSession(touid);
     if (session) {
-      // ���ڴ�����ֱ�ӷ���֪ͨ�Է�
       Json::Value notify;
       notify["error"] = ErrorCodes::Success;
       notify["fromuid"] = uid;
@@ -383,7 +355,6 @@ void ServiceSystem::AuthFriendApply(std::shared_ptr<ChatSession> session,
   auth_req.set_fromuid(uid);
   auth_req.set_touid(touid);
 
-  // ����֪ͨ
   ChatGrpcClient::GetInstance()->NotifyAuthFriend(to_ip_value, auth_req);
 }
 
@@ -410,7 +381,6 @@ void ServiceSystem::PushTextMessage(std::shared_ptr<ChatSession> session,
     session->Send(return_str, ID_TEXT_CHAT_MSG_RSP);
   });
 
-  // ��ѯredis ����touid��Ӧ��server ip
   auto to_str = std::to_string(touid);
   auto to_ip_key = PREFIX_REDIS_UIP + to_str;
   std::string to_ip_value = "";
@@ -422,11 +392,9 @@ void ServiceSystem::PushTextMessage(std::shared_ptr<ChatSession> session,
   auto &cfg = Configer::GetInstance();
   auto self_name = cfg["SelfServer"]["Name"];
 
-  // ֱ��֪ͨ�Է�����֤ͨ����Ϣ
   if (to_ip_value == self_name) {
     auto session = UserManager::GetInstance()->GetSession(touid);
     if (session) {
-      // ���ڴ�����ֱ�ӷ���֪ͨ�Է�
       std::string return_str = rtvalue.toStyledString();
       session->Send(return_str, ID_NOTIFY_TEXT_CHAT_MSG_REQ);
     }
@@ -447,7 +415,6 @@ void ServiceSystem::PushTextMessage(std::shared_ptr<ChatSession> session,
     text_msg->set_msgcontent(content);
   }
 
-  // ����֪ͨ todo...
   ChatGrpcClient::GetInstance()->NotifyTextChatMsg(to_ip_value, text_msg_req,
                                                    rtvalue);
 }
@@ -466,7 +433,6 @@ void ServiceSystem::GetUserByUid(std::string uid_str, Json::Value &rtvalue) {
 
   std::string base_key = PREFIX_REDIS_USER_INFO + uid_str;
 
-  // ���Ȳ�redis�в�ѯ�û���Ϣ
   std::string info_str = "";
   bool b_base = RedisManager::GetInstance()->Get(base_key, info_str);
   if (b_base) {
@@ -496,17 +462,13 @@ void ServiceSystem::GetUserByUid(std::string uid_str, Json::Value &rtvalue) {
   }
 
   auto uid = std::stoi(uid_str);
-  // redis��û�����ѯmysql
-  // ��ѯ���ݿ�
   std::shared_ptr<UserInfo> user_info = nullptr;
-  user_info = MysqlManager::GetInstance()->GetUser(
-      uid);  // SELECT * from user where uid = ?
+  user_info = MysqlManager::GetInstance()->GetUser(uid);
   if (user_info == nullptr) {
     rtvalue["error"] = ErrorCodes::UidInvalid;
     return;
   }
 
-  // �����ݿ�����д��redis����
   Json::Value redis_root;
   redis_root["uid"] = user_info->uid;
   redis_root["pwd"] = user_info->pwd;
@@ -519,7 +481,6 @@ void ServiceSystem::GetUserByUid(std::string uid_str, Json::Value &rtvalue) {
 
   RedisManager::GetInstance()->Set(base_key, redis_root.toStyledString());
 
-  // ��������
   rtvalue["uid"] = user_info->uid;
   rtvalue["pwd"] = user_info->pwd;
   rtvalue["name"] = user_info->name;
@@ -535,7 +496,6 @@ void ServiceSystem::GetUserByName(std::string name, Json::Value &rtvalue) {
 
   std::string base_key = PREFIX_REDIS_NAME_INFO + name;
 
-  // ���Ȳ�redis�в�ѯ�û���Ϣ
   std::string info_str = "";
   bool b_base = RedisManager::GetInstance()->Get(base_key, info_str);
   if (b_base) {
@@ -562,8 +522,6 @@ void ServiceSystem::GetUserByName(std::string name, Json::Value &rtvalue) {
     return;
   }
 
-  // redis��û�����ѯmysql
-  // ��ѯ���ݿ�
   std::shared_ptr<UserInfo> user_info = nullptr;
   user_info = MysqlManager::GetInstance()->GetUser(name);
   if (user_info == nullptr) {
@@ -571,7 +529,6 @@ void ServiceSystem::GetUserByName(std::string name, Json::Value &rtvalue) {
     return;
   }
 
-  // �����ݿ�����д��redis����
   Json::Value redis_root;
   redis_root["uid"] = user_info->uid;
   redis_root["pwd"] = user_info->pwd;
@@ -583,7 +540,6 @@ void ServiceSystem::GetUserByName(std::string name, Json::Value &rtvalue) {
 
   RedisManager::GetInstance()->Set(base_key, redis_root.toStyledString());
 
-  // ��������
   rtvalue["uid"] = user_info->uid;
   rtvalue["pwd"] = user_info->pwd;
   rtvalue["name"] = user_info->name;
@@ -595,7 +551,6 @@ void ServiceSystem::GetUserByName(std::string name, Json::Value &rtvalue) {
 
 bool ServiceSystem::GetBaseInfo(std::string base_key, int uid,
                                 std::shared_ptr<UserInfo> &userinfo) {
-  // ���Ȳ�redis�в�ѯ�û���Ϣ
   std::string info_str = "";
   bool b_base = RedisManager::GetInstance()->Get(base_key, info_str);
   if (b_base) {
@@ -614,8 +569,6 @@ bool ServiceSystem::GetBaseInfo(std::string base_key, int uid,
               << userinfo->name << " pwd is " << userinfo->pwd << " email is "
               << userinfo->email << "\n";
   } else {
-    // redis��û�����ѯmysql
-    // ��ѯ���ݿ�
     std::shared_ptr<UserInfo> user_info = nullptr;
     user_info = MysqlManager::GetInstance()->GetUser(uid);
     if (user_info == nullptr) {
@@ -624,7 +577,6 @@ bool ServiceSystem::GetBaseInfo(std::string base_key, int uid,
 
     userinfo = user_info;
 
-    // �����ݿ�����д��redis����
     Json::Value redis_root;
     redis_root["uid"] = uid;
     redis_root["pwd"] = userinfo->pwd;
@@ -644,12 +596,10 @@ bool ServiceSystem::GetBaseInfo(std::string base_key, int uid,
 
 bool ServiceSystem::GetFriendApplyInfo(
     int to_uid, std::vector<std::shared_ptr<ApplyInfo>> &list) {
-  // ��mysql��ȡ���������б�
   return MysqlManager::GetInstance()->GetApplyList(to_uid, list, 0, 10);
 }
 
 bool ServiceSystem::GetFriendList(
     int self_id, std::vector<std::shared_ptr<UserInfo>> &user_list) {
-  // ��mysql��ȡ�����б�
   return MysqlManager::GetInstance()->GetFriendList(self_id, user_list);
 }

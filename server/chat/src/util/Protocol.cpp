@@ -7,15 +7,15 @@ namespace protocol
 	{
 	}
 
-	SendPackage::SendPackage(const char *msg, short max_len, short msg_id) : Package(max_len + HEAD_TOTAL_LEN), id(msg_id)
+	SendPackage::SendPackage(const char *msg, short max_len, short msg_id) : Package(max_len + PACKAGE_TOTAL_LEN), id(msg_id)
 	{
-		// ÏÈ·¢ËÍid, ×ªÎªÍøÂç×Ö½ÚÐò
+		// ï¿½È·ï¿½ï¿½ï¿½id, ×ªÎªï¿½ï¿½ï¿½ï¿½ï¿½Ö½ï¿½ï¿½ï¿½
 		short msg_id_host = boost::asio::detail::socket_ops::host_to_network_short(msg_id);
-		memcpy(data, &msg_id_host, HEAD_ID_LEN);
-		// ×ªÎªÍøÂç×Ö½ÚÐò
+		memcpy(data, &msg_id_host, PACKAGE_ID_LEN);
+		// ×ªÎªï¿½ï¿½ï¿½ï¿½ï¿½Ö½ï¿½ï¿½ï¿½
 		short max_len_host = boost::asio::detail::socket_ops::host_to_network_short(max_len);
-		memcpy(data + HEAD_ID_LEN, &max_len_host, HEAD_DATA_LEN);
-		memcpy(data + HEAD_ID_LEN + HEAD_DATA_LEN, msg, max_len);
+		memcpy(data + PACKAGE_ID_LEN, &max_len_host, PACKAGE_DATA_LEN);
+		memcpy(data + PACKAGE_ID_LEN + PACKAGE_DATA_LEN, msg, max_len);
 	}
 
 	LogicPackage::LogicPackage(std::shared_ptr<ChatSession> session,

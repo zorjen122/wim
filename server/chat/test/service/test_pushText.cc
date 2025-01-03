@@ -26,7 +26,8 @@ int main() {
     toNormalString(user.port);
 
     socket = base::startChatServer(ioc, user.host, user.port);;
-    base::pushService( socket,ID_PUSH_TEXT_MESSAGE, std::string("Hello, IM!"), from, to);
+    base::pushService( socket,ID_PUSH_TEXT_MESSAGE, 
+    std::string("Hello, IM!"), boost::asio::detail::socket_ops::network_to_host_short(from), to);
     break;
   }
 

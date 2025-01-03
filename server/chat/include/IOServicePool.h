@@ -3,24 +3,24 @@
 #include <boost/asio.hpp>
 #include "Singleton.h"
 
-class IOServicePool : public Singleton<IOServicePool>
+class ServicePool : public Singleton<ServicePool>
 {
-	friend Singleton<IOServicePool>;
+	friend Singleton<ServicePool>;
 
 public:
-	using IOService = boost::asio::io_context;
+	using Service = boost::asio::io_context;
 	using Work = boost::asio::io_context::work;
 	using WorkPtr = std::unique_ptr<Work>;
-	~IOServicePool();
-	IOServicePool(const IOServicePool &) = delete;
-	IOServicePool &operator=(const IOServicePool &) = delete;
-	boost::asio::io_context &GetIOService();
+	~ServicePool();
+	ServicePool(const ServicePool &) = delete;
+	ServicePool &operator=(const ServicePool &) = delete;
+	boost::asio::io_context &GetService();
 	void Stop();
 
 private:
-	IOServicePool(std::size_t size = std::thread::hardware_concurrency());
-	std::vector<IOService> _ioServices;
+	ServicePool(std::size_t size = std::thread::hardware_concurrency());
+	std::vector<Service> _ioServices;
 	std::vector<WorkPtr> _works;
 	std::vector<std::thread> _threads;
-	std::size_t _nextIOService;
+	std::size_t _nextIoService;
 };

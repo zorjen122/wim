@@ -1,0 +1,32 @@
+Server:
+  Gateway:
+    Host: 127.0.0.1
+    Port: 8080
+  Verify:
+    Host: 127.0.0.1
+    Port: 50051
+  State:
+    Host: 127.0.0.1
+    Port: 50052
+  Self:
+    Name: ChatServer1
+    Host: 0.0.0.0
+    Port: 8090
+    RpcPort: 50055
+  PeerServer:
+    Servers:
+      - ChatServer2
+  ChatServer2:
+    Name: ChatServer2
+    Host: 127.0.0.1
+    Port: 50056
+  Mysql:
+    Host: 127.0.0.1
+    Port: 3309
+    User: zorjen
+    Password: root
+    Schema: chatServ
+  Redis:
+    Host: 127.0.0.1
+    Port: 6380
+    Password: root.
