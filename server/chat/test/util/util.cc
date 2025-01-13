@@ -101,7 +101,8 @@ int generateRandomNumber(int bound)
   uniform_int_distribution<> dis(0, bound);
 
   return dis(gen);
-}void toNormalString(std::string &str) {
+}
+void toNormalString(std::string &str) {
   // 去掉前后的换行符、空格、制表符等
 
   auto first = str.find_first_of("\"");

@@ -1,31 +1,49 @@
 #include "ServiceSystem.h"
-
+#include "ChatServer.h"
+#include "Configer.h"
 #include "Const.h"
+
 #include "MysqlManager.h"
+#include "OnlineUserManager.h"
 #include "RedisManager.h"
-#include "UserManager.h"
-#include "RpcChatClient.h"
+#include "RpcClient.h"
+#include <json/json.h>
 #include <spdlog/spdlog.h>
 
+namespace uitl {
 
-ServiceSystem::ServiceSystem() : _isStop(false) {
-  init();
-  _worker_thread = std::thread(&ServiceSystem::DoActive, this);
+bool IsIntergral(const std::string &str) {
+  for (char c : str) {
+    if (!std::isdigit(c)) {
+      return false;
+    }
+  }
+  return true;
+}
+}; // namespace uitl
+
+ServiceSystem::ServiceSystem() : isStop(false) {
+  Init();
+  worker = std::thread(&ServiceSystem::run, this);
 }
 
 ServiceSystem::~ServiceSystem() {
-  _isStop = true;
+  isStop = true;
   _consume.notify_one();
-  _worker_thread.join();
+  worker.join();
 }
 
-void ServiceSystem::init() {
+void ServiceSystem::Init() {
   _serviceGroup[ID_CHAT_LOGIN_INIT] =
       std::bind(&ServiceSystem::LoginHandler, this, std::placeholders::_1,
                 std::placeholders::_2, std::placeholders::_3);
 
+  _serviceGroup[ID_PING_PONG_REQ] =
+      std::bind(&ServiceSystem::PingKeepAlive, this, std::placeholders::_1,
+                std::placeholders::_2, std::placeholders::_3);
+
   _serviceGroup[ID_SEARCH_USER_REQ] =
-      std::bind(&ServiceSystem::SearchInfo, this, std::placeholders::_1,
+      std::bind(&ServiceSystem::SearchUser, this, std::placeholders::_1,
                 std::placeholders::_2, std::placeholders::_3);
 
   _serviceGroup[ID_ADD_FRIEND_REQ] =
@@ -36,12 +54,20 @@ void ServiceSystem::init() {
       std::bind(&ServiceSystem::AuthFriendApply, this, std::placeholders::_1,
                 std::placeholders::_2, std::placeholders::_3);
 
-  _serviceGroup[ID_TEXT_CHAT_MSG_REQ] =
+  _serviceGroup[ID_PUSH_TEXT_MSG_REQ] =
       std::bind(&ServiceSystem::PushTextMessage, this, std::placeholders::_1,
+                std::placeholders::_2, std::placeholders::_3);
+
+  _serviceGroup[ID_ONLINE_PULL_REQ] =
+      std::bind(&ServiceSystem::OnlinePullHandler, this, std::placeholders::_1,
                 std::placeholders::_2, std::placeholders::_3);
 }
 
-void ServiceSystem::PushLogicPackage(std::shared_ptr<protocol::LogicPackage> msg) {
+void ServiceSystem::PingKeepAlive(std::shared_ptr<ChatSession> session,
+                                  unsigned short msgID,
+                                  const std::string &msgData) {}
+
+void ServiceSystem::PushService(std::shared_ptr<protocol::LogicPackage> msg) {
   std::unique_lock<std::mutex> lock(_mutex);
   _messageGroup.push(msg);
   if (_messageGroup.size() == 1) {
@@ -50,23 +76,25 @@ void ServiceSystem::PushLogicPackage(std::shared_ptr<protocol::LogicPackage> msg
   }
 }
 
-void ServiceSystem::DoActive() {
+void ServiceSystem::run() {
   for (;;) {
     std::unique_lock<std::mutex> lock(_mutex);
-    while (_messageGroup.empty() && !_isStop) {
+    while (_messageGroup.empty() && !isStop) {
       _consume.wait(lock);
     }
 
-    if (_isStop) {
+    if (isStop) {
       while (!_messageGroup.empty()) {
         auto package = _messageGroup.front();
-        spdlog::info("[ServiceSystem::DoActive] recv_msg id  is {}", package->_recvPackage->id);
+        spdlog::info("[ServiceSystem::DoActive] recv service ID  is {}",
+                     package->_recvPackage->id);
 
         auto call_back_iter = _serviceGroup.find(package->_recvPackage->id);
         if (call_back_iter == _serviceGroup.end()) {
           _messageGroup.pop();
           continue;
         }
+
         call_back_iter->second(package->_session, package->_recvPackage->id,
                                std::string(package->_recvPackage->data,
                                            package->_recvPackage->cur));
@@ -76,149 +104,116 @@ void ServiceSystem::DoActive() {
     }
 
     auto package = _messageGroup.front();
-    spdlog::info("[ServiceSystem::DoActive] recv_msg id  is {}", package->_recvPackage->id);
+    spdlog::info("[ServiceSystem::DoActive] recv_msg id  is {}",
+                 package->_recvPackage->id);
     auto callbackIter = _serviceGroup.find(package->_recvPackage->id);
     if (callbackIter == _serviceGroup.end()) {
       _messageGroup.pop();
-      spdlog::warn("[ServiceSystem::DoActive] recv msg id {}, handler not found");
+      spdlog::warn(
+          "[ServiceSystem::DoActive] recv msg id {}, handler not found");
       continue;
     }
-    callbackIter->second(package->_session, package->_recvPackage->id,
-                           std::string(package->_recvPackage->data,
-                                       package->_recvPackage->cur));
+    callbackIter->second(
+        package->_session, package->_recvPackage->id,
+        std::string(package->_recvPackage->data, package->_recvPackage->cur));
     _messageGroup.pop();
   }
 }
 
 void ServiceSystem::LoginHandler(std::shared_ptr<ChatSession> session,
-                                 const short &msg_id,
-                                 const std::string &msg_data) {
-  Json::Reader reader;
-  Json::Value root;
-  reader.parse(msg_data, root);
-  Json::Value rtvalue;
-  Defer defer([this, &rtvalue, session]() {
-    std::string return_str = rtvalue.toStyledString();
-    session->Send(return_str, ID_CHAT_LOGIN_INIT_RSP);
+                                 unsigned short msgID,
+                                 const std::string &msgData) {
+  Json::Reader parser;
+  Json::Value req;
+  Json::Value rsp;
+  parser.parse(msgData, req);
+
+  Defer _([&rsp, session]() {
+    std::string rt = rsp.toStyledString();
+    session->Send(rt, ID_CHAT_LOGIN_INIT_RSP);
   });
 
-  auto uid = root["uid"].asInt();
-  auto token = root["token"].asString();
-  std::cout << "user login uid is  " << uid << " user token  is " << token
-            << "\n";
+  auto uid = req["uid"].asInt();
+  auto token = req["token"].asString();
 
-  std::string uid_str = std::to_string(uid);
-  std::string token_key = PREFIX_REDIS_USER_TOKEN + uid_str;
-  std::string token_value = "";
-  bool success = RedisManager::GetInstance()->Get(token_key, token_value);
-  if (!success) {
-    rtvalue["error"] = ErrorCodes::UidInvalid;
+  spdlog::info(
+      "[ServiceSystem::LoginHandle] user login uid is  {}, and token is ", uid,
+      token);
+
+  std::string tokenK = PREFIX_REDIS_USER_TOKEN + std::to_string(uid);
+  std::string tokenV = "";
+
+  bool hasToken = RedisManager::GetInstance()->Get(tokenK, tokenV);
+  if (!hasToken) {
+    spdlog::info(
+        "[ServiceSystem::LoginHandle] this user no have find it token");
+    rsp["error"] = ErrorCodes::UidInvalid;
     return;
   }
 
-  if (token_value != token) {
-    rtvalue["error"] = ErrorCodes::TokenInvalid;
+  if (tokenV != token) {
+    spdlog::info("[ServiceSystem::LoginHandle] this user token is invalid");
+    rsp["error"] = ErrorCodes::TokenInvalid;
     return;
   }
 
-  rtvalue["error"] = ErrorCodes::Success;
+  // 暂不考虑用户基本信息缓存(redis)
+  // std::string baseKey = PREFIX_REDIS_USER_INFO + uidStr;
+  // auto userInfo = std::make_shared<UserInfo>();
+  // ReidsManager::GetInstance()->Get(baseKey, userInfo);
 
-  std::string base_key = PREFIX_REDIS_USER_INFO + uid_str;
-  auto user_info = std::make_shared<UserInfo>();
-  bool b_base = ServiceSystem::GetBaseInfo(base_key, uid, user_info);
-  if (!b_base) {
-    rtvalue["error"] = ErrorCodes::UidInvalid;
-    return;
-  }
-  rtvalue["uid"] = uid;
-  rtvalue["pwd"] = user_info->pwd;
-  rtvalue["name"] = user_info->name;
-  rtvalue["email"] = user_info->email;
-  rtvalue["nick"] = user_info->nick;
-  rtvalue["desc"] = user_info->desc;
-  rtvalue["sex"] = user_info->sex;
-  rtvalue["icon"] = user_info->icon;
+  // 暂不考虑用户好友请求通知拉取(mysql)
+  // std::vector<std::shared_ptr<ApplyInfo>> apply_list;
+  // bool hasApplyList = GetFriendApplyInfo(uid, apply_list);
 
-  std::vector<std::shared_ptr<ApplyInfo>> apply_list;
-  auto b_apply = GetFriendApplyInfo(uid, apply_list);
-  if (b_apply) {
-    for (auto &apply : apply_list) {
-      Json::Value obj;
-      obj["name"] = apply->_name;
-      obj["uid"] = apply->_uid;
-      obj["icon"] = apply->_icon;
-      obj["nick"] = apply->_nick;
-      obj["sex"] = apply->_sex;
-      obj["desc"] = apply->_desc;
-      obj["status"] = apply->_status;
-      rtvalue["apply_list"].append(obj);
-    }
-  }
+  // 暂不考虑好友列表拉取(mysql)
+  // std::vector<std::shared_ptr<UserInfo>> friend_list = {};
+  // bool hasFriendList = MysqlManager::GetInstance()->GetFriendList(uid,
+  // friend_list);
 
-  std::vector<std::shared_ptr<UserInfo>> friend_list;
-  bool b_friend_list = GetFriendList(uid, friend_list);
-  for (auto &friend_ele : friend_list) {
-    Json::Value obj;
-    obj["name"] = friend_ele->name;
-    obj["uid"] = friend_ele->uid;
-    obj["icon"] = friend_ele->icon;
-    obj["nick"] = friend_ele->nick;
-    obj["sex"] = friend_ele->sex;
-    obj["desc"] = friend_ele->desc;
-    obj["back"] = friend_ele->back;
-    rtvalue["friend_list"].append(obj);
-  }
+  auto conf = Configer::getConfig("server");
+  auto serverName = conf["selfServer"]["name"].as<std::string>();
+  auto userActive = RedisManager::GetInstance()->HGet(
+      PREFIX_REDIS_USER_ACTIVE_COUNT, serverName);
 
-  auto server_name = Configer::GetInstance().GetValue("SelfServer", "Name");
-  auto rd_res = RedisManager::GetInstance()->HGet(
-      PREFIX_REDIS_USER_ACTIVE_COUNT, server_name);
-  int count = 0;
-  if (!rd_res.empty()) {
-    count = std::stoi(rd_res);
-  }
+  auto count = userActive.empty() ? 0 : std::stoi(userActive);
+  ++count;
 
-  count++;
-  auto count_str = std::to_string(count);
-  RedisManager::GetInstance()->HSet(PREFIX_REDIS_USER_ACTIVE_COUNT, server_name,
-                                    count_str);
+  RedisManager::GetInstance()->HSet(PREFIX_REDIS_USER_ACTIVE_COUNT, serverName,
+                                    std::to_string(count));
   session->SetUserId(uid);
-  std::string ipkey = PREFIX_REDIS_UIP + uid_str;
-  RedisManager::GetInstance()->Set(ipkey, server_name);
-  UserManager::GetInstance()->SetUserSession(uid, session);
+  std::string ipKey = PREFIX_REDIS_UIP + std::to_string(uid);
+  RedisManager::GetInstance()->Set(ipKey, serverName);
+  OnlineUserManager::GetInstance()->MapUserSession(uid, session);
 
   return;
 }
 
-void ServiceSystem::SearchInfo(std::shared_ptr<ChatSession> session,
-                               const short &msg_id, const string &msg_data) {
+void ServiceSystem::SearchUser(std::shared_ptr<ChatSession> session,
+                               unsigned short msgID, const string &msgData) {
   Json::Reader reader;
   Json::Value root;
-  reader.parse(msg_data, root);
+  reader.parse(msgData, root);
   auto uid_str = root["uid"].asString();
   std::cout << "user SearchInfo uid is  " << uid_str << "\n";
 
   Json::Value rtvalue;
 
-  Defer defer([this, &rtvalue, session]() {
+  Defer defer([&rtvalue, session]() {
     std::string return_str = rtvalue.toStyledString();
     session->Send(return_str, ID_SEARCH_USER_RSP);
   });
 
-  bool b_digit = IsPureDigit(uid_str);
-  if (b_digit) {
-    GetUserByUid(uid_str, rtvalue);
-  } else {
-    GetUserByName(uid_str, rtvalue);
-  }
-  return;
+  // todo
 }
 
 void ServiceSystem::AddFriendApply(std::shared_ptr<ChatSession> session,
-                                   const short &msg_id,
-                                   const string &msg_data) {
+                                   unsigned short msgID,
+                                   const string &msgData) {
   Json::Reader reader;
   Json::Value root;
-  reader.parse(msg_data, root);
+  reader.parse(msgData, root);
+
   auto uid = root["uid"].asInt();
   auto applyname = root["applyname"].asString();
   auto bakname = root["bakname"].asString();
@@ -228,12 +223,12 @@ void ServiceSystem::AddFriendApply(std::shared_ptr<ChatSession> session,
 
   Json::Value rtvalue;
   rtvalue["error"] = ErrorCodes::Success;
-  Defer defer([this, &rtvalue, session]() {
+  Defer defer([&rtvalue, session]() {
     std::string return_str = rtvalue.toStyledString();
     session->Send(return_str, ID_ADD_FRIEND_RSP);
   });
 
-  MysqlManager::GetInstance()->AddFriendApply(uid, touid);
+  // MysqlManager::GetInstance()->AddFriendApply(uid, touid);
 
   auto to_str = std::to_string(touid);
   auto to_ip_key = PREFIX_REDIS_UIP + to_str;
@@ -243,10 +238,10 @@ void ServiceSystem::AddFriendApply(std::shared_ptr<ChatSession> session,
     return;
   }
 
-  auto &cfg = Configer::GetInstance();
-  auto self_name = cfg["SelfServer"]["Name"];
-  if (to_ip_value == self_name) {
-    auto session = UserManager::GetInstance()->GetSession(touid);
+  auto conf = Configer::getConfig("Server");
+  auto serverName = conf["SelfServer"]["Name"].as<std::string>();
+  if (to_ip_value == serverName) {
+    auto session = OnlineUserManager::GetInstance()->GetSession(touid);
     if (session) {
       Json::Value notify;
       notify["error"] = ErrorCodes::Success;
@@ -262,344 +257,109 @@ void ServiceSystem::AddFriendApply(std::shared_ptr<ChatSession> session,
 
   std::string base_key = PREFIX_REDIS_USER_INFO + std::to_string(uid);
   auto apply_info = std::make_shared<UserInfo>();
-  bool b_info = GetBaseInfo(base_key, uid, apply_info);
+  // bool b_info = GetBaseInfo(base_key, uid, apply_info);
 
-  AddFriendReq add_req;
-  add_req.set_applyuid(uid);
-  add_req.set_touid(touid);
-  add_req.set_name(applyname);
-  add_req.set_desc("");
-  if (b_info) {
-    add_req.set_icon(apply_info->icon);
-    add_req.set_sex(apply_info->sex);
-    add_req.set_nick(apply_info->nick);
-  }
+  // AddFriendReq add_req;
+  // add_req.set_applyuid(uid);
+  // add_req.set_touid(touid);
+  // add_req.set_name(applyname);
+  // add_req.set_desc("");
+  // if (b_info) {
+  //   add_req.set_icon(apply_info->icon);
+  //   add_req.set_sex(apply_info->sex);
+  //   add_req.set_nick(apply_info->nick);
+  // }
 
-  ChatGrpcClient::GetInstance()->NotifyAddFriend(to_ip_value, add_req);
+  // ChatGrpcClient::GetInstance()->NotifyAddFriend(to_ip_value, add_req);
 }
 
 void ServiceSystem::AuthFriendApply(std::shared_ptr<ChatSession> session,
-                                    const short &msg_id,
+                                    unsigned short msg_id,
                                     const string &msg_data) {
-  Json::Reader reader;
-  Json::Value root;
-  reader.parse(msg_data, root);
-
-  auto uid = root["fromuid"].asInt();
-  auto touid = root["touid"].asInt();
-  auto back_name = root["back"].asString();
-  std::cout << "from " << uid << " auth friend to " << touid << std::endl;
-
-  Json::Value rtvalue;
-  rtvalue["error"] = ErrorCodes::Success;
-  auto user_info = std::make_shared<UserInfo>();
-
-  std::string base_key = PREFIX_REDIS_USER_INFO + std::to_string(touid);
-  bool b_info = GetBaseInfo(base_key, touid, user_info);
-  if (b_info) {
-    rtvalue["name"] = user_info->name;
-    rtvalue["nick"] = user_info->nick;
-    rtvalue["icon"] = user_info->icon;
-    rtvalue["sex"] = user_info->sex;
-    rtvalue["uid"] = touid;
-  } else {
-    rtvalue["error"] = ErrorCodes::UidInvalid;
-  }
-
-  Defer defer([this, &rtvalue, session]() {
-    std::string return_str = rtvalue.toStyledString();
-    session->Send(return_str, ID_AUTH_FRIEND_RSP);
-  });
-
-  MysqlManager::GetInstance()->AuthFriendApply(uid, touid);
-
-  MysqlManager::GetInstance()->AddFriend(uid, touid, back_name);
-
-  auto to_str = std::to_string(touid);
-  auto to_ip_key = PREFIX_REDIS_UIP + to_str;
-  std::string to_ip_value = "";
-  bool b_ip = RedisManager::GetInstance()->Get(to_ip_key, to_ip_value);
-  if (!b_ip) {
-    return;
-  }
-
-  auto &cfg = Configer::GetInstance();
-  auto self_name = cfg["SelfServer"]["Name"];
-  if (to_ip_value == self_name) {
-    auto session = UserManager::GetInstance()->GetSession(touid);
-    if (session) {
-      Json::Value notify;
-      notify["error"] = ErrorCodes::Success;
-      notify["fromuid"] = uid;
-      notify["touid"] = touid;
-      std::string base_key = PREFIX_REDIS_USER_INFO + std::to_string(uid);
-      auto user_info = std::make_shared<UserInfo>();
-      bool b_info = GetBaseInfo(base_key, uid, user_info);
-      if (b_info) {
-        notify["name"] = user_info->name;
-        notify["nick"] = user_info->nick;
-        notify["icon"] = user_info->icon;
-        notify["sex"] = user_info->sex;
-      } else {
-        notify["error"] = ErrorCodes::UidInvalid;
-      }
-
-      std::string return_str = notify.toStyledString();
-      session->Send(return_str, ID_NOTIFY_AUTH_FRIEND_REQ);
-    }
-
-    return;
-  }
-
-  AuthFriendReq auth_req;
-  auth_req.set_fromuid(uid);
-  auth_req.set_touid(touid);
-
-  ChatGrpcClient::GetInstance()->NotifyAuthFriend(to_ip_value, auth_req);
+  // todo
 }
 
 void ServiceSystem::PushTextMessage(std::shared_ptr<ChatSession> session,
-                                    const short &msg_id,
-                                    const string &msg_data) {
-  Json::Reader reader;
-  Json::Value root;
-  reader.parse(msg_data, root);
+                                    unsigned short msgID,
+                                    const string &msgData) {
+  Json::Reader parser;
+  Json::Value req;
+  Json::Value rsp;
 
-  auto uid = root["from"].asInt();
-  auto touid = root["to"].asInt();
+  auto parseSuccess = parser.parse(msgData, req);
+  if (!parseSuccess) {
+    spdlog::error("[ServiceSystem::PushTextMessage] parse msg_data error!");
+    return;
+  }
 
-  const Json::Value arrays = root["message"];
+  auto from = req["from"].asInt();
+  auto to = req["to"].asInt();
+  Json::Value message = req["message"];
 
-  Json::Value rtvalue;
-  rtvalue["from"] = uid;
-  rtvalue["to"] = touid;
-  rtvalue["message"] = arrays;
-  rtvalue["error"] = ErrorCodes::Success;
+  rsp["notify"] = "ACK";
+  rsp["error"] = ErrorCodes::Success;
 
-  Defer defer([this, &rtvalue, session]() {
-    std::string return_str = rtvalue.toStyledString();
-    session->Send(return_str, ID_TEXT_CHAT_MSG_RSP);
+  Defer _([&rsp, session]() {
+    std::string rt = rsp.toStyledString();
+    session->Send(rt, ID_TEXT_CHAT_MSG_RSP);
   });
 
-  auto to_str = std::to_string(touid);
-  auto to_ip_key = PREFIX_REDIS_UIP + to_str;
-  std::string to_ip_value = "";
-  bool b_ip = RedisManager::GetInstance()->Get(to_ip_key, to_ip_value);
-  if (!b_ip) {
-    return;
+  std::string tmp{};
+  bool hasUser = RedisManager::GetInstance()->Get("online_user", tmp);
+  auto toSession = OnlineUserManager::GetInstance()->GetSession(to);
+  if (hasUser == true && toSession != nullptr) {
   }
+  // auto toIpK = PREFIX_REDIS_UIP + std::to_string(to);
+  // std::string toIpV = "";
+  // bool isExist = RedisManager::GetInstance()->Get(toIpK, toIpV);
+  // if (!isExist) {
+  //   spdlog::info("[ServiceSystem::PushTextMessage] no find this user ip!");
+  //   return;
+  // }
 
-  auto &cfg = Configer::GetInstance();
-  auto self_name = cfg["SelfServer"]["Name"];
+  // auto conf = Configer::getConfig("server");
 
-  if (to_ip_value == self_name) {
-    auto session = UserManager::GetInstance()->GetSession(touid);
-    if (session) {
-      std::string return_str = rtvalue.toStyledString();
-      session->Send(return_str, ID_NOTIFY_TEXT_CHAT_MSG_REQ);
-    }
+  // auto serverName = conf["selfServer"]["name"].as<std::string>();
 
-    return;
-  }
+  // if (toIpV == serverName) {
+  //   spdlog::info("In local server, recv msg, notify to client");
+  //   auto session = OnlineUserManager::GetInstance()->GetSession(to);
+  //   if (session) {
+  //     std::string return_str = rsp.toStyledString();
+  //     session->Send(return_str, ID_NOTIFY_PUSH_TEXT_MSG_REQ);
+  //   }
+  // }
 
-  TextChatMsgReq text_msg_req;
-  text_msg_req.set_fromuid(uid);
-  text_msg_req.set_touid(touid);
-  for (const auto &txt_obj : arrays) {
-    auto content = txt_obj["content"].asString();
-    auto msgid = txt_obj["msgid"].asString();
-    std::cout << "content is " << content << std::endl;
-    std::cout << "msgid is " << msgid << std::endl;
-    auto *text_msg = text_msg_req.add_textmsgs();
-    text_msg->set_msgid(msgid);
-    text_msg->set_msgcontent(content);
-  }
+  // spdlog::info("[ServiceSystem::PushTextMessage] this user ip maybe in other
+  // "
+  //              "server, rpc-forward to other server...");
 
-  ChatGrpcClient::GetInstance()->NotifyTextChatMsg(to_ip_value, text_msg_req,
-                                                   rtvalue);
+  // TextChatMsgReq rpcRequest;
+  // rpcRequest.set_fromuid(from);
+  // rpcRequest.set_touid(to);
+  // for (const auto &node : message) {
+  //   auto msgID = node["msgID"].asString();
+  //   auto text = node["text"].asString();
+  //   spdlog::info("[ServiceSystem::PushTextMessage] msgID is {}, text is {}",
+  //                msgID, text);
+
+  //   auto *text_msg = rpcRequest.add_textmsgs();
+  //   text_msg->set_msgid(msgID);
+  //   text_msg->set_msgcontent(text);
+  // }
+
+  // ChatGrpcClient::GetInstance()->NotifyTextChatMsg(toIpValue, rpcRequest,
+  //                                                  package);
 }
 
-bool ServiceSystem::IsPureDigit(const std::string &str) {
-  for (char c : str) {
-    if (!std::isdigit(c)) {
-      return false;
-    }
-  }
-  return true;
-}
+void ServiceSystem::OnlinePullHandler(std::shared_ptr<ChatSession> session,
+                                      unsigned short msgID,
+                                      const string &msgData) {
 
-void ServiceSystem::GetUserByUid(std::string uid_str, Json::Value &rtvalue) {
-  rtvalue["error"] = ErrorCodes::Success;
+  Json::Reader reader;
+  Json::Value root;
+  reader.parse(msgData, root);
 
-  std::string base_key = PREFIX_REDIS_USER_INFO + uid_str;
-
-  std::string info_str = "";
-  bool b_base = RedisManager::GetInstance()->Get(base_key, info_str);
-  if (b_base) {
-    Json::Reader reader;
-    Json::Value root;
-    reader.parse(info_str, root);
-    auto uid = root["uid"].asInt();
-    auto name = root["name"].asString();
-    auto pwd = root["pwd"].asString();
-    auto email = root["email"].asString();
-    auto nick = root["nick"].asString();
-    auto desc = root["desc"].asString();
-    auto sex = root["sex"].asInt();
-    auto icon = root["icon"].asString();
-    std::cout << "user  uid is  " << uid << " name  is " << name << " pwd is "
-              << pwd << " email is " << email << " icon is " << icon << "\n";
-
-    rtvalue["uid"] = uid;
-    rtvalue["pwd"] = pwd;
-    rtvalue["name"] = name;
-    rtvalue["email"] = email;
-    rtvalue["nick"] = nick;
-    rtvalue["desc"] = desc;
-    rtvalue["sex"] = sex;
-    rtvalue["icon"] = icon;
-    return;
-  }
-
-  auto uid = std::stoi(uid_str);
-  std::shared_ptr<UserInfo> user_info = nullptr;
-  user_info = MysqlManager::GetInstance()->GetUser(uid);
-  if (user_info == nullptr) {
-    rtvalue["error"] = ErrorCodes::UidInvalid;
-    return;
-  }
-
-  Json::Value redis_root;
-  redis_root["uid"] = user_info->uid;
-  redis_root["pwd"] = user_info->pwd;
-  redis_root["name"] = user_info->name;
-  redis_root["email"] = user_info->email;
-  redis_root["nick"] = user_info->nick;
-  redis_root["desc"] = user_info->desc;
-  redis_root["sex"] = user_info->sex;
-  redis_root["icon"] = user_info->icon;
-
-  RedisManager::GetInstance()->Set(base_key, redis_root.toStyledString());
-
-  rtvalue["uid"] = user_info->uid;
-  rtvalue["pwd"] = user_info->pwd;
-  rtvalue["name"] = user_info->name;
-  rtvalue["email"] = user_info->email;
-  rtvalue["nick"] = user_info->nick;
-  rtvalue["desc"] = user_info->desc;
-  rtvalue["sex"] = user_info->sex;
-  rtvalue["icon"] = user_info->icon;
-}
-
-void ServiceSystem::GetUserByName(std::string name, Json::Value &rtvalue) {
-  rtvalue["error"] = ErrorCodes::Success;
-
-  std::string base_key = PREFIX_REDIS_NAME_INFO + name;
-
-  std::string info_str = "";
-  bool b_base = RedisManager::GetInstance()->Get(base_key, info_str);
-  if (b_base) {
-    Json::Reader reader;
-    Json::Value root;
-    reader.parse(info_str, root);
-    auto uid = root["uid"].asInt();
-    auto name = root["name"].asString();
-    auto pwd = root["pwd"].asString();
-    auto email = root["email"].asString();
-    auto nick = root["nick"].asString();
-    auto desc = root["desc"].asString();
-    auto sex = root["sex"].asInt();
-    std::cout << "user  uid is  " << uid << " name  is " << name << " pwd is "
-              << pwd << " email is " << email << "\n";
-
-    rtvalue["uid"] = uid;
-    rtvalue["pwd"] = pwd;
-    rtvalue["name"] = name;
-    rtvalue["email"] = email;
-    rtvalue["nick"] = nick;
-    rtvalue["desc"] = desc;
-    rtvalue["sex"] = sex;
-    return;
-  }
-
-  std::shared_ptr<UserInfo> user_info = nullptr;
-  user_info = MysqlManager::GetInstance()->GetUser(name);
-  if (user_info == nullptr) {
-    rtvalue["error"] = ErrorCodes::UidInvalid;
-    return;
-  }
-
-  Json::Value redis_root;
-  redis_root["uid"] = user_info->uid;
-  redis_root["pwd"] = user_info->pwd;
-  redis_root["name"] = user_info->name;
-  redis_root["email"] = user_info->email;
-  redis_root["nick"] = user_info->nick;
-  redis_root["desc"] = user_info->desc;
-  redis_root["sex"] = user_info->sex;
-
-  RedisManager::GetInstance()->Set(base_key, redis_root.toStyledString());
-
-  rtvalue["uid"] = user_info->uid;
-  rtvalue["pwd"] = user_info->pwd;
-  rtvalue["name"] = user_info->name;
-  rtvalue["email"] = user_info->email;
-  rtvalue["nick"] = user_info->nick;
-  rtvalue["desc"] = user_info->desc;
-  rtvalue["sex"] = user_info->sex;
-}
-
-bool ServiceSystem::GetBaseInfo(std::string base_key, int uid,
-                                std::shared_ptr<UserInfo> &userinfo) {
-  std::string info_str = "";
-  bool b_base = RedisManager::GetInstance()->Get(base_key, info_str);
-  if (b_base) {
-    Json::Reader reader;
-    Json::Value root;
-    reader.parse(info_str, root);
-    userinfo->uid = root["uid"].asInt();
-    userinfo->name = root["name"].asString();
-    userinfo->pwd = root["pwd"].asString();
-    userinfo->email = root["email"].asString();
-    userinfo->nick = root["nick"].asString();
-    userinfo->desc = root["desc"].asString();
-    userinfo->sex = root["sex"].asInt();
-    userinfo->icon = root["icon"].asString();
-    std::cout << "user login uid is  " << userinfo->uid << " name  is "
-              << userinfo->name << " pwd is " << userinfo->pwd << " email is "
-              << userinfo->email << "\n";
-  } else {
-    std::shared_ptr<UserInfo> user_info = nullptr;
-    user_info = MysqlManager::GetInstance()->GetUser(uid);
-    if (user_info == nullptr) {
-      return false;
-    }
-
-    userinfo = user_info;
-
-    Json::Value redis_root;
-    redis_root["uid"] = uid;
-    redis_root["pwd"] = userinfo->pwd;
-    redis_root["name"] = userinfo->name;
-    redis_root["email"] = userinfo->email;
-    redis_root["nick"] = userinfo->nick;
-    redis_root["desc"] = userinfo->desc;
-    redis_root["sex"] = userinfo->sex;
-    redis_root["icon"] = userinfo->icon;
-    RedisManager::GetInstance()->Set(base_key, redis_root.toStyledString());
-
-    b_base = true;
-  }
-
-  return b_base;
-}
-
-bool ServiceSystem::GetFriendApplyInfo(
-    int to_uid, std::vector<std::shared_ptr<ApplyInfo>> &list) {
-  return MysqlManager::GetInstance()->GetApplyList(to_uid, list, 0, 10);
-}
-
-bool ServiceSystem::GetFriendList(
-    int self_id, std::vector<std::shared_ptr<UserInfo>> &user_list) {
-  return MysqlManager::GetInstance()->GetFriendList(self_id, user_list);
+  auto uid = root["uid"].asInt();
+  // todo: online pull logic
 }

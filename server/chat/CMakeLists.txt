@@ -38,10 +38,15 @@ set(_SPDLOG spdlog)
 set(_YAML yaml-cpp)
 
 # 添加可执行文件和源文件
-file(GLOB SOURCES_SERVICE ${CMAKE_CURRENT_SOURCE_DIR}/src/service/*.cpp)
-file(GLOB SOURCES_UTIL ${CMAKE_CURRENT_SOURCE_DIR}/src/util/*.cpp)
-file(GLOB PBSOURCES ${CMAKE_CURRENT_SOURCE_DIR}/rpc/*.cc)
-
+file(GLOB SOURCES_SERVICE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/service/*.cpp
+)
+file(GLOB SOURCES_BASE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/util/*.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/base/*.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/rpc/*.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp
+)
 
 # TODO, 启用asio中io_uring选项
 # add_definitions(-DASIO_HAS_IO_URING)
@@ -49,8 +54,7 @@ file(GLOB PBSOURCES ${CMAKE_CURRENT_SOURCE_DIR}/rpc/*.cc)
 
 add_executable(ChatServer 
         ${SOURCES_SERVICE}
-        ${PBSOURCES}
-        ${SOURCES_UTIL})
+        ${SOURCES_BASE})
 
 target_include_directories(ChatServer PUBLIC
     ${_DIR_JSONCPP}

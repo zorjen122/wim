@@ -5,74 +5,70 @@
 
 #include "ChatServer.h"
 #include "ChatSession.h"
-#include "ConfigManager.h"
-#include "IOServicePool.h"
+#include "Configer.h"
+#include "IocPool.h"
 #include "MysqlManager.h"
 #include "RedisManager.h"
-#include "RpcChatService.h"
+#include "RpcServer.h"
 
-void poolInit() {
-  RedisManager::GetInstance();
-  MysqlManager::GetInstance();
-  // ServicePool::GetInstance();
-}
+#include <spdlog/spdlog.h>
 
 std::unique_ptr<grpc::Server> rpcStartServer(const std::string &rpcAddress) {
-  ChatServiceImpl service;
+  // ChatServiceImpl service;
   grpc::ServerBuilder builder;
 
   // 监听端口和添加服务
   builder.AddListeningPort(rpcAddress, grpc::InsecureServerCredentials());
-  builder.RegisterService(&service);
+  // builder.RegisterService(&service);
 
   // 构建并启动gRPC服务器
   std::unique_ptr<grpc::Server> rpcServer(builder.BuildAndStart());
-  std::cout << "RPC Server listening on " << rpcAddress << "\n";
-
+  spdlog::info("RPC Server starting on " + rpcAddress);
   return rpcServer;
 }
 
 int main() {
-  auto existConfig = ConfigManager::loadConfig("../config.yaml");
+  auto existConfig = Configer::loadConfig("../config.yaml");
   if (!existConfig) {
     spdlog::error("Config load failed");
     return 0;
   }
 
-  auto config = ConfigManager::getConfig("Server");
-  if(!config || !config["Self"])
-  {
-    spdlog::error("Self config not found");
+  auto config = Configer::getConfig("server");
+  if (!config || !config["self"]) {
+    spdlog::error("self config not found");
     return 0;
   }
-  std::string rpcAddress =
-      config["Self"]["Host"].as<std::string>() 
-      + ":" 
-      + config["Self"]["RpcPort"].as<std::string>();
-    std::string server_name = config["Self"]["Name"].as<std::string>();
+  std::string rpcAddress = config["self"]["host"].as<std::string>() + ":" +
+                           config["self"]["rpcPort"].as<std::string>();
+  std::string server_name = config["self"]["name"].as<std::string>();
 
-    spdlog::info("Server started on name: {}", server_name);
-    spdlog::info("Server started on host: {}", config["Self"]["Host"].as<std::string>());
-    spdlog::info("Server started on port: {}", config["Self"]["Port"].as<std::string>());
-    spdlog::info("Server started on rpc port: {}", config["Self"]["RpcPort"].as<std::string>());
+  spdlog::info("Server started on name: {}", server_name);
+  spdlog::info("Server started on host: {}",
+               config["self"]["host"].as<std::string>());
+  spdlog::info("Server started on port: {}",
+               config["self"]["port"].as<std::string>());
+  spdlog::info("Server started on rpc port: {}",
+               config["self"]["rpcPort"].as<std::string>());
 
   try {
-    poolInit();
+    RedisManager::GetInstance();
+    MysqlManager::GetInstance();
 
     auto rpcServer = rpcStartServer(rpcAddress);
-    auto server_pool = ServicePool::GetInstance();
+    auto serverPool = IoContextPool::GetInstance();
 
     boost::asio::io_context ioContext;
     boost::asio::signal_set signals(ioContext, SIGINT, SIGTERM);
-    signals.async_wait([&ioContext, &server_pool, &rpcServer](auto, auto) {
+    signals.async_wait([&ioContext, &serverPool, &rpcServer](auto, auto) {
       ioContext.stop();
-      server_pool->Stop();
+      serverPool->Stop();
       rpcServer->Shutdown();
     });
 
     std::thread rpcThread([&rpcServer]() { rpcServer->Wait(); });
 
-    auto port = config["Self"]["Port"].as<std::string>();
+    auto port = config["self"]["port"].as<std::string>();
     std::shared_ptr<ChatServer> server(
         new ChatServer(ioContext, atoi(port.c_str())));
 
@@ -84,7 +80,7 @@ int main() {
                                       server_name);
     RedisManager::GetInstance()->Close();
   } catch (std::exception &e) {
-    std::cerr << "Exception: " << e.what() << endl;
+    spdlog::error("Exception: {}", e.what());
     RedisManager::GetInstance()->HDel(PREFIX_REDIS_USER_ACTIVE_COUNT,
                                       server_name);
     RedisManager::GetInstance()->Close();

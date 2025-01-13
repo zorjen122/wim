@@ -9,12 +9,10 @@ namespace protocol
 
 	SendPackage::SendPackage(const char *msg, short max_len, short msg_id) : Package(max_len + PACKAGE_TOTAL_LEN), id(msg_id)
 	{
-		// �ȷ���id, תΪ�����ֽ���
-		short msg_id_host = boost::asio::detail::socket_ops::host_to_network_short(msg_id);
-		memcpy(data, &msg_id_host, PACKAGE_ID_LEN);
-		// תΪ�����ֽ���
-		short max_len_host = boost::asio::detail::socket_ops::host_to_network_short(max_len);
-		memcpy(data + PACKAGE_ID_LEN, &max_len_host, PACKAGE_DATA_LEN);
+		short msgID = boost::asio::detail::socket_ops::host_to_network_short(msg_id);
+		memcpy(data, &msgID, PACKAGE_ID_LEN);
+		short msgTotal = boost::asio::detail::socket_ops::host_to_network_short(max_len);
+		memcpy(data + PACKAGE_ID_LEN, &msgTotal, PACKAGE_DATA_LEN);
 		memcpy(data + PACKAGE_ID_LEN + PACKAGE_DATA_LEN, msg, max_len);
 	}
 

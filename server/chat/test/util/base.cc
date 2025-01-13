@@ -1,4 +1,10 @@
 #include "base.h"
+#include "json/reader.h"
+#include <boost/asio/detail/socket_ops.hpp>
+#include <boost/asio/read.hpp>
+#include <boost/asio/registered_buffer.hpp>
+#include <boost/system/detail/error_code.hpp>
+#include <cassert>
 #include <cstring>
 
 
@@ -20,7 +26,7 @@ Json::Value buildRegPackage() {
   return pack;
 }
 
-std::shared_ptr<net::ip::tcp::socket> startChatServer(net::io_context& io_context,const std::string &host, const std::string &port)
+std::shared_ptr<net::ip::tcp::socket> startChatClient(net::io_context& io_context,const std::string &host, const std::string &port)
 {
     boost::system::error_code ec;
 
@@ -45,8 +51,8 @@ std::shared_ptr<net::ip::tcp::socket> startChatServer(net::io_context& io_contex
   return socket;
 }
 
-void pushService(std::shared_ptr<net::ip::tcp::socket> socket,
-                 short serviceID, const std::string &message, int fromID,
+void pushMessage(std::shared_ptr<net::ip::tcp::socket> socket,
+                 unsigned short serviceID, const std::string &message, int fromID,
                  int toID) {
   try {
     Json::Value data;
@@ -54,12 +60,11 @@ void pushService(std::shared_ptr<net::ip::tcp::socket> socket,
     data["to"] = toID;
     data["message"] = message;
     auto package = data.toStyledString();
-    short packageSize = package.size(); 
-    serviceID = boost::asio::detail::socket_ops::network_to_host_short(serviceID);
-    packageSize = boost::asio::detail::socket_ops::network_to_host_short(packageSize);
+    serviceID = boost::asio::detail::socket_ops::host_to_network_short(serviceID);
+    auto packageSize = boost::asio::detail::socket_ops::host_to_network_short(package.size());
     
 
-    spdlog::info("[fromID {} -> toID {}] | message: {}, packageSize: {}", fromID, toID, message, packageSize);
+    spdlog::info("[fromID {} -> toID {}] | message: {}, packageSize: {}", fromID, toID, message, package.size());
 
     char servicePackage[4096];  // 2 字节 serviceID + 2 字节 packageSize = 4 字节
     memset(servicePackage, 0, 4096);
@@ -67,16 +72,40 @@ void pushService(std::shared_ptr<net::ip::tcp::socket> socket,
     // 将 serviceID (2 字节) 和 packageSize (2 字节) 写入 buf 中
     memcpy(servicePackage, &serviceID, 2);  // 将 serviceID 的 2 字节复制到 buf
     memcpy(servicePackage + 2, &packageSize, 2);  
-    memcpy(servicePackage + 4, package.c_str(), packageSize);
+    memcpy(servicePackage + 4, package.c_str(), package.size());
 
 
-    net::write(*socket, net::buffer(servicePackage, packageSize + 4));
+    net::write(*socket, net::buffer(servicePackage, package.size() + 4));
 
     spdlog::info("[service-package] {}",std::string(servicePackage));
   } catch (const std::exception &e) {
     spdlog::error("Error: {} ", e.what());
   }
 } // namespace test
+
+void recviceMessage(std::shared_ptr<net::ip::tcp::socket> socket)
+{
+  unsigned short id = 0, total = 0;
+
+  char headBuf[4] = {};
+
+  auto rt = socket->receive(net::buffer(headBuf, 4));
+
+  assert(rt == 4);
+
+  memcpy(&id, headBuf, 2);
+  memcpy(&total, headBuf + 2, 2);
+  boost::asio::detail::socket_ops::network_to_host_short(id);
+  boost::asio::detail::socket_ops::network_to_host_short(total);
+  spdlog::info("recvice message [id: {}, total: {}]", id, total);
+
+  std::string bodyBuf(total, '\0');
+  rt = socket->receive(net::buffer(bodyBuf.data(), bodyBuf.size()));
+
+  assert(rt == total);
+
+  spdlog::info("recvice message [body : {}]", id, total, bodyBuf);
+}
 
 void login(int uid) {
 
@@ -153,6 +182,12 @@ void login(int uid) {
   auto host = ret["host"].toStyledString();
   auto port = ret["port"].toStyledString();
 
+  if(host.empty() || port.empty())
+  {
+    spdlog::error("[login] host or port have not such value");
+    return;
+  }
+  
   userManager[uid].host = host;
   userManager[uid].port = port;
 

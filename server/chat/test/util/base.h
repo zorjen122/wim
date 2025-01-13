@@ -43,11 +43,14 @@ namespace base {
   extern UserManager userManager;
 
   Json::Value buildRegPackage();
-  std::shared_ptr<net::ip::tcp::socket> startChatServer(net::io_context& io_context,const std::string &host, const std::string &port);
+  std::shared_ptr<net::ip::tcp::socket> startChatClient(net::io_context& io_context,const std::string &host, const std::string &port);
 
-  void pushService(std::shared_ptr<net::ip::tcp::socket> sock,
-                  short serviceID, const std::string &message, int fromID,
+  void pushMessage(std::shared_ptr<net::ip::tcp::socket> socket,
+                  unsigned short serviceID, const std::string &message, int fromID,
                   int toID);
+  void recviceMessage(std::shared_ptr<net::ip::tcp::socket> socket);
+
+
   void login(int uid) ;
   void reg(int count) ;
 };
