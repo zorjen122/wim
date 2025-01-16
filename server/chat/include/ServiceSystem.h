@@ -18,33 +18,33 @@ class ServiceSystem : public Singleton<ServiceSystem> {
 
 public:
   using HandleType = std::function<void(std::shared_ptr<ChatSession>,
-                                        unsigned short, const string &)>;
+                                        unsigned short, const std::string &)>;
 
   ~ServiceSystem();
   void PushService(std::shared_ptr<protocol::LogicPackage> package);
 
 private:
   ServiceSystem();
-  void run();
+  void Run();
   void Init();
   void WeachKeepAlive();
 
   void PingKeepAlive(std::shared_ptr<ChatSession> session, unsigned short msgID,
-                     const string &msgData);
+                     const std::string &msgData);
   void LoginHandler(std::shared_ptr<ChatSession> session, unsigned short msgID,
-                    const string &msgData);
+                    const std::string &msgData);
 
   void OnlinePullHandler(std::shared_ptr<ChatSession> session,
-                         unsigned short msgID, const string &msgData);
+                         unsigned short msgID, const std::string &msgData);
 
   void SearchUser(std::shared_ptr<ChatSession> session, unsigned short msgID,
-                  const string &msg_data);
+                  const std::string &msg_data);
   void AddFriendApply(std::shared_ptr<ChatSession> session,
-                      unsigned short msgID, const string &msg_data);
+                      unsigned short msgID, const std::string &msg_data);
   void AuthFriendApply(std::shared_ptr<ChatSession> session,
-                       unsigned short msg_id, const string &msgData);
+                       unsigned short msg_id, const std::string &msgData);
   void PushTextMessage(std::shared_ptr<ChatSession> session,
-                       unsigned short msg_id, const string &msgData);
+                       unsigned short msg_id, const std::string &msgData);
 
   bool IsPureDigit(const std::string &str);
   void GetUserByUid(std::string uid_str, Json::Value &rtvalue);

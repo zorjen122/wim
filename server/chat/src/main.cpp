@@ -54,37 +54,59 @@ int main() {
   try {
     RedisManager::GetInstance();
     MysqlManager::GetInstance();
-
-    auto rpcServer = rpcStartServer(rpcAddress);
-    auto serverPool = IoContextPool::GetInstance();
-
-    boost::asio::io_context ioContext;
-    boost::asio::signal_set signals(ioContext, SIGINT, SIGTERM);
-    signals.async_wait([&ioContext, &serverPool, &rpcServer](auto, auto) {
-      ioContext.stop();
-      serverPool->Stop();
-      rpcServer->Shutdown();
-    });
-
-    std::thread rpcThread([&rpcServer]() { rpcServer->Wait(); });
+    net::io_context ioc;
+    auto serverPool = IocPool::GetInstance();
 
     auto port = config["self"]["port"].as<std::string>();
-    std::shared_ptr<ChatServer> server(
-        new ChatServer(ioContext, atoi(port.c_str())));
-
+    std::shared_ptr<ChatServer> server(new ChatServer(ioc, atoi(port.c_str())));
+    net::signal_set signals(ioc, SIGINT, SIGTERM);
+    signals.async_wait([&ioc, &serverPool](auto, auto) {
+      ioc.stop();
+      serverPool->Stop();
+    });
     server->Start();
-    ioContext.run();
-
-    rpcThread.join();
-    RedisManager::GetInstance()->HDel(PREFIX_REDIS_USER_ACTIVE_COUNT,
-                                      server_name);
-    RedisManager::GetInstance()->Close();
+    ioc.run();
   } catch (std::exception &e) {
     spdlog::error("Exception: {}", e.what());
     RedisManager::GetInstance()->HDel(PREFIX_REDIS_USER_ACTIVE_COUNT,
                                       server_name);
     RedisManager::GetInstance()->Close();
   }
+
+  // try {
+  //   RedisManager::GetInstance();
+  //   MysqlManager::GetInstance();
+
+  //   auto rpcServer = rpcStartServer(rpcAddress);
+  //   auto serverPool = IocPool::GetInstance();
+
+  //   boost::asio::io_context ioContext;
+  //   boost::asio::signal_set signals(ioContext, SIGINT, SIGTERM);
+  //   signals.async_wait([&ioContext, &serverPool, &rpcServer](auto, auto) {
+  //     ioContext.stop();
+  //     serverPool->Stop();
+  //     rpcServer->Shutdown();
+  //   });
+
+  //   std::thread rpcThread([&rpcServer]() { rpcServer->Wait(); });
+
+  //   auto port = config["self"]["port"].as<std::string>();
+  //   std::shared_ptr<ChatServer> server(
+  //       new ChatServer(ioContext, atoi(port.c_str())));
+
+  //   server->Start();
+  //   ioContext.run();
+
+  //   rpcThread.join();
+  //   RedisManager::GetInstance()->HDel(PREFIX_REDIS_USER_ACTIVE_COUNT,
+  //                                     server_name);
+  //   RedisManager::GetInstance()->Close();
+  // } catch (std::exception &e) {
+  //   spdlog::error("Exception: {}", e.what());
+  //   RedisManager::GetInstance()->HDel(PREFIX_REDIS_USER_ACTIVE_COUNT,
+  //                                     server_name);
+  //   RedisManager::GetInstance()->Close();
+  // }
 
   return 0;
 }

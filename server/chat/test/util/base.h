@@ -1,4 +1,4 @@
-#pragma  once
+#pragma once
 
 #include <json/reader.h>
 #include <json/value.h>
@@ -33,24 +33,24 @@ namespace beast = boost::beast;      // 从 Boost.Beast 中引入别名
 namespace http = boost::beast::http; // 使用 HTTP 模块
 namespace net = boost::asio;         // 使用 Asio 库的网络模块
 
-
 #define PASSWORD "rootroot";
-#define ID_PUSH_TEXT_MESSAGE 1017
+#define ID_PUSH_TEXT_MESSAGE 1020
+#define ID_ACK_MESSAGE 0xff33
 
-using tcp = net::ip::tcp;            // TCP/IP 协议
+using tcp = net::ip::tcp; // TCP/IP 协议
 
 namespace base {
-  extern UserManager userManager;
+extern UserManager userManager;
 
-  Json::Value buildRegPackage();
-  std::shared_ptr<net::ip::tcp::socket> startChatClient(net::io_context& io_context,const std::string &host, const std::string &port);
+Json::Value buildRegPackage();
+std::shared_ptr<net::ip::tcp::socket>
+startChatClient(net::io_context &io_context, const std::string &host,
+                const std::string &port);
 
-  void pushMessage(std::shared_ptr<net::ip::tcp::socket> socket,
-                  unsigned short serviceID, const std::string &message, int fromID,
-                  int toID);
-  void recviceMessage(std::shared_ptr<net::ip::tcp::socket> socket);
+void pushMessage(std::shared_ptr<net::ip::tcp::socket> socket,
+                 unsigned short serviceID, const std::string &package);
+std::string recviceMessage(std::shared_ptr<net::ip::tcp::socket> socket);
 
-
-  void login(int uid) ;
-  void reg(int count) ;
-};
+void login(int uid);
+void reg(int count);
+}; // namespace base

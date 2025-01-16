@@ -8,7 +8,7 @@ RedisManager::RedisManager() {
   auto conf = Configer::getConfig("server");
   auto host = conf["redis"]["host"].as<std::string>();
   auto port = conf["redis"]["port"].as<std::string>();
-  auto passwd = conf["redis"]["passwd"].as<std::string>();
+  auto passwd = conf["redis"]["password"].as<std::string>();
   pool.reset(new RedisPool(5, host, std::stoi(port), passwd));
 }
 

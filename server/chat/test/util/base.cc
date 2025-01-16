@@ -7,9 +7,8 @@
 #include <cassert>
 #include <cstring>
 
-
 namespace base {
-  UserManager userManager{};
+UserManager userManager{};
 
 Json::Value buildRegPackage() {
   Json::Value pack;
@@ -26,65 +25,61 @@ Json::Value buildRegPackage() {
   return pack;
 }
 
-std::shared_ptr<net::ip::tcp::socket> startChatClient(net::io_context& io_context,const std::string &host, const std::string &port)
-{
-    boost::system::error_code ec;
+std::shared_ptr<net::ip::tcp::socket>
+startChatClient(net::io_context &io_context, const std::string &host,
+                const std::string &port) {
+  boost::system::error_code ec;
 
   std::string server_address = host;               // 服务器地址
-    unsigned short server_port = atoi(port.c_str()); // 服务器端口
+  unsigned short server_port = atoi(port.c_str()); // 服务器端口
 
-    // 创建 TCP 协议的 socket
-    std::shared_ptr<net::ip::tcp::socket> socket(new net::ip::tcp::socket(io_context));
+  // 创建 TCP 协议的 socket
+  std::shared_ptr<net::ip::tcp::socket> socket(
+      new net::ip::tcp::socket(io_context));
 
-    // 解析目标地址
-    net::ip::tcp::endpoint endpoint(net::ip::make_address(server_address),
-                                    server_port);
+  // 解析目标地址
+  net::ip::tcp::endpoint endpoint(net::ip::make_address(server_address),
+                                  server_port);
 
-    // 连接到服务器
-    socket->connect(endpoint, ec);
-    if (ec) {
-      spdlog::error("connect is wrong!");
-      return nullptr;
-    }
+  // 连接到服务器
+  socket->connect(endpoint, ec);
+  if (ec) {
+    spdlog::error("connect is wrong!");
+    return nullptr;
+  }
 
-    spdlog::info( "connect im-server is success |  {} : {} ",host, port);
+  spdlog::info("connect im-server is success |  {} : {} ", host, port);
   return socket;
 }
 
 void pushMessage(std::shared_ptr<net::ip::tcp::socket> socket,
-                 unsigned short serviceID, const std::string &message, int fromID,
-                 int toID) {
+                 unsigned short serviceID, const std::string &package) {
   try {
     Json::Value data;
-    data["from"] = fromID;
-    data["to"] = toID;
-    data["message"] = message;
-    auto package = data.toStyledString();
-    serviceID = boost::asio::detail::socket_ops::host_to_network_short(serviceID);
-    auto packageSize = boost::asio::detail::socket_ops::host_to_network_short(package.size());
-    
+    serviceID =
+        boost::asio::detail::socket_ops::host_to_network_short(serviceID);
+    auto packageSize =
+        boost::asio::detail::socket_ops::host_to_network_short(package.size());
 
-    spdlog::info("[fromID {} -> toID {}] | message: {}, packageSize: {}", fromID, toID, message, package.size());
+    spdlog::info("[package: {}, packageSize: {}", package, package.size());
 
-    char servicePackage[4096];  // 2 字节 serviceID + 2 字节 packageSize = 4 字节
+    char servicePackage[4096]; // 2 字节 serviceID + 2 字节 packageSize = 4 字节
     memset(servicePackage, 0, 4096);
 
     // 将 serviceID (2 字节) 和 packageSize (2 字节) 写入 buf 中
-    memcpy(servicePackage, &serviceID, 2);  // 将 serviceID 的 2 字节复制到 buf
-    memcpy(servicePackage + 2, &packageSize, 2);  
+    memcpy(servicePackage, &serviceID, 2); // 将 serviceID 的 2 字节复制到 buf
+    memcpy(servicePackage + 2, &packageSize, 2);
     memcpy(servicePackage + 4, package.c_str(), package.size());
-
 
     net::write(*socket, net::buffer(servicePackage, package.size() + 4));
 
-    spdlog::info("[service-package] {}",std::string(servicePackage));
+    spdlog::info("[service-package] {}", std::string(servicePackage));
   } catch (const std::exception &e) {
     spdlog::error("Error: {} ", e.what());
   }
 } // namespace test
 
-void recviceMessage(std::shared_ptr<net::ip::tcp::socket> socket)
-{
+std::string recviceMessage(std::shared_ptr<net::ip::tcp::socket> socket) {
   unsigned short id = 0, total = 0;
 
   char headBuf[4] = {};
@@ -105,6 +100,8 @@ void recviceMessage(std::shared_ptr<net::ip::tcp::socket> socket)
   assert(rt == total);
 
   spdlog::info("recvice message [body : {}]", id, total, bodyBuf);
+
+  return bodyBuf;
 }
 
 void login(int uid) {
@@ -173,8 +170,7 @@ void login(int uid) {
   Json::Reader reader;
   Json::Value ret;
   bool parserSuccess = reader.parse(rsp, ret);
-  if(!parserSuccess)
-  {
+  if (!parserSuccess) {
     spdlog::error("[login] parser is wrong");
     return;
   }
@@ -182,12 +178,11 @@ void login(int uid) {
   auto host = ret["host"].toStyledString();
   auto port = ret["port"].toStyledString();
 
-  if(host.empty() || port.empty())
-  {
+  if (host.empty() || port.empty()) {
     spdlog::error("[login] host or port have not such value");
     return;
   }
-  
+
   userManager[uid].host = host;
   userManager[uid].port = port;
 
@@ -252,4 +247,4 @@ void reg(int count) {
     std::cerr << "Error: " << e.what() << std::endl;
   }
 }
-}; // namespace test
+}; // namespace base

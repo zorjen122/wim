@@ -1,7 +1,7 @@
 ﻿#include "IocPool.h"
 #include "spdlog/spdlog.h"
 
-IoContextPool::IoContextPool(std::size_t size) : iocGroup(size), worker(size) {
+IocPool::IocPool(std::size_t size) : iocGroup(size), worker(size) {
   for (std::size_t i = 0; i < size; ++i)
     worker[i] = std::unique_ptr<Work>(new Work(iocGroup[i]));
 
@@ -9,12 +9,12 @@ IoContextPool::IoContextPool(std::size_t size) : iocGroup(size), worker(size) {
     threadGroup.emplace_back([this, i]() { iocGroup[i].run(); });
 }
 
-IoContextPool::~IoContextPool() {
+IocPool::~IocPool() {
   spdlog::info("ServicePool::~ServicePool");
   Stop();
 }
 
-boost::asio::io_context &IoContextPool::GetContext() {
+boost::asio::io_context &IocPool::GetContext() {
   static size_t currentIoc = 0;
   auto &ioc = iocGroup[currentIoc++];
   currentIoc = currentIoc % iocGroup.size();
@@ -22,7 +22,7 @@ boost::asio::io_context &IoContextPool::GetContext() {
   return ioc;
 }
 
-void IoContextPool::Stop() {
+void IocPool::Stop() {
   // work 析构不会连带关闭控制的iocontext
   for (auto &work : worker) {
     work->get_io_context().stop();

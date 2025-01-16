@@ -1,6 +1,8 @@
 #include "ChatSession.h"
 
 #include "json/value.h"
+#include <boost/asio/io_context.hpp>
+#include <mutex>
 #include <spdlog/spdlog.h>
 #include <string>
 
@@ -8,44 +10,43 @@
 #include "Const.h"
 #include "ServiceSystem.h"
 
-ChatSession::ChatSession(boost::asio::io_context &ioContext, ChatServer *server)
-    : Timer(ioContext, 5), sock(ioContext), chatServer(server),
-      closeEnable(false), _serviceUID(0) {
-
-  auto id = boost::uuids::random_generator()();
-  sessionID = boost::uuids::to_string(id);
+ChatSession::ChatSession(boost::asio::io_context &ioContext, ChatServer *server,
+                         size_t id)
+    : sock(ioContext), id(id), chatServer(server), closeEnable(false),
+      ioc(ioContext) {
+  spdlog::info("ChatSession construct, sessionID is {}", id);
 }
 
 ChatSession::~ChatSession() { spdlog::info("~ChatSession destruct"); }
 
 void ChatSession::Start() { ReceiveHead(PACKAGE_TOTAL_LEN); }
 
-bool ChatSession::resetHandle() {
-  if (_hasPing) {
-    Json::Value rsp;
-    rsp["error"] = ErrorCodes::Success;
-    rsp["message"] = "pong";
-    std::string data = rsp.toStyledString();
-    Send(data, ID_PING_PONG_RSP);
+// bool ChatSession::resetHandle() {
+//   if (_hasPing) {
+//     Json::Value rsp;
+//     rsp["error"] = ErrorCodes::Success;
+//     rsp["message"] = "pong";
+//     std::string data = rsp.toStyledString();
+//     Send(data, ID_PING_PONG_RSP);
 
-    _hasPing = false;
+//     _hasPing = false;
 
-    return true;
-  }
-  return false;
-}
+//     return true;
+//   }
+//   return false;
+// }
 
-void ChatSession::tickleHandle() {
-  Close();
-  chatServer->ClearSession(sessionID);
-}
+// void ChatSession::tickleHandle() {
+//   Close();
+//   chatServer->ClearSession(sessionID);
+// }
 
 void ChatSession::Send(char *msgData, short maxSize, short msgID) {
 
   std::lock_guard<std::mutex> lock(_sendMutex);
   auto senderSize = sender.size();
   if (senderSize > MAX_SEND_QUEUE_LEN) {
-    spdlog::error("session: {} send que fulled, size is {}", sessionID,
+    spdlog::error("session: {} send que fulled, size is {}", id,
                   MAX_SEND_QUEUE_LEN);
     return;
   }
@@ -56,6 +57,8 @@ void ChatSession::Send(char *msgData, short maxSize, short msgID) {
 
   // 按<id, total, data>协议回包
   auto &package = sender.front();
+
+  // 写入操作会发送完整的包数据
   boost::asio::async_write(
       sock, boost::asio::buffer(package->data, package->total),
       std::bind(&ChatSession::HandleWrite, this, std::placeholders::_1,
@@ -72,7 +75,7 @@ void ChatSession::Close() {
 }
 
 void ChatSession::ReceiveBody(size_t size) {
-  ::memset(_data, 0, PACKAGE_MAX_LENGTH);
+  ::memset(packageBuf, 0, PACKAGE_MAX_LENGTH);
 
   auto self = shared_from_this();
   asyncReadFull(size, [self, this, size](const boost::system::error_code &ec,
@@ -83,7 +86,7 @@ void ChatSession::ReceiveBody(size_t size) {
             "[ChatSession::ReceivePackageBody] handle read failed, error is {}",
             ec.what());
         Close();
-        chatServer->ClearSession(sessionID);
+        chatServer->ClearSession(id);
         return;
       }
 
@@ -92,19 +95,16 @@ void ChatSession::ReceiveBody(size_t size) {
                      "read [{}] , total [{}]",
                      bytesTransfered, size);
         Close();
-        chatServer->ClearSession(sessionID);
+        chatServer->ClearSession(id);
         return;
       }
 
-      memcpy(packageNode->data, _data, bytesTransfered);
+      memcpy(packageNode->data, packageBuf, bytesTransfered);
       packageNode->cur += bytesTransfered;
       packageNode->data[packageNode->total] = '\0';
 
       spdlog::info("[ChatSession::ReceivePackageBody] receive data is {}",
                    packageNode->data);
-
-      if (packageNode->id == ID_PING_PONG_REQ)
-        _hasPing = true;
 
       ServiceSystem::GetInstance()->PushService(
           std::make_shared<protocol::LogicPackage>(shared_from_this(),
@@ -128,7 +128,7 @@ void ChatSession::ReceiveHead(size_t size) {
             "[ChatSession::ReceivePackageHead] handle read failed, error is {}",
             ec.what());
         Close();
-        chatServer->ClearSession(sessionID);
+        chatServer->ClearSession(id);
         return;
       }
 
@@ -137,12 +137,12 @@ void ChatSession::ReceiveHead(size_t size) {
                      "read [{}] , total [{}]",
                      bytesTransfered, PACKAGE_TOTAL_LEN);
         Close();
-        chatServer->ClearSession(sessionID);
+        chatServer->ClearSession(id);
         return;
       }
 
       unsigned short packageSize = 0, serviceID = 0;
-      memcpy(&serviceID, _data, PACKAGE_ID_LEN);
+      memcpy(&serviceID, packageBuf, PACKAGE_ID_LEN);
       serviceID =
           boost::asio::detail::socket_ops::network_to_host_short(serviceID);
 
@@ -150,17 +150,21 @@ void ChatSession::ReceiveHead(size_t size) {
         spdlog::info(
             "[ChatSession::ReceivePackageHead] invalid packageID is  {}",
             __MapSerivceIdToString(static_cast<ServiceID>(serviceID)));
-        chatServer->ClearSession(sessionID);
+        chatServer->ClearSession(id);
         return;
+      } else {
+        spdlog::info(
+            "ChatSession::ReceivePackageHead] receive packageID is {} ",
+            __MapSerivceIdToString(static_cast<ServiceID>(serviceID)));
       }
 
-      memcpy(&packageSize, _data + PACKAGE_ID_LEN, PACKAGE_DATA_LEN);
+      memcpy(&packageSize, packageBuf + PACKAGE_ID_LEN, PACKAGE_DATA_LEN);
       packageSize =
           boost::asio::detail::socket_ops::network_to_host_short(packageSize);
 
       if (packageSize > PACKAGE_MAX_LENGTH) {
         spdlog::info("invalid data length is {}  ", packageSize);
-        chatServer->ClearSession(sessionID);
+        chatServer->ClearSession(id);
         return;
       }
       spdlog::info("receive packageID is {}, packageLen is {} ");
@@ -190,7 +194,7 @@ void ChatSession::HandleWrite(const boost::system::error_code &error,
     } else {
       spdlog::error("handle write failed, error is {}", error.what());
       Close();
-      chatServer->ClearSession(sessionID);
+      chatServer->ClearSession(id);
     }
   } catch (std::exception &e) {
     spdlog::error("Exception code is {}", e.what());
@@ -210,7 +214,7 @@ void ChatSession::asyncReadLen(
         handler) {
   auto self = shared_from_this();
   sock.async_read_some(
-      boost::asio::buffer(_data + read_len, total_len - read_len),
+      boost::asio::buffer(packageBuf + read_len, total_len - read_len),
       [read_len, total_len, handler, self](const boost::system::error_code &ec,
                                            std::size_t bytesTransfered) {
         if (ec) {
@@ -229,8 +233,4 @@ void ChatSession::asyncReadLen(
 
 tcp::socket &ChatSession::GetSocket() { return sock; }
 
-std::string &ChatSession::GetSessionId() { return sessionID; }
-
-void ChatSession::SetUserId(int uid) { _serviceUID = uid; }
-
-int ChatSession::GetUserId() { return _serviceUID; }
+net::io_context &ChatSession::GetIoc() { return ioc; }

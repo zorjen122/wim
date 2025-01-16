@@ -2,36 +2,8 @@
 
 #include "ChatSession.h"
 #include "IocPool.h"
+#include <mutex>
 #include <spdlog/spdlog.h>
-
-OnlineUserManager::~OnlineUserManager() { _sessionMap.clear(); }
-
-std::shared_ptr<ChatSession> OnlineUserManager::GetSession(int uid) {
-  std::lock_guard<std::mutex> lock(_session_mtx);
-  auto iter = _sessionMap.find(uid);
-  if (iter == _sessionMap.end()) {
-    return nullptr;
-  }
-
-  return iter->second;
-}
-
-void OnlineUserManager::MapUserSession(int uid,
-                                       std::shared_ptr<ChatSession> session) {
-  std::lock_guard<std::mutex> lock(_session_mtx);
-  _sessionMap[uid] = session;
-}
-
-void OnlineUserManager::RemoveSession(int uid) {
-  auto uid_str = std::to_string(uid);
-  // RedisManager::GetInstance()->Del(PREFIX_REDIS_UIP + uid_str);
-  {
-    std::lock_guard<std::mutex> lock(_session_mtx);
-    _sessionMap.erase(uid);
-  }
-}
-
-OnlineUserManager::OnlineUserManager() {}
 
 ChatServer::ChatServer(boost::asio::io_context &iocContext, unsigned short port)
     : Ioc(iocContext), Port(port),
@@ -44,8 +16,9 @@ ChatServer::~ChatServer() {
 }
 
 void ChatServer::Start() {
-  auto &ioc = IoContextPool::GetInstance()->GetContext();
-  auto newSession = std::make_shared<ChatSession>(ioc, this);
+  auto &ioc = IocPool::GetInstance()->GetContext();
+  ++count;
+  auto newSession = std::make_shared<ChatSession>(ioc, this, count);
   Acceptor.async_accept(newSession->GetSocket(),
                         std::bind(&ChatServer::HandleAccept, this, newSession,
                                   std::placeholders::_1));
@@ -55,9 +28,7 @@ void ChatServer::HandleAccept(std::shared_ptr<ChatSession> session,
                               const boost::system::error_code &error) {
   if (!error) {
     session->Start();
-    std::lock_guard<mutex> lock(Mutex);
-
-    Sessions.insert(std::make_pair(session->GetSessionId(), session));
+    std::lock_guard<std::mutex> lock(Mutex);
   } else {
     spdlog::error("session accept failed, error is {}", error.message());
   }
@@ -65,12 +36,10 @@ void ChatServer::HandleAccept(std::shared_ptr<ChatSession> session,
   ChatServer::Start();
 }
 
-void ChatServer::ClearSession(const std::string &uuid) {
-  if (Sessions.find(uuid) != Sessions.end()) {
-    OnlineUserManager::GetInstance()->RemoveSession(
-        Sessions[uuid]->GetUserId());
+void ChatServer::ClearSession(size_t id) {
+  if (sessionGroup.find(id) == sessionGroup.end()) {
+    spdlog::error("session not found, id is {}", id);
+    return;
   }
-
-  std::lock_guard<mutex> lock(Mutex);
-  Sessions.erase(uuid);
+  sessionGroup.erase(id);
 }
