@@ -10,7 +10,7 @@ class OnlineUser : public Singleton<OnlineUser> {
 public:
   ~OnlineUser();
   std::shared_ptr<ChatSession> GetUser(size_t uid);
-  void MapUserUser(size_t uid, std::shared_ptr<ChatSession> session);
+  void MapUser(size_t uid, std::shared_ptr<ChatSession> session);
   void RemoveUser(size_t uid);
   bool isOnline(size_t uid);
 

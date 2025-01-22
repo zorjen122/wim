@@ -20,7 +20,7 @@ std::shared_ptr<ChatSession> OnlineUser::GetUser(size_t uid) {
   return iter->second;
 }
 
-void OnlineUser::MapUserUser(size_t uid, std::shared_ptr<ChatSession> session) {
+void OnlineUser::MapUser(size_t uid, std::shared_ptr<ChatSession> session) {
   std::lock_guard<std::mutex> lock(sessionMutex);
   sessionMap[uid] = session;
 }

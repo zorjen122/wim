@@ -42,11 +42,11 @@ public:
 private:
   std::function<void()> func_;
 };
-
-#define PACKAGE_MAX_LENGTH 1024 * 2
-#define PACKAGE_TOTAL_LEN 4
-#define PACKAGE_ID_LEN 2
-#define PACKAGE_DATA_LEN 2
+#include <limits.h>
+#define PACKAGE_MAX_LENGTH (UINT_MAX)
+#define PACKAGE_TOTAL_LEN 8
+#define PACKAGE_ID_LEN 4
+#define PACKAGE_DATA_SIZE_LEN 4
 #define MAX_RECV_QUEUE_LEN 10000
 #define MAX_SEND_QUEUE_LEN 1000
 
@@ -73,6 +73,10 @@ enum ServiceID {
   ID_NOTIFY_PUSH_TEXT_MSG_REQ = 1019,
   ID_TEXT_SEND_REQ = 1020, // 发送消息
   ID_TEXT_SEND_RSP = 1021,
+
+  // about service handles of the utility
+  ID_UTIL_ACK_SEQ = 0xff33,
+  ID_UTIL_ACK_RSP = 0xff34,
 };
 
 // 建立服务ID到描述的映射
@@ -94,6 +98,7 @@ static std::unordered_map<ServiceID, std::string> __serviceIdMap = {
     {ID_PUSH_TEXT_MSG_REQ, "Push Text Message Request"},
     {ID_TEXT_CHAT_MSG_RSP, "Text Chat Message Response"},
     {ID_NOTIFY_PUSH_TEXT_MSG_REQ, "Notify Push Text Message Request"},
+    {ID_UTIL_ACK_SEQ, "Util Ack Sequence"},
 };
 
 // 建立服务ID到存在性的映射
@@ -115,6 +120,9 @@ static std::unordered_map<ServiceID, bool> __serviceIdExistsMap = {
     {ID_PUSH_TEXT_MSG_REQ, true},
     {ID_TEXT_CHAT_MSG_RSP, true},
     {ID_NOTIFY_PUSH_TEXT_MSG_REQ, true},
+    {ID_TEXT_SEND_REQ, true},
+    {ID_TEXT_SEND_RSP, true},
+    {ID_UTIL_ACK_SEQ, true},
 };
 
 // 查询服务ID是否存在

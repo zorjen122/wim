@@ -48,7 +48,7 @@ startChatClient(net::io_context &io_context, const std::string &host,
                 const std::string &port);
 
 void pushMessage(std::shared_ptr<net::ip::tcp::socket> socket,
-                 unsigned short serviceID, const std::string &package);
+                 unsigned int serviceID, const std::string &package);
 std::string recviceMessage(std::shared_ptr<net::ip::tcp::socket> socket);
 
 void login(int uid);

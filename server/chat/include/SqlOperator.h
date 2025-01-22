@@ -20,10 +20,10 @@
 
 class SqlConnection {
 public:
-  SqlConnection(sql::Connection *con, int64_t lasttime)
-      : _con(con), _last_oper_time(lasttime) {}
-  std::unique_ptr<sql::Connection> _con;
-  int64_t _last_oper_time;
+  SqlConnection(sql::Connection *connection, int64_t lastTime)
+      : sql(connection), lastOperTime(lastTime) {}
+  std::unique_ptr<sql::Connection> sql;
+  int64_t lastOperTime;
 };
 
 class MySqlPool {
@@ -77,14 +77,14 @@ public:
       pool_.pop();
       Defer _([this, &con]() { pool_.push(std::move(con)); });
 
-      if (timestamp - con->_last_oper_time < 5) {
+      if (timestamp - con->lastOperTime < 5) {
         continue;
       }
 
       try {
-        std::unique_ptr<sql::Statement> stmt(con->_con->createStatement());
+        std::unique_ptr<sql::Statement> stmt(con->sql->createStatement());
         stmt->executeQuery("SELECT 1");
-        con->_last_oper_time = timestamp;
+        con->lastOperTime = timestamp;
       } catch (sql::SQLException &e) {
         std::cout << "Error keeping connection alive: " << e.what()
                   << std::endl;
@@ -92,8 +92,8 @@ public:
         auto *driver = sql::mysql::get_mysql_driver_instance();
         auto *newcon = driver->connect(url_, user_, passwd_);
         newcon->setSchema(schema_);
-        con->_con.reset(newcon);
-        con->_last_oper_time = timestamp;
+        con->sql.reset(newcon);
+        con->lastOperTime = timestamp;
       }
     }
   }
@@ -123,7 +123,7 @@ public:
     cond_.notify_one();
   }
 
-  void Close() {
+  void close() {
     b_stop_ = true;
     cond_.notify_all();
   }
@@ -148,17 +148,19 @@ private:
   std::thread _check_thread;
 };
 
-class MysqlManager : public Singleton<MysqlManager> {
-  friend class Singleton<MysqlManager>;
+class MySqlOperator : public Singleton<MySqlOperator> {
+  friend class Singleton<MySqlOperator>;
 
 public:
-  MysqlManager(const std::string &host, const std::string &port,
-               const std::string &user, const std::string &password,
-               const std::string &schema, size_t poolSize = 5);
-  MysqlManager();
+  MySqlOperator(const std::string &host, const std::string &port,
+                const std::string &user, const std::string &password,
+                const std::string &schema, size_t poolSize = 5);
+  MySqlOperator();
+  ~MySqlOperator();
 
-  ~MysqlManager();
+public:
+  bool SaveService(size_t from, const std::string &context);
 
 private:
-  std::unique_ptr<MySqlPool> pool_;
+  std::unique_ptr<MySqlPool> pool;
 };

@@ -6,6 +6,7 @@
 #include <boost/system/detail/error_code.hpp>
 #include <cassert>
 #include <cstring>
+#include <string>
 
 namespace base {
 UserManager userManager{};
@@ -53,53 +54,66 @@ startChatClient(net::io_context &io_context, const std::string &host,
 }
 
 void pushMessage(std::shared_ptr<net::ip::tcp::socket> socket,
-                 unsigned short serviceID, const std::string &package) {
+                 unsigned int serviceID, const std::string &package) {
   try {
     Json::Value data;
-    serviceID =
-        boost::asio::detail::socket_ops::host_to_network_short(serviceID);
-    auto packageSize =
-        boost::asio::detail::socket_ops::host_to_network_short(package.size());
+    serviceID = net::detail::socket_ops::host_to_network_long(serviceID);
+    unsigned int packageSize = net::detail::socket_ops::host_to_network_long(
+        package.size()); // 使用 host_to_network_long 转换为网络字节序的 4
+                         // 字节整数
 
-    spdlog::info("[package: {}, packageSize: {}", package, package.size());
+    char servicePackage[4096]{}; // 2 字节 serviceID + 4 字节 packageSize = 6
+                                 // 字节
 
-    char servicePackage[4096]; // 2 字节 serviceID + 2 字节 packageSize = 4 字节
-    memset(servicePackage, 0, 4096);
+    memcpy(servicePackage, &serviceID,
+           sizeof(serviceID)); // 将 serviceID 的 2 字节复制到 servicePackage
+    memcpy(servicePackage + sizeof(serviceID), &packageSize,
+           4); // 将 packageSize 的 4 字节复制到 servicePackage
+    memcpy(servicePackage + sizeof(serviceID) + sizeof(packageSize),
+           package.c_str(), package.size());
 
-    // 将 serviceID (2 字节) 和 packageSize (2 字节) 写入 buf 中
-    memcpy(servicePackage, &serviceID, 2); // 将 serviceID 的 2 字节复制到 buf
-    memcpy(servicePackage + 2, &packageSize, 2);
-    memcpy(servicePackage + 4, package.c_str(), package.size());
+    spdlog::info("serviceID {}, packageSize {}",
+                 *(unsigned int *)(servicePackage), packageSize);
+    spdlog::info("source serviceID {}",
+                 net::detail::socket_ops::network_to_host_long(
+                     *(unsigned int *)(servicePackage)));
+    spdlog::info(
+        "source packageSize {}",
+        net::detail::socket_ops::network_to_host_long(
+            *(unsigned int *)(servicePackage +
+                              sizeof(
+                                  serviceID)))); // 反序列化为原始的 packageSize
 
-    net::write(*socket, net::buffer(servicePackage, package.size() + 4));
+    // spdlog::info("[service-package] {}", servicePackage);
 
-    spdlog::info("[service-package] {}", std::string(servicePackage));
+    net::write(*socket, net::buffer(servicePackage, sizeof(serviceID) +
+                                                        sizeof(packageSize) +
+                                                        package.size()));
+
   } catch (const std::exception &e) {
     spdlog::error("Error: {} ", e.what());
   }
 } // namespace test
 
 std::string recviceMessage(std::shared_ptr<net::ip::tcp::socket> socket) {
-  unsigned short id = 0, total = 0;
+  unsigned int id = 0, total = 0;
 
-  char headBuf[4] = {};
+  char headBuf[9] = {};
 
-  auto rt = socket->receive(net::buffer(headBuf, 4));
+  auto rt = socket->receive(net::buffer(headBuf, sizeof(id) + sizeof(total)));
+  headBuf[rt] = 0;
 
-  assert(rt == 4);
+  memcpy(&id, headBuf, sizeof(id));
+  memcpy(&total, headBuf + sizeof(id), +sizeof(total));
+  id = net::detail::socket_ops::network_to_host_long(id);
+  total = net::detail::socket_ops::network_to_host_long(total);
+  spdlog::info("recvice message [id: {}, body-total: {}]", id, total);
 
-  memcpy(&id, headBuf, 2);
-  memcpy(&total, headBuf + 2, 2);
-  boost::asio::detail::socket_ops::network_to_host_short(id);
-  boost::asio::detail::socket_ops::network_to_host_short(total);
-  spdlog::info("recvice message [id: {}, total: {}]", id, total);
+  std::string bodyBuf(total + 1, '\0');
+  rt = socket->receive(net::buffer(bodyBuf.data(), total));
+  bodyBuf[total] = 0;
 
-  std::string bodyBuf(total, '\0');
-  rt = socket->receive(net::buffer(bodyBuf.data(), bodyBuf.size()));
-
-  assert(rt == total);
-
-  spdlog::info("recvice message [body : {}]", id, total, bodyBuf);
+  spdlog::info("recvice message [body : {}]", bodyBuf);
 
   return bodyBuf;
 }

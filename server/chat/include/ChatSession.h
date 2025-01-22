@@ -37,8 +37,8 @@ public:
   net::io_context &GetIoc();
 
   void Start();
-  void Send(char *msgData, short msgLength, short msgID);
-  void Send(std::string msgData, short msgID);
+  void Send(char *msgData, unsigned int msgLength, unsigned int msgID);
+  void Send(std::string msgData, unsigned int msgID);
   void Close();
   std::shared_ptr<ChatSession> GetSharedSelf();
   void ReceiveBody(size_t size);

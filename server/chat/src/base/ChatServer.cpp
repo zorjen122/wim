@@ -38,7 +38,7 @@ void ChatServer::HandleAccept(std::shared_ptr<ChatSession> session,
 
 void ChatServer::ClearSession(size_t id) {
   if (sessionGroup.find(id) == sessionGroup.end()) {
-    spdlog::error("session not found, id is {}", id);
+    spdlog::error("[ChatServer::ClearSession] session not found, id is {}", id);
     return;
   }
   sessionGroup.erase(id);

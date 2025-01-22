@@ -1,12 +1,12 @@
-#include "ServiceSystem.h"
+#include "Service.h"
 #include "ChatServer.h"
 #include "Configer.h"
 #include "Const.h"
 
-#include "MysqlManager.h"
 #include "OnlineUser.h"
 #include "RedisManager.h"
 #include "RpcClient.h"
+#include "SqlOperator.h"
 #include "json/value.h"
 #include <boost/asio/error.hpp>
 #include <boost/asio/steady_timer.hpp>
@@ -41,18 +41,15 @@ static std::unordered_map<std::shared_ptr<ChatSession>,
     sChannel;
 } // namespace util
 
-void PushText(std::shared_ptr<ChatSession> toSession, size_t seq, int from,
-              int to, std::string msg) {
+void OnRewriteTimer(std::shared_ptr<ChatSession> session, size_t seq,
+                    Json::Value &rsp) {
 
-  Json::Value rsp{};
-  rsp["from"] = from;
-  rsp["to"] = to;
-  rsp["text"] = msg;
-  toSession->Send(rsp.toStyledString(), ID_TEXT_SEND_RSP);
-
+  util::tansfTimerMap[seq] =
+      std::make_unique<net::steady_timer>(session->GetIoc());
+  util::reTansfCountMap[seq] = 0;
   auto &timer = util::tansfTimerMap[seq];
-  timer->expires_from_now(std::chrono::seconds(2));
-  timer->async_wait([toSession, rsp, seq](const error_code &ec) {
+  timer->expires_from_now(std::chrono::seconds(5));
+  timer->async_wait([session, rsp, seq](const error_code &ec) {
     if (ec == net::error::operation_aborted) {
       spdlog::error("[PushText] timer by cancelled");
       return;
@@ -61,50 +58,28 @@ void PushText(std::shared_ptr<ChatSession> toSession, size_t seq, int from,
         spdlog::error("[PushText] retransf count exceed 3");
         return;
       }
-      toSession->Send(rsp.toStyledString(), ID_TEXT_SEND_RSP);
+      spdlog::info(
+          "[OnRewriteTimer] timeout, on rewrite package, seq-id{}, count-{}",
+          seq, util::reTansfCountMap[seq]);
+      session->Send(rsp.toStyledString(), ID_TEXT_SEND_RSP);
       util::reTansfCountMap[seq]++;
     }
   });
 }
 
-void AckHandle(std::shared_ptr<ChatSession> session, unsigned short msgID,
-               const std::string &msgData) {
-  Json::Reader parser;
-  Json::Value req;
-  Json::Value rsp;
-  bool parserSuccess = parser.parse(msgData, req);
-  if (!parserSuccess) {
-    spdlog::error("[ServiceSystem::AckHandle] parse msg_data error!");
-    return;
-    auto seq = req["seq"].asInt();
-    if (util::tansfTimerMap.find(seq) != util::tansfTimerMap.end()) {
-      spdlog::error(
-          "[ServiceSystem::AckHandle] ack request is wrong for seq-id{}", seq);
-      return;
-    }
-    if (util::reTansfCountMap.find(seq) == util::reTansfCountMap.end()) {
-      spdlog::error(
-          "[ServiceSystem::AckHandle] retransf count not found for seq-id{}",
-          seq);
-      return;
-    }
-    auto &timer = util::tansfTimerMap[seq];
-    timer->cancel();
-    util::tansfTimerMap.erase(seq);
-    util::reTansfCountMap.erase(seq);
+void PushText(std::shared_ptr<ChatSession> toSession, size_t seq, int from,
+              int to, const std::string &msg) {
 
-    rsp["seq"] = seq;
-    rsp["status"] = "Read";
-    rsp["error"] = ErrorCodes::Success;
-    util::sChannel[session]->Send(rsp.toStyledString(), ID_TEXT_CHAT_MSG_RSP);
+  Json::Value rsp{};
+  rsp["from"] = from;
+  rsp["to"] = to;
+  rsp["text"] = msg;
+  toSession->Send(rsp.toStyledString(), ID_TEXT_SEND_RSP);
 
-    // 若客户端发送了ack，服务端仍没收到，此时超时重发的消息会被客户端读取并分析处理
-    // ，截止服务端收到ack，其中客户端包含ack重发次数逻辑，因此无需再发送
-  }
+  OnRewriteTimer(toSession, seq, rsp);
 }
 
-void SaveService(std::shared_ptr<ChatSession> session, size_t seq, int from,
-                 int to, std::string msg) {
+bool SaveService(size_t seq, int from, int to, std::string msg) {
   // MysqlManager::GetInstance()->SaveService(from, to, msg);
   auto file = open("./service.log", O_CREAT | O_RDWR | O_APPEND);
   Json::Value rsp{};
@@ -115,31 +90,95 @@ void SaveService(std::shared_ptr<ChatSession> session, size_t seq, int from,
   rsp["text"] = msg;
 
   char buf[4096]{};
-  int rt = sprintf(buf, "for-%d\t%s\n", from, rsp.toStyledString().c_str());
+  int rt = sprintf(buf, "From-%d|To-%d\t%s\n", from, to,
+                   rsp.toStyledString().c_str());
   if (rt < 0) {
     spdlog::error("[ServiceSystem::SaveService] sprintf error");
-    return;
+    return false;
   }
 
   rt = write(file, buf, strlen(buf));
 
   if (rt < 0) {
     spdlog::error("[ServiceSystem::SaveService] write file error");
+    return false;
   } else {
     spdlog::info("[ServiceSystem::SaveService] save service log success");
   }
   close(file);
+
+  return true;
 }
 
-void TextSend(std::shared_ptr<ChatSession> session, unsigned short msgID,
+void PullText(size_t seq, int from, int to, const std::string &msg) {
+
+  SaveService(util::seqGenerator, from, to, msg);
+}
+
+void AckHandle(std::shared_ptr<ChatSession> session, unsigned int msgID,
+               const std::string &msgData) {
+  Json::Reader parser;
+  Json::Value req;
+  Json::Value rsp;
+  bool parserSuccess = parser.parse(msgData, req);
+
+  Defer _([&rsp, session]() {
+    auto rt = rsp.toStyledString();
+    session->Send(rt, ID_UTIL_ACK_RSP);
+  });
+
+  if (!parserSuccess) {
+    spdlog::error("[ServiceSystem::AckHandle] parse msg_data error!");
+    rsp["error"] = ErrorCodes::Error_Json;
+    return;
+  }
+  auto seq = req["seq"].asInt();
+  if (util::tansfTimerMap.find(seq) == util::tansfTimerMap.end()) {
+    spdlog::error(
+        "[ServiceSystem::AckHandle] ack request is wrong for seq-id{}", seq);
+    rsp["error"] = -1;
+    return;
+  }
+  if (util::reTansfCountMap.find(seq) == util::reTansfCountMap.end()) {
+    spdlog::error(
+        "[ServiceSystem::AckHandle] retransf count not found for seq-id{}",
+        seq);
+    rsp["error"] = -1;
+    return;
+  }
+  auto &timer = util::tansfTimerMap[seq];
+  timer->cancel();
+  util::tansfTimerMap.erase(seq);
+  util::reTansfCountMap.erase(seq);
+  rsp["error"] = ErrorCodes::Success;
+
+  // rsp["seq"] = seq;
+  // rsp["status"] = "Read";
+  // rsp["error"] = ErrorCodes::Success;
+  // util::sChannel[session]->Send(rsp.toStyledString(),
+  // ID_TEXT_CHAT_MSG_RSP);
+
+  // 若客户端发送了ack，服务端仍没收到，此时超时重发的消息会被客户端读取并分析处理
+  // ，截止服务端收到ack，其中客户端包含ack重发次数逻辑，因此无需再发送
+}
+
+void TextSend(std::shared_ptr<ChatSession> session, unsigned int msgID,
               const std::string &msgData) {
   Json::Reader parser;
   Json::Value req;
   Json::Value rsp;
 
+  Defer _([&rsp, session]() {
+    auto rt = rsp.toStyledString();
+    session->Send(rt, ID_TEXT_CHAT_MSG_RSP);
+  });
+
   auto parseSuccess = parser.parse(msgData, req);
   if (!parseSuccess) {
-    spdlog::error("[ServiceSystem::PushTextMessage] parse msg_data error!");
+    rsp["error"] = ErrorCodes::Error_Json;
+    spdlog::error(
+        "[ServiceSystem::TextSend] parse msg_data error! | msgData {}",
+        msgData);
     return;
   }
 
@@ -147,37 +186,27 @@ void TextSend(std::shared_ptr<ChatSession> session, unsigned short msgID,
   auto to = req["to"].asInt();
   Json::Value message = req["text"];
 
-  Defer _([&rsp, session]() {
-    auto rt = rsp.toStyledString();
-    session->Send(rt, ID_TEXT_CHAT_MSG_RSP);
-  });
-
   bool isOnline = OnlineUser::GetInstance()->isOnline(to);
+  int seq = static_cast<int>(util::seqGenerator.load());
   if (isOnline) {
-    int seq = static_cast<int>(util::seqGenerator.load());
     rsp["seq"] = seq;
-    rsp["status"] = "Unread";
+    rsp["status"] = "Unread-Push";
     rsp["error"] = ErrorCodes::Success;
-
-    std::unique_ptr<net::steady_timer> timer(
-        new net::steady_timer(session->GetIoc(), std::chrono::seconds(2)));
-    util::tansfTimerMap[seq] = std::move(timer);
 
     auto toSession = OnlineUser::GetInstance()->GetUser(to);
     util::sChannel[toSession] = session;
 
-    PushText(toSession, util::seqGenerator, to, from, message.toStyledString());
-    ++util::seqGenerator;
+    PushText(toSession, util::seqGenerator, from, to, message.toStyledString());
   } else {
     rsp["seq"] = static_cast<int>(util::seqGenerator.load());
-    rsp["status"] = "Unread";
+    rsp["status"] = "Unread-Pull";
     rsp["error"] = ErrorCodes::Success;
 
-    SaveService(session, util::seqGenerator, from, to,
-                message.toStyledString());
-
-    ++util::seqGenerator;
+    PullText(util::seqGenerator, from, to, message.toStyledString());
   }
+
+  OnRewriteTimer(session, seq, rsp);
+  ++util::seqGenerator;
 }
 
 void ServiceSystem::Init() {
@@ -213,15 +242,13 @@ void ServiceSystem::Init() {
       std::bind(&TextSend, std::placeholders::_1, std::placeholders::_2,
                 std::placeholders::_3);
 
-  // about service handles of the utility
-  constexpr short ID_UTIL_ACK_SEQ = 0xff33;
   _serviceGroup[ID_UTIL_ACK_SEQ] =
       std::bind(&AckHandle, std::placeholders::_1, std::placeholders::_2,
                 std::placeholders::_3);
 }
 
 void ServiceSystem::PingKeepAlive(std::shared_ptr<ChatSession> session,
-                                  unsigned short msgID,
+                                  unsigned int msgID,
                                   const std::string &msgData) {}
 
 void ServiceSystem::PushService(std::shared_ptr<protocol::LogicPackage> msg) {
@@ -243,18 +270,19 @@ void ServiceSystem::Run() {
     if (isStop) {
       while (!_messageGroup.empty()) {
         auto package = _messageGroup.front();
-        spdlog::info("[ServiceSystem::Run] recv service ID  is {}",
-                     package->_recvPackage->id);
+        spdlog::info("[ServiceSystem::Run] recv service ID  is {}, service "
+                     "Package is {}",
+                     package->recvPackage->id, package->recvPackage->data);
 
-        auto handleCall = _serviceGroup.find(package->_recvPackage->id);
+        auto handleCall = _serviceGroup.find(package->recvPackage->id);
         if (handleCall == _serviceGroup.end()) {
           _messageGroup.pop();
           continue;
         }
 
-        handleCall->second(package->_session, package->_recvPackage->id,
-                           std::string(package->_recvPackage->data,
-                                       package->_recvPackage->cur));
+        handleCall->second(
+            package->session, package->recvPackage->id,
+            std::string(package->recvPackage->data, package->recvPackage->cur));
         _messageGroup.pop();
       }
       break;
@@ -262,27 +290,32 @@ void ServiceSystem::Run() {
 
     auto package = _messageGroup.front();
     spdlog::info("[ServiceSystem::Run] recv_msg id  is {}",
-                 package->_recvPackage->id);
-    auto callbackIter = _serviceGroup.find(package->_recvPackage->id);
+                 package->recvPackage->id);
+    auto callbackIter = _serviceGroup.find(package->recvPackage->id);
     if (callbackIter == _serviceGroup.end()) {
       _messageGroup.pop();
       spdlog::warn("[ServiceSystem::Run] recv msg id {}, handler not found");
       continue;
     }
     callbackIter->second(
-        package->_session, package->_recvPackage->id,
-        std::string(package->_recvPackage->data, package->_recvPackage->cur));
+        package->session, package->recvPackage->id,
+        std::string(package->recvPackage->data, package->recvPackage->cur));
     _messageGroup.pop();
   }
 }
 
 void ServiceSystem::LoginHandler(std::shared_ptr<ChatSession> session,
-                                 unsigned short msgID,
+                                 unsigned int msgID,
                                  const std::string &msgData) {
   Json::Reader parser;
   Json::Value req;
   Json::Value rsp;
-  parser.parse(msgData, req);
+  bool parserSuccess = parser.parse(msgData, req);
+  if (!parserSuccess) {
+    rsp["error"] = ErrorCodes::Error_Json;
+    spdlog::error("[ServiceSystem::LoginHandle] parse msg_data error!");
+    return;
+  }
 
   Defer _([&rsp, session]() {
     std::string rt = rsp.toStyledString();
@@ -294,7 +327,7 @@ void ServiceSystem::LoginHandler(std::shared_ptr<ChatSession> session,
 
   rsp["error"] = ErrorCodes::Success;
   // 应用层上的用户管理，而在ChatServer中则是对传输层连接的管理
-  OnlineUser::GetInstance()->MapUserUser(uid, session);
+  OnlineUser::GetInstance()->MapUser(uid, session);
   spdlog::info(
       "[ServiceSystem::LoginHandle] user logining, <uid: {} => session >", uid);
 
@@ -352,8 +385,7 @@ void ServiceSystem::LoginHandler(std::shared_ptr<ChatSession> session,
 }
 
 void ServiceSystem::SearchUser(std::shared_ptr<ChatSession> session,
-                               unsigned short msgID,
-                               const std::string &msgData) {
+                               unsigned int msgID, const std::string &msgData) {
   Json::Reader reader;
   Json::Value root;
   reader.parse(msgData, root);
@@ -371,7 +403,7 @@ void ServiceSystem::SearchUser(std::shared_ptr<ChatSession> session,
 }
 
 void ServiceSystem::AddFriendApply(std::shared_ptr<ChatSession> session,
-                                   unsigned short msgID,
+                                   unsigned int msgID,
                                    const std::string &msgData) {
   Json::Reader reader;
   Json::Value root;
@@ -437,12 +469,12 @@ void ServiceSystem::AddFriendApply(std::shared_ptr<ChatSession> session,
 }
 
 void ServiceSystem::AuthFriendApply(std::shared_ptr<ChatSession> session,
-                                    unsigned short msg_id,
+                                    unsigned int msg_id,
                                     const std::string &msg_data) {
   // todo
 }
 void ServiceSystem::PushTextMessage(std::shared_ptr<ChatSession> session,
-                                    unsigned short msgID,
+                                    unsigned int msgID,
                                     const std::string &msgData) {
   Json::Reader parser;
   Json::Value req;
@@ -517,7 +549,7 @@ void ServiceSystem::PushTextMessage(std::shared_ptr<ChatSession> session,
 }
 
 void ServiceSystem::OnlinePullHandler(std::shared_ptr<ChatSession> session,
-                                      unsigned short msgID,
+                                      unsigned int msgID,
                                       const std::string &msgData) {
   Json::Reader reader;
   Json::Value root;

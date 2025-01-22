@@ -7,9 +7,9 @@
 #include "ChatSession.h"
 #include "Configer.h"
 #include "IocPool.h"
-#include "MysqlManager.h"
 #include "RedisManager.h"
 #include "RpcServer.h"
+#include "SqlOperator.h"
 
 #include <spdlog/spdlog.h>
 
@@ -53,7 +53,7 @@ int main() {
 
   try {
     RedisManager::GetInstance();
-    MysqlManager::GetInstance();
+    MySqlOperator::GetInstance();
     net::io_context ioc;
     auto serverPool = IocPool::GetInstance();
 

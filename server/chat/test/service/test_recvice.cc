@@ -3,8 +3,7 @@
 #include <boost/asio/io_context.hpp>
 #include <spdlog/spdlog.h>
 
-int main()
-{
+int main() {
 
   using base::userManager;
   fetchUsersFromDatabase(&userManager);

@@ -18,7 +18,7 @@ class ServiceSystem : public Singleton<ServiceSystem> {
 
 public:
   using HandleType = std::function<void(std::shared_ptr<ChatSession>,
-                                        unsigned short, const std::string &)>;
+                                        unsigned int, const std::string &)>;
 
   ~ServiceSystem();
   void PushService(std::shared_ptr<protocol::LogicPackage> package);
@@ -29,29 +29,29 @@ private:
   void Init();
   void WeachKeepAlive();
 
-  void PingKeepAlive(std::shared_ptr<ChatSession> session, unsigned short msgID,
+  void PingKeepAlive(std::shared_ptr<ChatSession> session, unsigned int msgID,
                      const std::string &msgData);
-  void LoginHandler(std::shared_ptr<ChatSession> session, unsigned short msgID,
+  void LoginHandler(std::shared_ptr<ChatSession> session, unsigned int msgID,
                     const std::string &msgData);
 
   void OnlinePullHandler(std::shared_ptr<ChatSession> session,
-                         unsigned short msgID, const std::string &msgData);
+                         unsigned int msgID, const std::string &msgData);
 
-  void SearchUser(std::shared_ptr<ChatSession> session, unsigned short msgID,
+  void SearchUser(std::shared_ptr<ChatSession> session, unsigned int msgID,
                   const std::string &msg_data);
-  void AddFriendApply(std::shared_ptr<ChatSession> session,
-                      unsigned short msgID, const std::string &msg_data);
+  void AddFriendApply(std::shared_ptr<ChatSession> session, unsigned int msgID,
+                      const std::string &msg_data);
   void AuthFriendApply(std::shared_ptr<ChatSession> session,
-                       unsigned short msg_id, const std::string &msgData);
+                       unsigned int msg_id, const std::string &msgData);
   void PushTextMessage(std::shared_ptr<ChatSession> session,
-                       unsigned short msg_id, const std::string &msgData);
+                       unsigned int msg_id, const std::string &msgData);
 
   bool IsPureDigit(const std::string &str);
   void GetUserByUid(std::string uid_str, Json::Value &rtvalue);
   void GetUserByName(std::string name, Json::Value &rtvalue);
-  bool GetFriendApplyInfo(int toID,
+  bool GetFriendApplyInfo(unsigned int toID,
                           std::vector<std::shared_ptr<ApplyInfo>> &list);
-  bool GetFriendList(int self_id,
+  bool GetFriendList(unsigned int self_id,
                      std::vector<std::shared_ptr<UserInfo>> &user_list);
 
   std::thread worker;
@@ -59,5 +59,5 @@ private:
   std::mutex _mutex;
   std::condition_variable _consume;
   bool isStop;
-  std::map<short, HandleType> _serviceGroup;
+  std::map<unsigned int, HandleType> _serviceGroup;
 };

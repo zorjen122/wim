@@ -25,7 +25,7 @@ server:
     port: 3309
     user: zorjen
     password: root
-    schema: chatServ
+    schema: im
   redis:
     host: 127.0.0.1
     port: 6380
