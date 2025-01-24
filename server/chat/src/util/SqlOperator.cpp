@@ -28,13 +28,15 @@ MySqlOperator::MySqlOperator() {
 
 MySqlOperator::~MySqlOperator() { pool->close(); }
 
-bool MySqlOperator::SaveService(size_t from, const std::string &context) {
+bool MySqlOperator::SaveService(size_t from, size_t to,
+                                const std::string &context) {
   auto con = pool->getConnection();
   Defer _([&con, this]() { pool->returnConnection(std::move(con)); });
   try {
-    auto cmd = con->sql->prepareStatement("CALL SaveService(?, ?)");
+    auto cmd = con->sql->prepareStatement("CALL SaveService(?, ?, ?)");
     cmd->setUInt(0, from);
-    cmd->setString(1, context);
+    cmd->setUInt(1, to);
+    cmd->setString(2, context);
 
     auto result = cmd->executeQuery();
 

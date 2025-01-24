@@ -4,6 +4,7 @@
 #include "json/value.h"
 #include <boost/asio/ip/host_name.hpp>
 #include <memory>
+#include <unistd.h>
 
 void sender(std::shared_ptr<net::ip::tcp::socket> socket, int from, int to) {
 
@@ -18,10 +19,10 @@ auto receiver(std::shared_ptr<net::ip::tcp::socket> socket) {
   return base::recviceMessage(socket);
 }
 
-void loginHandle(std::shared_ptr<net::ip::tcp::socket> socket) {
+void loginHandle(std::shared_ptr<net::ip::tcp::socket> socket, int uid) {
 
   Json::Value req1;
-  req1["uid"] = 2;
+  req1["uid"] = uid;
 
   base::pushMessage(socket, 1005, req1.toStyledString());
   spdlog::info("total message: {}", req1.toStyledString());
@@ -35,7 +36,7 @@ int main() {
   net::io_context ioc;
   std::shared_ptr<net::ip::tcp::socket> socket{};
 
-  auto &user = base::userManager.front();
+  auto &user = base::userManager.back();
   spdlog::info("[fetch-user]: id {}, email {}, password {} ", user.id,
                user.email, user.password);
 
@@ -47,6 +48,7 @@ int main() {
     if (to != from)
       break;
   }
+  to = base::userManager.front().uid;
 
   // toNormalString(user.host);
   // toNormalString(user.port);
@@ -59,8 +61,11 @@ int main() {
 
   socket = base::startChatClient(ioc, user.host, user.port);
 
-  loginHandle(socket);
+  loginHandle(socket, user.uid);
   sender(socket, from, to);
+
+  sleep(8);
+
   std::string rt = receiver(socket);
 
   spdlog::info("Send ACK....");

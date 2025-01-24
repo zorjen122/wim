@@ -159,7 +159,7 @@ public:
   ~MySqlOperator();
 
 public:
-  bool SaveService(size_t from, const std::string &context);
+  bool SaveService(size_t from, size_t to, const std::string &context);
 
 private:
   std::unique_ptr<MySqlPool> pool;

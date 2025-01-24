@@ -74,6 +74,13 @@ enum ServiceID {
   ID_TEXT_SEND_REQ = 1020, // 发送消息
   ID_TEXT_SEND_RSP = 1021,
 
+  ID_GROUP_CREATE_REQ = 1023,
+  ID_GROUP_CREATE_RSP = 1024,
+  ID_GROUP_JOIN_REQ = 1025,
+  ID_GROUP_JOIN_RSP = 1026,
+  ID_GROUP_TEXT_SEND_REQ = 1027,
+  ID_GROUP_TEXT_SEND_RSP = 1028,
+
   // about service handles of the utility
   ID_UTIL_ACK_SEQ = 0xff33,
   ID_UTIL_ACK_RSP = 0xff34,
@@ -99,35 +106,22 @@ static std::unordered_map<ServiceID, std::string> __serviceIdMap = {
     {ID_TEXT_CHAT_MSG_RSP, "Text Chat Message Response"},
     {ID_NOTIFY_PUSH_TEXT_MSG_REQ, "Notify Push Text Message Request"},
     {ID_UTIL_ACK_SEQ, "Util Ack Sequence"},
-};
+    {ID_UTIL_ACK_RSP, "Util Ack Response"},
 
-// 建立服务ID到存在性的映射
-static std::unordered_map<ServiceID, bool> __serviceIdExistsMap = {
-    {ID_ONLINE_PULL_REQ, true},
-    {ID_ONLINE_PULL_RSP, true},
-    {ID_PING_PONG_REQ, true},
-    {ID_PING_PONG_RSP, true},
-    {ID_CHAT_LOGIN_INIT, true},
-    {ID_CHAT_LOGIN_INIT_RSP, true},
-    {ID_SEARCH_USER_REQ, true},
-    {ID_SEARCH_USER_RSP, true},
-    {ID_ADD_FRIEND_REQ, true},
-    {ID_ADD_FRIEND_RSP, true},
-    {ID_NOTIFY_ADD_FRIEND_REQ, true},
-    {ID_AUTH_FRIEND_REQ, true},
-    {ID_AUTH_FRIEND_RSP, true},
-    {ID_NOTIFY_AUTH_FRIEND_REQ, true},
-    {ID_PUSH_TEXT_MSG_REQ, true},
-    {ID_TEXT_CHAT_MSG_RSP, true},
-    {ID_NOTIFY_PUSH_TEXT_MSG_REQ, true},
-    {ID_TEXT_SEND_REQ, true},
-    {ID_TEXT_SEND_RSP, true},
-    {ID_UTIL_ACK_SEQ, true},
+    // dev..
+    {ID_GROUP_CREATE_REQ, "Group Create Request"},
+    {ID_GROUP_CREATE_RSP, "Group Create Response"},
+    {ID_GROUP_JOIN_REQ, "Group Join Request"},
+    {ID_GROUP_JOIN_RSP, "Group Join Response"},
+    {ID_TEXT_SEND_REQ, "Text Send Request"},
+    {ID_TEXT_SEND_RSP, "Text Send Response"},
+    {ID_GROUP_TEXT_SEND_REQ, "Group Text Send Request"},
+    {ID_GROUP_TEXT_SEND_RSP, "Group Text Send Response"},
 };
 
 // 查询服务ID是否存在
 inline bool __IsSupportServiceID(ServiceID id) {
-  return __serviceIdExistsMap.find(id) != __serviceIdExistsMap.end();
+  return __serviceIdMap.find(id) != __serviceIdMap.end();
 }
 
 inline std::string __MapSerivceIdToString(ServiceID id) {

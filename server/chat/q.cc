@@ -23,9 +23,10 @@ void goo() {
   std::cout << *(int *)buf << "\n";
   std::cout << *(int *)(buf + sizeof(a)) << "\n";
 }
-int main() {
-
+void hoo() {
   unsigned int a = UINT_MAX;
   std::cout << a << "\n";
   std::cout << a + 1 << "\n";
 }
+
+int main() {}

@@ -18,6 +18,7 @@
 #include <json/json.h>
 #include <memory>
 #include <spdlog/spdlog.h>
+#include <string>
 #include <unordered_map>
 
 ServiceSystem::ServiceSystem() : isStop(false) {
@@ -34,64 +35,61 @@ ServiceSystem::~ServiceSystem() {
 namespace util {
 static std::atomic<size_t> seqGenerator(1);
 static std::unordered_map<size_t, std::unique_ptr<net::steady_timer>>
-    tansfTimerMap;
-static std::unordered_map<size_t, size_t> reTansfCountMap;
+    retansfTimerMap;
+static std::unordered_map<size_t, size_t> retansfCountMap;
 static std::unordered_map<std::shared_ptr<ChatSession>,
                           std::shared_ptr<ChatSession>>
     sChannel;
 } // namespace util
 
 void OnRewriteTimer(std::shared_ptr<ChatSession> session, size_t seq,
-                    Json::Value &rsp) {
+                    const std::string &rsp, unsigned int rspID) {
 
-  util::tansfTimerMap[seq] =
+  util::retansfTimerMap[seq] =
       std::make_unique<net::steady_timer>(session->GetIoc());
-  util::reTansfCountMap[seq] = 0;
-  auto &timer = util::tansfTimerMap[seq];
+  util::retansfCountMap[seq] = 0;
+  auto &timer = util::retansfTimerMap[seq];
   timer->expires_from_now(std::chrono::seconds(5));
-  timer->async_wait([session, rsp, seq](const error_code &ec) {
+  timer->async_wait([session, rsp, seq, rspID](const error_code &ec) {
     if (ec == net::error::operation_aborted) {
-      spdlog::error("[PushText] timer by cancelled");
+      spdlog::info("[PushText] timer by cancelled");
       return;
-    } else if (ec == net::error::timed_out) {
-      if (util::reTansfCountMap[seq] >= 3) {
+    } else if (ec.value() == 0) {
+      // timer timeout, retransf package
+      if (util::retansfCountMap[seq] >= 3) {
         spdlog::error("[PushText] retransf count exceed 3");
+        util::retansfTimerMap.erase(seq);
+        util::retansfCountMap.erase(seq);
         return;
       }
       spdlog::info(
           "[OnRewriteTimer] timeout, on rewrite package, seq-id{}, count-{}",
-          seq, util::reTansfCountMap[seq]);
-      session->Send(rsp.toStyledString(), ID_TEXT_SEND_RSP);
-      util::reTansfCountMap[seq]++;
+          seq, util::retansfCountMap[seq]);
+      session->Send(rsp, rspID);
+      util::retansfCountMap[seq]++;
+    } else {
+      spdlog::info(
+          "[OnRewriteTimer] other timer click cased,  | ec: {}, msg: {}",
+          ec.value(), ec.message());
+      util::retansfTimerMap.erase(seq);
+      util::retansfCountMap.erase(seq);
     }
   });
 }
 
 void PushText(std::shared_ptr<ChatSession> toSession, size_t seq, int from,
-              int to, const std::string &msg) {
+              int to, const std::string &msg,
+              int msgID = ID_TEXT_CHAT_MSG_RSP) {
 
-  Json::Value rsp{};
-  rsp["from"] = from;
-  rsp["to"] = to;
-  rsp["text"] = msg;
-  toSession->Send(rsp.toStyledString(), ID_TEXT_SEND_RSP);
+  toSession->Send(msg, msgID);
 
-  OnRewriteTimer(toSession, seq, rsp);
+  OnRewriteTimer(toSession, seq, msg, msgID);
 }
 
 bool SaveService(size_t seq, int from, int to, std::string msg) {
-  // MysqlManager::GetInstance()->SaveService(from, to, msg);
   auto file = open("./service.log", O_CREAT | O_RDWR | O_APPEND);
-  Json::Value rsp{};
-  rsp["serviceID"] = ID_TEXT_CHAT_MSG_RSP;
-  rsp["seq"] = static_cast<int>(seq);
-  rsp["from"] = from;
-  rsp["to"] = to;
-  rsp["text"] = msg;
-
   char buf[4096]{};
-  int rt = sprintf(buf, "From-%d|To-%d\t%s\n", from, to,
-                   rsp.toStyledString().c_str());
+  int rt = sprintf(buf, "From-%d|To-%d\t%s\n", from, to, msg.c_str());
   if (rt < 0) {
     spdlog::error("[ServiceSystem::SaveService] sprintf error");
     return false;
@@ -110,9 +108,14 @@ bool SaveService(size_t seq, int from, int to, std::string msg) {
   return true;
 }
 
+bool SaveServiceDB(size_t seq, int from, int to, const std::string &msg) {
+  return MySqlOperator::GetInstance()->SaveService(from, to, msg);
+}
+
 void PullText(size_t seq, int from, int to, const std::string &msg) {
 
-  SaveService(util::seqGenerator, from, to, msg);
+  // SaveService(util::seqGenerator, from, to, msg);
+  SaveServiceDB(util::seqGenerator, from, to, msg);
 }
 
 void AckHandle(std::shared_ptr<ChatSession> session, unsigned int msgID,
@@ -132,24 +135,26 @@ void AckHandle(std::shared_ptr<ChatSession> session, unsigned int msgID,
     rsp["error"] = ErrorCodes::Error_Json;
     return;
   }
+
+  rsp.append(req);
   auto seq = req["seq"].asInt();
-  if (util::tansfTimerMap.find(seq) == util::tansfTimerMap.end()) {
+  if (util::retansfTimerMap.find(seq) == util::retansfTimerMap.end()) {
     spdlog::error(
         "[ServiceSystem::AckHandle] ack request is wrong for seq-id{}", seq);
     rsp["error"] = -1;
     return;
   }
-  if (util::reTansfCountMap.find(seq) == util::reTansfCountMap.end()) {
+  if (util::retansfCountMap.find(seq) == util::retansfCountMap.end()) {
     spdlog::error(
         "[ServiceSystem::AckHandle] retransf count not found for seq-id{}",
         seq);
     rsp["error"] = -1;
     return;
   }
-  auto &timer = util::tansfTimerMap[seq];
+  auto &timer = util::retansfTimerMap[seq];
   timer->cancel();
-  util::tansfTimerMap.erase(seq);
-  util::reTansfCountMap.erase(seq);
+  util::retansfTimerMap.erase(seq);
+  util::retansfCountMap.erase(seq);
   rsp["error"] = ErrorCodes::Success;
 
   // rsp["seq"] = seq;
@@ -168,10 +173,10 @@ void TextSend(std::shared_ptr<ChatSession> session, unsigned int msgID,
   Json::Value req;
   Json::Value rsp;
 
-  Defer _([&rsp, session]() {
-    auto rt = rsp.toStyledString();
-    session->Send(rt, ID_TEXT_CHAT_MSG_RSP);
-  });
+  // Defer _([&rsp, session]() {
+  //   auto rt = rsp.toStyledString();
+  //   session->Send(rt, ID_TEXT_CHAT_MSG_RSP);
+  // });
 
   auto parseSuccess = parser.parse(msgData, req);
   if (!parseSuccess) {
@@ -196,17 +201,158 @@ void TextSend(std::shared_ptr<ChatSession> session, unsigned int msgID,
     auto toSession = OnlineUser::GetInstance()->GetUser(to);
     util::sChannel[toSession] = session;
 
-    PushText(toSession, util::seqGenerator, from, to, message.toStyledString());
+    PushText(toSession, util::seqGenerator, from, to, req.toStyledString());
   } else {
     rsp["seq"] = static_cast<int>(util::seqGenerator.load());
     rsp["status"] = "Unread-Pull";
     rsp["error"] = ErrorCodes::Success;
 
-    PullText(util::seqGenerator, from, to, message.toStyledString());
+    PullText(util::seqGenerator, from, to, req.toStyledString());
   }
 
-  OnRewriteTimer(session, seq, rsp);
+  OnRewriteTimer(session, seq, rsp.toStyledString(), ID_TEXT_CHAT_MSG_RSP);
   ++util::seqGenerator;
+}
+
+struct GroupType {
+  size_t id;
+  size_t up;
+  std::vector<size_t> numbers;
+};
+
+namespace dev {
+std::unordered_map<size_t, GroupType> gg;
+};
+
+void GroupCreate(std::shared_ptr<ChatSession> session, unsigned int msgID,
+                 const std::string &msgData) {
+  Json::Reader parser;
+  Json::Value req;
+  Json::Value rsp;
+  bool parserSuccess = parser.parse(msgData, req);
+  if (!parserSuccess) {
+    rsp["error"] = ErrorCodes::Error_Json;
+    spdlog::error("[ServiceSystem::GroupCreate] parse msg_data error!");
+    return;
+  }
+
+  Defer _([&rsp, session]() {
+    std::string rt = rsp.toStyledString();
+    session->Send(rt, ID_GROUP_CREATE_RSP);
+  });
+
+  // gid should by server generate, todo...
+  int gid = req["gid"].asInt();
+  int uid = req["uid"].asInt();
+
+  GroupType group;
+  group.id = uid;
+  group.up = gid;
+  dev::gg[gid] = group;
+
+  rsp["error"] = ErrorCodes::Success;
+  rsp["gid"] = gid;
+}
+
+void GroupJoin(std::shared_ptr<ChatSession> session, unsigned int msgID,
+               const std::string &msgData) {
+  Json::Reader parser;
+  Json::Value req;
+  Json::Value rsp;
+  bool parserSuccess = parser.parse(msgData, req);
+  if (!parserSuccess) {
+    rsp["error"] = ErrorCodes::Error_Json;
+    spdlog::error("[ServiceSystem::GroupJoin] parse msg_data error!");
+    return;
+  }
+
+  Defer _([&rsp, session]() {
+    std::string rt = rsp.toStyledString();
+    session->Send(rt, ID_GROUP_JOIN_RSP);
+  });
+
+  int gid = req["gid"].asInt();
+  int fromID = req["from"].asInt();
+
+  if (dev::gg.find(gid) == dev::gg.end()) {
+    spdlog::error("[ServiceSystem::GroupJoin] group not found gid-{}", gid);
+  }
+  auto &group = dev::gg[gid];
+  if (std::find(group.numbers.begin(), group.numbers.end(), fromID) ==
+      group.numbers.end()) {
+    group.numbers.push_back(fromID);
+  } else {
+    spdlog::error("This user has joined this group");
+  }
+
+  rsp["error"] = ErrorCodes::Success;
+  rsp["gid"] = gid;
+}
+
+void GroupTextSend(std::shared_ptr<ChatSession> session, unsigned int msgID,
+                   const std::string &msgData) {
+  Json::Reader parser;
+  Json::Value req;
+  Json::Value rsp;
+  bool parserSuccess = parser.parse(msgData, req);
+  if (!parserSuccess) {
+    rsp["error"] = ErrorCodes::Error_Json;
+    spdlog::error("[ServiceSystem::GroupTextSend] parse msg_data error!");
+    return;
+  }
+
+  Defer _([&rsp, session]() {
+    std::string rt = rsp.toStyledString();
+    session->Send(rt, ID_GROUP_TEXT_SEND_RSP);
+  });
+  int gid = req["gid"].asInt();
+  int fromID = req["from"].asInt();
+  std::string msg = req["text"].asString();
+
+  if (dev::gg.find(gid) == dev::gg.end()) {
+    spdlog::error("[ServiceSystem::GroupTextSend] group not found gid-{}", gid);
+    rsp["error"] = -1;
+    return;
+  };
+
+  auto &group = dev::gg[gid];
+  if (std::find(group.numbers.begin(), group.numbers.end(), fromID) ==
+      group.numbers.end()) {
+    spdlog::error("This user has not joined this group");
+    rsp["error"] = -1;
+    return;
+  }
+
+  auto &numbers = group.numbers;
+  for (auto to : numbers) {
+
+    if (to == fromID)
+      continue;
+
+    bool isOnline = OnlineUser::GetInstance()->isOnline(to);
+    int seq = static_cast<int>(util::seqGenerator.load());
+    if (isOnline) {
+      rsp["seq"] = seq;
+      rsp["status"] = "Unread-Push";
+      rsp["error"] = ErrorCodes::Success;
+
+      auto toSession = OnlineUser::GetInstance()->GetUser(to);
+      util::sChannel[toSession] = session;
+
+      PushText(toSession, util::seqGenerator, fromID, to, req.toStyledString(),
+               ID_GROUP_TEXT_SEND_RSP);
+    } else {
+      rsp["seq"] = static_cast<int>(util::seqGenerator.load());
+      rsp["status"] = "Unread-Pull";
+      rsp["error"] = ErrorCodes::Success;
+
+      PullText(util::seqGenerator, fromID, to, req.toStyledString());
+    }
+
+    // *bug*: in this time, seq map to timer do db in before is exist.
+    OnRewriteTimer(session, seq, rsp.toStyledString(), ID_GROUP_TEXT_SEND_RSP);
+    ++util::seqGenerator;
+  }
 }
 
 void ServiceSystem::Init() {
@@ -324,6 +470,12 @@ void ServiceSystem::LoginHandler(std::shared_ptr<ChatSession> session,
 
   auto uid = req["uid"].asInt();
   // auto token = req["token"].asString();
+
+  if (OnlineUser::GetInstance()->isOnline(uid)) {
+    spdlog::error("[ServiceSystem::LoginHandle] this user is online");
+    rsp["error"] = -1;
+    return;
+  }
 
   rsp["error"] = ErrorCodes::Success;
   // 应用层上的用户管理，而在ChatServer中则是对传输层连接的管理
