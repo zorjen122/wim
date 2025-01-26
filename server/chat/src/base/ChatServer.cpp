@@ -29,8 +29,11 @@ void ChatServer::HandleAccept(std::shared_ptr<ChatSession> session,
   if (!error) {
     session->Start();
     std::lock_guard<std::mutex> lock(Mutex);
+    sessionGroup[count] = session;
   } else {
-    spdlog::error("session accept failed, error is {}", error.message());
+    spdlog::error(
+        "[ChatServer::HandleAccept] session accept failed, error is {}",
+        error.message());
   }
 
   ChatServer::Start();

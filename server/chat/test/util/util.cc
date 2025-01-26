@@ -46,9 +46,9 @@ string generateRandomEmail() {
 }
 
 #include <cppconn/resultset.h>
+#include <cppconn/statement.h>
 #include <mysql_connection.h>
 #include <mysql_driver.h>
-#include <cppconn/statement.h>
 #include <spdlog/spdlog.h>
 
 void fetchUsersFromDatabase(UserManager *users) {
@@ -68,7 +68,7 @@ void fetchUsersFromDatabase(UserManager *users) {
         "SELECT id, uid, name, email, password FROM users"));
 
     bool isEmpty = 0;
- 
+
     while (res->next()) {
       isEmpty = true;
       User user;
@@ -80,8 +80,7 @@ void fetchUsersFromDatabase(UserManager *users) {
       users->push_back(user);
     }
 
-    if(!isEmpty)
-    {
+    if (!isEmpty) {
       spdlog::error("No such select users");
       return;
     }
@@ -90,15 +89,13 @@ void fetchUsersFromDatabase(UserManager *users) {
     std::cerr << "Error fetching users from database: " << e.what()
               << std::endl;
   }
-
 }
 
-
-int generateRandomNumber(int bound)
-{
+unsigned long long generateRandomNumber(unsigned long long left,
+                                        unsigned long long right) {
   random_device rd;
   mt19937 gen(rd());
-  uniform_int_distribution<> dis(0, bound);
+  uniform_int_distribution<> dis(left, right);
 
   return dis(gen);
 }

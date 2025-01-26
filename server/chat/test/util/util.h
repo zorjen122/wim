@@ -7,17 +7,18 @@ std::string generateRandomEmail();
 
 #include <vector>
 struct User {
-    int id;
-    int uid;
-    std::string username;
-    std::string email;
-    std::string password;
-    std::string host;
-    std::string port;
+  int id;
+  int uid;
+  std::string username;
+  std::string email;
+  std::string password;
+  std::string host;
+  std::string port;
 };
 
 using UserManager = std::vector<User>;
-void fetchUsersFromDatabase(UserManager*);
+void fetchUsersFromDatabase(UserManager *);
 
-int generateRandomNumber(int bound);
-void toNormalString(std::string &str) ;
+unsigned long long generateRandomNumber(unsigned long long left,
+                                        unsigned long long right);
+void toNormalString(std::string &str);

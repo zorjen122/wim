@@ -34,29 +34,34 @@ ServiceSystem::~ServiceSystem() {
 
 namespace util {
 static std::atomic<size_t> seqGenerator(1);
-static std::unordered_map<size_t, std::unique_ptr<net::steady_timer>>
+static std::unordered_map<
+    size_t, std::unordered_map<size_t, std::unique_ptr<net::steady_timer>>>
     retansfTimerMap;
-static std::unordered_map<size_t, size_t> retansfCountMap;
+
+static std::unordered_map<size_t, std::unordered_map<size_t, size_t>>
+    retansfCountMap;
 static std::unordered_map<std::shared_ptr<ChatSession>,
                           std::shared_ptr<ChatSession>>
     sChannel;
 } // namespace util
 
 void OnRewriteTimer(std::shared_ptr<ChatSession> session, size_t seq,
-                    const std::string &rsp, unsigned int rspID) {
+                    const std::string &rsp, unsigned int rspID,
+                    unsigned int member) {
 
-  util::retansfTimerMap[seq] =
+  util::retansfTimerMap[seq][member] =
       std::make_unique<net::steady_timer>(session->GetIoc());
-  util::retansfCountMap[seq] = 0;
-  auto &timer = util::retansfTimerMap[seq];
+  util::retansfCountMap[seq][member] = 0;
+
+  auto &timer = util::retansfTimerMap[seq][member];
   timer->expires_from_now(std::chrono::seconds(5));
-  timer->async_wait([session, rsp, seq, rspID](const error_code &ec) {
+  timer->async_wait([session, rsp, seq, rspID, member](const error_code &ec) {
     if (ec == net::error::operation_aborted) {
       spdlog::info("[PushText] timer by cancelled");
       return;
     } else if (ec.value() == 0) {
       // timer timeout, retransf package
-      if (util::retansfCountMap[seq] >= 3) {
+      if (util::retansfCountMap[seq][member] >= 3) {
         spdlog::error("[PushText] retransf count exceed 3");
         util::retansfTimerMap.erase(seq);
         util::retansfCountMap.erase(seq);
@@ -64,9 +69,9 @@ void OnRewriteTimer(std::shared_ptr<ChatSession> session, size_t seq,
       }
       spdlog::info(
           "[OnRewriteTimer] timeout, on rewrite package, seq-id{}, count-{}",
-          seq, util::retansfCountMap[seq]);
+          seq, util::retansfCountMap[seq][member]);
       session->Send(rsp, rspID);
-      util::retansfCountMap[seq]++;
+      util::retansfCountMap[seq][member]++;
     } else {
       spdlog::info(
           "[OnRewriteTimer] other timer click cased,  | ec: {}, msg: {}",
@@ -83,7 +88,7 @@ void PushText(std::shared_ptr<ChatSession> toSession, size_t seq, int from,
 
   toSession->Send(msg, msgID);
 
-  OnRewriteTimer(toSession, seq, msg, msgID);
+  OnRewriteTimer(toSession, seq, msg, msgID, to);
 }
 
 bool SaveService(size_t seq, int from, int to, std::string msg) {
@@ -132,7 +137,7 @@ void AckHandle(std::shared_ptr<ChatSession> session, unsigned int msgID,
 
   if (!parserSuccess) {
     spdlog::error("[ServiceSystem::AckHandle] parse msg_data error!");
-    rsp["error"] = ErrorCodes::Error_Json;
+    rsp["error"] = ErrorCodes::JsonParserErr;
     return;
   }
 
@@ -151,7 +156,9 @@ void AckHandle(std::shared_ptr<ChatSession> session, unsigned int msgID,
     rsp["error"] = -1;
     return;
   }
-  auto &timer = util::retansfTimerMap[seq];
+
+  auto member = req["from"].asInt();
+  auto &timer = util::retansfTimerMap[seq][member];
   timer->cancel();
   util::retansfTimerMap.erase(seq);
   util::retansfCountMap.erase(seq);
@@ -173,14 +180,9 @@ void TextSend(std::shared_ptr<ChatSession> session, unsigned int msgID,
   Json::Value req;
   Json::Value rsp;
 
-  // Defer _([&rsp, session]() {
-  //   auto rt = rsp.toStyledString();
-  //   session->Send(rt, ID_TEXT_CHAT_MSG_RSP);
-  // });
-
   auto parseSuccess = parser.parse(msgData, req);
   if (!parseSuccess) {
-    rsp["error"] = ErrorCodes::Error_Json;
+    rsp["error"] = ErrorCodes::JsonParserErr;
     spdlog::error(
         "[ServiceSystem::TextSend] parse msg_data error! | msgData {}",
         msgData);
@@ -210,7 +212,8 @@ void TextSend(std::shared_ptr<ChatSession> session, unsigned int msgID,
     PullText(util::seqGenerator, from, to, req.toStyledString());
   }
 
-  OnRewriteTimer(session, seq, rsp.toStyledString(), ID_TEXT_CHAT_MSG_RSP);
+  OnRewriteTimer(session, seq, rsp.toStyledString(), ID_TEXT_CHAT_MSG_RSP,
+                 from);
   ++util::seqGenerator;
 }
 
@@ -231,7 +234,7 @@ void GroupCreate(std::shared_ptr<ChatSession> session, unsigned int msgID,
   Json::Value rsp;
   bool parserSuccess = parser.parse(msgData, req);
   if (!parserSuccess) {
-    rsp["error"] = ErrorCodes::Error_Json;
+    rsp["error"] = ErrorCodes::JsonParserErr;
     spdlog::error("[ServiceSystem::GroupCreate] parse msg_data error!");
     return;
   }
@@ -246,8 +249,8 @@ void GroupCreate(std::shared_ptr<ChatSession> session, unsigned int msgID,
   int uid = req["uid"].asInt();
 
   GroupType group;
-  group.id = uid;
-  group.up = gid;
+  group.id = gid;
+  group.up = uid;
   dev::gg[gid] = group;
 
   rsp["error"] = ErrorCodes::Success;
@@ -261,7 +264,7 @@ void GroupJoin(std::shared_ptr<ChatSession> session, unsigned int msgID,
   Json::Value rsp;
   bool parserSuccess = parser.parse(msgData, req);
   if (!parserSuccess) {
-    rsp["error"] = ErrorCodes::Error_Json;
+    rsp["error"] = ErrorCodes::JsonParserErr;
     spdlog::error("[ServiceSystem::GroupJoin] parse msg_data error!");
     return;
   }
@@ -276,17 +279,24 @@ void GroupJoin(std::shared_ptr<ChatSession> session, unsigned int msgID,
 
   if (dev::gg.find(gid) == dev::gg.end()) {
     spdlog::error("[ServiceSystem::GroupJoin] group not found gid-{}", gid);
-  }
-  auto &group = dev::gg[gid];
-  if (std::find(group.numbers.begin(), group.numbers.end(), fromID) ==
-      group.numbers.end()) {
-    group.numbers.push_back(fromID);
-  } else {
-    spdlog::error("This user has joined this group");
+    rsp["error"] = -1;
+    return;
   }
 
-  rsp["error"] = ErrorCodes::Success;
-  rsp["gid"] = gid;
+  auto &group = dev::gg[gid];
+  if (std::find(group.numbers.begin(), group.numbers.end(), fromID) !=
+      group.numbers.end()) {
+    spdlog::error("[ServiceSystem::GroupJoin] This user has joined this group, "
+                  "user-{}, group-{}",
+                  fromID, gid);
+    rsp["error"] = -1;
+  } else {
+    group.numbers.push_back(fromID);
+    spdlog::info("[ServiceSystem::GroupJoin] user-{} join group-{}", fromID,
+                 gid);
+    rsp["error"] = ErrorCodes::Success;
+    rsp["gid"] = gid;
+  }
 }
 
 void GroupTextSend(std::shared_ptr<ChatSession> session, unsigned int msgID,
@@ -296,7 +306,7 @@ void GroupTextSend(std::shared_ptr<ChatSession> session, unsigned int msgID,
   Json::Value rsp;
   bool parserSuccess = parser.parse(msgData, req);
   if (!parserSuccess) {
-    rsp["error"] = ErrorCodes::Error_Json;
+    rsp["error"] = ErrorCodes::JsonParserErr;
     spdlog::error("[ServiceSystem::GroupTextSend] parse msg_data error!");
     return;
   }
@@ -318,7 +328,12 @@ void GroupTextSend(std::shared_ptr<ChatSession> session, unsigned int msgID,
   auto &group = dev::gg[gid];
   if (std::find(group.numbers.begin(), group.numbers.end(), fromID) ==
       group.numbers.end()) {
-    spdlog::error("This user has not joined this group");
+    spdlog::error("This user has not joined this group, user-{}, group-{}",
+                  fromID, gid);
+    spdlog::info("group-members: {");
+    for (auto &number : group.numbers)
+      spdlog::info("{}, ", number);
+    spdlog::info("}");
     rsp["error"] = -1;
     return;
   }
@@ -349,8 +364,8 @@ void GroupTextSend(std::shared_ptr<ChatSession> session, unsigned int msgID,
       PullText(util::seqGenerator, fromID, to, req.toStyledString());
     }
 
-    // *bug*: in this time, seq map to timer do db in before is exist.
-    OnRewriteTimer(session, seq, rsp.toStyledString(), ID_GROUP_TEXT_SEND_RSP);
+    OnRewriteTimer(session, seq, rsp.toStyledString(), ID_GROUP_TEXT_SEND_RSP,
+                   fromID);
     ++util::seqGenerator;
   }
 }
@@ -390,6 +405,18 @@ void ServiceSystem::Init() {
 
   _serviceGroup[ID_UTIL_ACK_SEQ] =
       std::bind(&AckHandle, std::placeholders::_1, std::placeholders::_2,
+                std::placeholders::_3);
+
+  _serviceGroup[ID_GROUP_CREATE_REQ] =
+      std::bind(&GroupCreate, std::placeholders::_1, std::placeholders::_2,
+                std::placeholders::_3);
+
+  _serviceGroup[ID_GROUP_JOIN_REQ] =
+      std::bind(&GroupJoin, std::placeholders::_1, std::placeholders::_2,
+                std::placeholders::_3);
+
+  _serviceGroup[ID_GROUP_TEXT_SEND_REQ] =
+      std::bind(&GroupTextSend, std::placeholders::_1, std::placeholders::_2,
                 std::placeholders::_3);
 }
 
@@ -458,7 +485,7 @@ void ServiceSystem::LoginHandler(std::shared_ptr<ChatSession> session,
   Json::Value rsp;
   bool parserSuccess = parser.parse(msgData, req);
   if (!parserSuccess) {
-    rsp["error"] = ErrorCodes::Error_Json;
+    rsp["error"] = ErrorCodes::JsonParserErr;
     spdlog::error("[ServiceSystem::LoginHandle] parse msg_data error!");
     return;
   }
