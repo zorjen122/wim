@@ -13,18 +13,18 @@
 #include "Const.h"
 #include "Package.h"
 
-class ServiceSystem : public Singleton<ServiceSystem> {
-  friend class Singleton<ServiceSystem>;
+class Service : public Singleton<Service> {
+  friend class Singleton<Service>;
 
 public:
   using HandleType = std::function<void(std::shared_ptr<ChatSession>,
                                         unsigned int, const std::string &)>;
 
-  ~ServiceSystem();
+  ~Service();
   void PushService(std::shared_ptr<protocol::LogicPackage> package);
 
 private:
-  ServiceSystem();
+  Service();
   void Run();
   void Init();
   void WeachKeepAlive();

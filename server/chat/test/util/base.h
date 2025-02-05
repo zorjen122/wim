@@ -53,4 +53,8 @@ std::string recviceMessage(std::shared_ptr<net::ip::tcp::socket> socket);
 
 void login(int uid);
 void reg(int count);
+
+std::string post(const std::string &host, const std::string &port,
+                 const std::string &path, const std::string &data,
+                 std::unordered_map<std::string, std::string> headers = {});
 }; // namespace base

@@ -6,6 +6,7 @@
 #include <cppconn/statement.h>
 
 #include <atomic>
+#include <cstddef>
 #include <memory>
 #include <mutex>
 #include <mysql_connection.h>
@@ -160,6 +161,11 @@ public:
 
 public:
   bool SaveService(size_t from, size_t to, const std::string &context);
+  bool UserSearch(size_t uid);
+
+  bool AppendPair(size_t uidA, size_t uidB);
+  bool RemovePair(size_t uidA, size_t uidB);
+  bool PairSearch(size_t uidA, size_t uidB);
 
 private:
   std::unique_ptr<MySqlPool> pool;

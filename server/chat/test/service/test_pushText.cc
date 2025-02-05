@@ -20,35 +20,62 @@ auto receiver(std::shared_ptr<net::ip::tcp::socket> socket) {
   return base::recviceMessage(socket);
 }
 
-void loginHandle(std::shared_ptr<net::ip::tcp::socket> socket, int uid) {
+int loginHandle(std::shared_ptr<net::ip::tcp::socket> socket, int uid) {
 
   Json::Value req1;
   req1["uid"] = uid;
 
   base::pushMessage(socket, 1005, req1.toStyledString());
-  base::recviceMessage(socket);
+  auto rt = base::recviceMessage(socket);
+
+  return rt.empty() ? -1 : 0;
 }
 
-void groupCreate(std::shared_ptr<net::ip::tcp::socket> socket, int up) {
+int groupCreate(std::shared_ptr<net::ip::tcp::socket> socket, int up) {
   Json::Value req1;
   req1["uid"] = up;
   // req1["gid"] = generateRandomNumber(10000000, 999999999);
   req1["gid"] = 1001;
 
   base::pushMessage(socket, 1023, req1.toStyledString());
+  auto rt = base::recviceMessage(socket);
+
+  return rt.empty() ? -1 : 0;
 };
 
-void groupJoin(std::shared_ptr<net::ip::tcp::socket> socket, int from,
-               int gid) {
+int groupJoin(std::shared_ptr<net::ip::tcp::socket> socket, int from, int gid) {
   Json::Value req1;
   req1["from"] = from;
   req1["gid"] = gid;
 
   base::pushMessage(socket, 1025, req1.toStyledString());
+  auto rt = base::recviceMessage(socket);
+
+  return rt.empty() ? -1 : 0;
 }
 
-void groupMemberText(std::shared_ptr<net::ip::tcp::socket> socket, int gid,
-                     int from, int to, std::string text = "Hello, Group!") {
+int ack(std::shared_ptr<net::ip::tcp::socket> socket, std::string rt) {
+  spdlog::info("Send ACK....");
+  if (!rt.empty()) {
+    constexpr int ID_ACK = 0xff33;
+    base::pushMessage(socket, ID_ACK, rt);
+    rt = receiver(socket);
+    if (!rt.empty()) {
+      spdlog::info("[ack is success!]");
+    } else {
+      spdlog::info("[ack is failed!]");
+      return -1;
+    }
+  } else {
+    spdlog::info("[Recvice message is failed!]");
+    return -1;
+  }
+
+  return 0;
+}
+
+int groupMemberText(std::shared_ptr<net::ip::tcp::socket> socket, int gid,
+                    int from, int to, std::string text = "Hello, Group!") {
   Json::Value req1;
   req1["gid"] = gid;
   req1["from"] = from;
@@ -56,6 +83,12 @@ void groupMemberText(std::shared_ptr<net::ip::tcp::socket> socket, int gid,
   req1["text"] = text;
 
   base::pushMessage(socket, 1027, req1.toStyledString());
+  auto rt = base::recviceMessage(socket);
+
+  sleep(2);
+  spdlog::info("Send ACK....");
+
+  return ack(socket, rt);
 }
 
 void testTextSend(User user, std::shared_ptr<net::ip::tcp::socket> socket,
@@ -64,20 +97,12 @@ void testTextSend(User user, std::shared_ptr<net::ip::tcp::socket> socket,
 
   sleep(8);
 
-  std::string rt = receiver(socket);
+  auto res = receiver(socket);
 
-  spdlog::info("Send ACK....");
-  if (!rt.empty()) {
-    constexpr int ID_ACK = 0xff33;
-    base::pushMessage(socket, ID_ACK, rt);
-    rt = receiver(socket);
-    if (!rt.empty()) {
-      spdlog::info("[Send message is success!]");
-    } else {
-      spdlog::info("[Send-message is failed!]");
-    }
+  if (ack(socket, res) == -1) {
+    spdlog::error("ack-failed");
   } else {
-    spdlog::info("[Recvice message is failed!]");
+    spdlog::info("ack-success");
   }
 }
 
@@ -112,34 +137,27 @@ int main() {
                user.port);
 
   socket = base::startChatClient(ioc, user.host, user.port);
-  loginHandle(socket, user.uid);
-  // testTextSend(user, socket, from, to);
-
-  // groupCreate(socket, user.uid);
-  // base::recviceMessage(socket);
-  // spdlog::info("group-create-success");
-
-  groupJoin(socket, user.uid, 1001);
-  base::recviceMessage(socket);
-
-  groupMemberText(socket, 1001, user.uid, to, "Hello, Group!");
-  auto rsp = base::recviceMessage(socket);
-  Json::Reader reader;
-  Json::Value ret;
-  bool parserSuccess = reader.parse(rsp, ret);
-  if (!parserSuccess) {
-    spdlog::info("parse-response-failed");
-    return 0;
-  }
-  if (ret["error"].asInt() != -1) {
-    spdlog::info("group-member-text-success, ec: {}", ret["error"].asInt());
+  if (loginHandle(socket, user.uid) == -1) {
+    spdlog::error("login-failed");
+    return -1;
   } else {
-    spdlog::error("group-member-text-failed, ec: {}", ret["error"].asInt());
+    spdlog::info("login-success");
   }
 
+  if (groupJoin(socket, user.uid, 1001) == -1) {
+    spdlog::error("group-join-failed");
+    return -1;
+  } else {
+    spdlog::info("group-join-success");
+  }
+
+  if (groupMemberText(socket, 1001, user.uid, to, "Hello, Group!") == -1) {
+    spdlog::error("group-member-text-failed");
+    return -1;
+  } else {
+    spdlog::info("group-member-text-success");
+  }
   ioc.run();
-  socket->close();
-  ioc.stop();
 
   return 0;
 }

@@ -14,6 +14,10 @@ enum ErrorCodes {
   PasswdInvalid = 1009,  // ??????????
   TokenInvalid = 1010,   // Token?
   UidInvalid = 1011,     // uid??
+  UserNotOnline,
+  UserNotFriend,
+  UserOnline,
+  UserOffline
 };
 
 #include <memory>
@@ -80,6 +84,15 @@ enum ServiceID {
   ID_GROUP_JOIN_RSP = 1026,
   ID_GROUP_TEXT_SEND_REQ = 1027,
   ID_GROUP_TEXT_SEND_RSP = 1028,
+  ID_REMOVE_FRIEND_REQ = 1030,
+  ID_REMOVE_FRIEND_RSP = 1031,
+  ID_USER_QUIT_WAIT_REQ = 1032,
+  ID_USER_QUIT_WAIT_RSP = 1033,
+
+  ID_USER_QUIT_GROUP_REQ = 1034,
+  ID_USER_QUIT_GROUP_RSP = 1035,
+
+  ID_LOGIN_SQUEEZE = 0xff01,
 
   // about service handles of the utility
   ID_UTIL_ACK_SEQ = 0xff33,
@@ -117,6 +130,14 @@ static std::unordered_map<ServiceID, std::string> __serviceIdMap = {
     {ID_TEXT_SEND_RSP, "Text Send Response"},
     {ID_GROUP_TEXT_SEND_REQ, "Group Text Send Request"},
     {ID_GROUP_TEXT_SEND_RSP, "Group Text Send Response"},
+
+    {ID_REMOVE_FRIEND_REQ, "Remove Friend Request"},
+    {ID_REMOVE_FRIEND_RSP, "Remove Friend Response"},
+    {ID_USER_QUIT_WAIT_REQ, "User Quit Wait Request"},
+    {ID_USER_QUIT_WAIT_RSP, "User Quit Wait Response"},
+    {ID_USER_QUIT_GROUP_REQ, "User Quit Group Request"},
+    {ID_USER_QUIT_GROUP_RSP, "User Quit Group Response"},
+    {ID_LOGIN_SQUEEZE, "Login Squeeze"},
 };
 
 // 查询服务ID是否存在

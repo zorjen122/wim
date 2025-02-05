@@ -6,7 +6,7 @@
 #include <string>
 
 using boost::asio::ip::tcp;
-class ServiceSystem;
+class Service;
 class ChatSession;
 
 namespace protocol {

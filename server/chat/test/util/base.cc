@@ -1,12 +1,15 @@
 #include "base.h"
 #include "json/reader.h"
 #include <boost/asio/detail/socket_ops.hpp>
+#include <boost/asio/io_context.hpp>
 #include <boost/asio/read.hpp>
 #include <boost/asio/registered_buffer.hpp>
+#include <boost/beast/http/message.hpp>
 #include <boost/system/detail/error_code.hpp>
 #include <cassert>
 #include <cstring>
 #include <string>
+#include <unordered_map>
 
 namespace base {
 UserManager userManager{};
@@ -118,6 +121,63 @@ std::string recviceMessage(std::shared_ptr<net::ip::tcp::socket> socket) {
   return bodyBuf;
 }
 
+std::string post(const std::string &host, const std::string &port,
+                 const std::string &path, const std::string &data,
+                 std::unordered_map<std::string, std::string> headers) {
+
+  net::io_context ioc;
+  tcp::resolver resolver(ioc);
+  boost::system::error_code ec;
+  auto const results = resolver.resolve(host, port, ec);
+  if (ec) {
+    spdlog::error("reslove is wrong! | ec {} ", ec.message());
+    return {};
+  }
+
+  tcp::socket sock(ioc);
+  net::connect(sock, results.begin(), results.end(), ec);
+  if (ec) {
+    spdlog::error("connect is wrong!");
+    return {};
+  }
+
+  http::request<http::string_body> req{http::verb::post, path, 11};
+  req.set(http::field::host, host);
+  req.set(http::field::content_type, "application/json");
+  if (headers.size() > 0) {
+    for (auto [k, v] : headers) {
+      req.set(k, v);
+    }
+  }
+  req.body() = data;
+  req.prepare_payload();
+
+  std::clock_t t = std::clock();
+  http::write(sock, req, ec);
+
+  if (ec) {
+    spdlog::error("post: send as wrong!\n");
+    return {};
+  }
+  // 读取响应
+  beast::flat_buffer buffer;
+  http::response<http::dynamic_body> res;
+  http::read(sock, buffer, res, ec);
+
+  if (ec) {
+    spdlog::error("post: read as wrong!\n");
+    return {};
+  }
+
+  std::clock_t t2 = std::clock();
+
+  double ms = double(t2 - t) / CLOCKS_PER_SEC * 1000;
+  auto rsp = boost::beast::buffers_to_string(res.body().data());
+  spdlog::info("[time-{}(ms), response: {}]", ms, rsp);
+
+  return rsp;
+}
+
 void login(int uid) {
 
   auto user = userManager[uid];
@@ -204,7 +264,7 @@ void login(int uid) {
                port);
 
   sock.shutdown(tcp::socket::shutdown_both);
-}
+} // namespace base
 
 void reg(int count) {
   try {

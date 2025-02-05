@@ -4,39 +4,70 @@
 #include <memory>
 #include <spdlog/spdlog.h>
 #include <string>
+#include <unistd.h>
 
-void loginHandle(std::shared_ptr<net::ip::tcp::socket> socket, int uid) {
+int loginHandle(std::shared_ptr<net::ip::tcp::socket> socket, int uid) {
 
   Json::Value req1;
   req1["uid"] = uid;
 
   base::pushMessage(socket, 1005, req1.toStyledString());
   spdlog::info("total message: {}", req1.toStyledString());
-  base::recviceMessage(socket);
+  auto rt = base::recviceMessage(socket);
+
+  return rt.empty() ? -1 : 0;
 }
 
-void TextSend(std::shared_ptr<net::ip::tcp::socket> socket) {
+int ack(std::shared_ptr<net::ip::tcp::socket> socket, std::string rt) {
+  spdlog::info("Send ACK....");
+  if (!rt.empty()) {
+    constexpr int ID_ACK = 0xff33;
+    base::pushMessage(socket, ID_ACK, rt);
+    rt = base::recviceMessage(socket);
+    if (!rt.empty()) {
+      spdlog::info("[ack is success!]");
+    } else {
+      spdlog::info("[ack is failed!]");
+      return -1;
+    }
+  } else {
+    spdlog::info("[Recvice message is failed!]");
+    return -1;
+  }
+
+  return 0;
+}
+
+int groupRecv(std::shared_ptr<net::ip::tcp::socket> socket) {
 
   spdlog::info("receive...");
-  base::recviceMessage(socket);
+  auto rt = base::recviceMessage(socket);
+
+  sleep(2);
+
+  spdlog::info("send ACK....");
+  return ack(socket, rt);
 }
 
-void groupJoin(std::shared_ptr<net::ip::tcp::socket> socket, int from,
-               int gid) {
+int groupJoin(std::shared_ptr<net::ip::tcp::socket> socket, int from, int gid) {
   Json::Value req1;
   req1["from"] = from;
   req1["gid"] = gid;
 
   base::pushMessage(socket, 1025, req1.toStyledString());
+  auto rt = base::recviceMessage(socket);
+  return rt.empty() ? -1 : 0;
 }
 
-void groupCreate(std::shared_ptr<net::ip::tcp::socket> socket, int up) {
+int groupCreate(std::shared_ptr<net::ip::tcp::socket> socket, int up) {
   Json::Value req1;
   req1["uid"] = up;
   // req1["gid"] = generateRandomNumber(10000000, 999999999);
   req1["gid"] = 1001;
 
   base::pushMessage(socket, 1023, req1.toStyledString());
+  auto rt = base::recviceMessage(socket);
+  return rt.empty() ? -1 : 0;
 };
 
 int main(int argc, char *argv[]) {
@@ -59,36 +90,35 @@ int main(int argc, char *argv[]) {
 
   auto socket = base::startChatClient(ioc, user.host, user.port);
 
-  loginHandle(socket, user.uid);
+  int q{};
+  q = loginHandle(socket, user.uid);
+  if (q == 0)
+    spdlog::info("login success");
+  else
+    spdlog::error("login failed");
 
   std::string rt{};
   if (argc > 2 && strcmp(argv[2], "create-group") == 0) {
-    groupCreate(socket, user.uid);
-    rt = base::recviceMessage(socket);
-
-    Json::Reader reader;
-    Json::Value ret;
-    bool parserSuccess = reader.parse(rt, ret);
-    if (!parserSuccess) {
-      spdlog::error("parse json failed");
-      return 0;
-    }
-    if (ret["error"].asInt() == 0) {
+    q = groupCreate(socket, user.uid);
+    if (q == 0)
       spdlog::info("group create success");
-    } else {
+    else
       spdlog::error("group create failed");
-      return 0;
-    }
   }
 
-  groupJoin(socket, user.uid, 1001);
-  base::recviceMessage(socket);
+  q = groupJoin(socket, user.uid, 1001);
+  if (q == 0)
+    spdlog::info("group join success");
+  else
+    spdlog::error("group join failed");
 
-  TextSend(socket);
+  q = groupRecv(socket);
+  if (q == 0)
+    spdlog::info("group recv success");
+  else
+    spdlog::error("group recv failed");
 
   ioc.run();
-  socket->close();
-  ioc.stop();
 
   return 0;
 }

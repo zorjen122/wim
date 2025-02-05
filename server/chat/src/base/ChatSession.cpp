@@ -2,6 +2,7 @@
 
 #include "json/value.h"
 #include <boost/asio/detail/socket_ops.hpp>
+#include <boost/asio/error.hpp>
 #include <boost/asio/io_context.hpp>
 #include <mutex>
 #include <spdlog/spdlog.h>
@@ -111,7 +112,7 @@ void ChatSession::ReceiveBody(size_t size) {
       packageNode->cur += bytesTransfered;
       packageNode->data[packageNode->total] = '\0';
 
-      ServiceSystem::GetInstance()->PushService(
+      Service::GetInstance()->PushService(
           std::make_shared<protocol::LogicPackage>(shared_from_this(),
                                                    packageNode));
       ReceiveHead(PACKAGE_TOTAL_LEN);
@@ -128,15 +129,22 @@ void ChatSession::ReceiveHead(size_t size) {
                                     this](const boost::system::error_code &ec,
                                           std::size_t bytesTransfered) {
     try {
-      if (ec) {
-        spdlog::error(
-            "[ChatSession::ReceivePackageHead] handle read failed, error is {}",
-            ec.what());
+      if (ec == net::error::eof) {
+        spdlog::info("[ChatSession::ReceivePackageHead] end of file, socket "
+                     "close | oper-sessionID: {}",
+                     id);
         Close();
         chatServer->ClearSession(id);
         return;
       }
-
+      if (ec) {
+        spdlog::error("[ChatSession::ReceivePackageHead] handle read failed, "
+                      "error is {}",
+                      ec.what());
+        Close();
+        chatServer->ClearSession(id);
+        return;
+      }
       if (bytesTransfered < PACKAGE_TOTAL_LEN) {
         spdlog::warn("[ChatSession::ReceivePackageHead] read length not match, "
                      "read [{}] , total [{}] | oper: close this session",
@@ -203,12 +211,14 @@ void ChatSession::HandleWrite(const boost::system::error_code &error,
                       sharedSelf));
       }
     } else {
-      spdlog::error("handle write failed, error is {}", error.what());
+      spdlog::error(
+          "[ChatSession::HandleWrite] handle write failed, error is {}",
+          error.what());
       Close();
       chatServer->ClearSession(id);
     }
   } catch (std::exception &e) {
-    spdlog::error("Exception code is {}", e.what());
+    spdlog::error("[ChatSession::HandleWrite] Exception code is {}", e.what());
   }
 }
 
@@ -217,10 +227,10 @@ void ChatSession::asyncReadFull(
     std::function<void(const boost::system::error_code &, std::size_t)>
         handler) {
   memset(packageBuf, 0, PACKAGE_MAX_LENGTH);
-  asyncReadLen(0, maxLength, handler);
+  asyncRead(0, maxLength, handler);
 }
 
-void ChatSession::asyncReadLen(
+void ChatSession::asyncRead(
     std::size_t read_len, std::size_t total_len,
     std::function<void(const boost::system::error_code &, std::size_t)>
         handler) {
@@ -239,10 +249,12 @@ void ChatSession::asyncReadLen(
           return;
         }
 
-        self->asyncReadLen(read_len + bytesTransfered, total_len, handler);
+        self->asyncRead(read_len + bytesTransfered, total_len, handler);
       });
 }
 
 tcp::socket &ChatSession::GetSocket() { return sock; }
 
 net::io_context &ChatSession::GetIoc() { return ioc; }
+
+void ChatSession::ClearSession() { chatServer->ClearSession(id); }

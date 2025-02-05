@@ -24,7 +24,7 @@ using boost::system::error_code;
 } // namespace net
 
 class ChatServer;
-class ServiceSystem;
+class Service;
 
 class ChatSession : public std::enable_shared_from_this<ChatSession> {
 public:
@@ -43,16 +43,17 @@ public:
   std::shared_ptr<ChatSession> GetSharedSelf();
   void ReceiveBody(size_t size);
   void ReceiveHead(size_t size);
+  void ClearSession();
 
 private:
   void asyncReadFull(
       std::size_t maxLength,
       std::function<void(const boost::system::error_code &, std::size_t)>
           handler);
-  void asyncReadLen(
-      std::size_t readLen, std::size_t total,
-      std::function<void(const boost::system::error_code &, std::size_t)>
-          handler);
+  void
+  asyncRead(std::size_t readLen, std::size_t total,
+            std::function<void(const boost::system::error_code &, std::size_t)>
+                handler);
 
   void HandleWrite(const boost::system::error_code &error,
                    std::shared_ptr<ChatSession> sharedSelf);

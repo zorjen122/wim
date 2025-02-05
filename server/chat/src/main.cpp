@@ -52,8 +52,8 @@ int main() {
                config["self"]["rpcPort"].as<std::string>());
 
   try {
-    RedisManager::GetInstance();
-    MySqlOperator::GetInstance();
+    // RedisManager::GetInstance();
+    // MySqlOperator::GetInstance();
     net::io_context ioc;
     auto serverPool = IocPool::GetInstance();
 
