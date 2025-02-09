@@ -33,7 +33,7 @@ public:
   ~ChatSession();
 
   tcp::socket &GetSocket();
-  std::string &GetSessionId();
+  size_t GetSessionID();
   net::io_context &GetIoc();
 
   void Start();

@@ -4,6 +4,7 @@
 #include "Configer.h"
 #include "Const.h"
 
+#include "File.h"
 #include "OnlineUser.h"
 #include "RedisManager.h"
 #include "RpcClient.h"
@@ -45,35 +46,62 @@ static std::unordered_map<size_t, std::unordered_map<size_t, size_t>>
 static std::unordered_map<std::shared_ptr<ChatSession>,
                           std::shared_ptr<ChatSession>>
     sChannel;
+
+void clearRetransfTimer(size_t seq, size_t member) {
+  auto &timer = retansfTimerMap[seq][member];
+  timer->cancel();
+  retansfTimerMap[seq].erase(member);
+  retansfCountMap[seq].erase(member);
+}
+
 } // namespace util
+
+void ClearChannel(size_t uid, std::shared_ptr<ChatSession> session) {
+  OnlineUser::GetInstance()->RemoveUser(uid);
+  session->ClearSession();
+  session->Close();
+  spdlog::info("[Service::ClearChannel] clear channel success, uid-{}", uid);
+}
 
 int OnRewriteTimer(std::shared_ptr<ChatSession> session, size_t seq,
                    const std::string &rsp, unsigned int rspID,
-                   unsigned int member) {
+                   unsigned int member, unsigned int timewait = 5,
+                   unsigned int maxRewrite = 3) {
 
   util::retansfTimerMap[seq][member] =
       std::make_unique<net::steady_timer>(session->GetIoc());
   util::retansfCountMap[seq][member] = 0;
 
   std::function<void()> lam{};
-  lam = [session, rsp, seq, rspID, member, lam]() {
+  lam = [&]() {
     auto &timer = util::retansfTimerMap[seq][member];
-    timer->expires_from_now(std::chrono::seconds(5));
+    timer->expires_from_now(std::chrono::seconds(timewait));
 
-    timer->async_wait([&](const error_code &ec) {
+    timer->async_wait([=](const error_code &ec) {
       if (ec == net::error::operation_aborted) {
         spdlog::info("[OnRewriteTimer] timer by cancelled");
+        return;
       } else if (ec.value() == 0) {
+
         // timer timeout, retransf package
-        if (util::retansfCountMap[seq][member] > 3) {
-          spdlog::error("[OnRewriteTimer] retransf count exceed 3");
+        if (util::retansfCountMap[seq][member] > maxRewrite) {
+          spdlog::error("[OnRewriteTimer] retransf count exceed 3 | seq-id "
+                        "[{}],member [{}]",
+                        seq, member);
+
+          switch (rspID) {
+          case ID_PING_REQ: {
+            ClearChannel(member, session);
+            break;
+          }
+          }
+
           util::retansfTimerMap[seq].erase(member);
           util::retansfCountMap[seq].erase(member);
-
-          switch (rspID) {}; // todo
           return;
         }
-        spdlog::info("[OnRewriteTimer] timeout, on rewrite package, "
+
+        spdlog::info("[OnRewriteTimer] timeout, on rewrite package | "
                      "seq-id [{}], count [{}]",
                      seq, util::retansfCountMap[seq][member]);
 
@@ -81,11 +109,9 @@ int OnRewriteTimer(std::shared_ptr<ChatSession> session, size_t seq,
         util::retansfCountMap[seq][member]++;
         lam();
       } else {
-        spdlog::info(
-            "[OnRewriteTimer] other timer click cased,  | ec: {}, msg: {}",
-            ec.value(), ec.message());
-        util::retansfTimerMap[seq].erase(member);
-        util::retansfCountMap[seq].erase(member);
+        spdlog::info("[OnRewriteTimer] other timer click cased,  | ec: {}",
+                     ec.message());
+        util::clearRetransfTimer(seq, member);
       }
     });
   };
@@ -95,6 +121,39 @@ int OnRewriteTimer(std::shared_ptr<ChatSession> session, size_t seq,
   spdlog::info("[OnRewriteTimer] start rewrite timer, seq-id{}, member-{}", seq,
                member);
   return 0;
+}
+
+void PingHandle(std::shared_ptr<ChatSession> session, unsigned int msgID,
+                const std::string &msgData) {
+  Json::Reader reader;
+  Json::Value req;
+  Json::Value rsp;
+
+  Defer _([&rsp, session]() {
+    std::string rt = rsp.toStyledString();
+    session->Send(rt, ID_PING_RSP);
+  });
+
+  bool parserSuccess = reader.parse(msgData, req);
+  if (!parserSuccess) {
+    rsp["error"] = ErrorCodes::JsonParserErr;
+    spdlog::error("[ServiceSystem::Ping] parse msg_data error!");
+    return;
+  }
+
+  auto uid = req["uid"].asInt();
+  auto seq = req["seq"].asInt();
+  util::clearRetransfTimer(seq, uid);
+
+  int seqGenerator = static_cast<int>(util::seqGenerator.load());
+  rsp["seq"] = seqGenerator;
+  rsp["error"] = ErrorCodes::Success;
+  rsp["uid"] = uid;
+
+  spdlog::info("[ServiceSystem::Ping] ping handle success, seq-id{}, uid-{}",
+               seqGenerator, uid);
+  OnRewriteTimer(session, seqGenerator, rsp.toStyledString(), ID_PING_RSP, uid);
+  util::seqGenerator++;
 }
 
 int PushText(std::shared_ptr<ChatSession> toSession, size_t seq, int from,
@@ -173,6 +232,9 @@ void AckHandle(std::shared_ptr<ChatSession> session, unsigned int msgID,
   }
 
   auto member = req["from"].asInt();
+  auto reqID = req["id"].asInt();
+  switch (reqID) {} // todo...
+
   auto &timer = util::retansfTimerMap[seq][member];
   timer->cancel();
   util::retansfTimerMap[seq].erase(member);
@@ -544,6 +606,7 @@ void GroupJoin(std::shared_ptr<ChatSession> session, unsigned int msgID,
   }
 }
 
+// TEXT todo...
 void GroupQuit(std::shared_ptr<ChatSession> session, unsigned int msgID,
                const std::string &msgData) {
   Json::Reader parser;
@@ -665,11 +728,7 @@ void GroupTextSend(std::shared_ptr<ChatSession> session, unsigned int msgID,
 
 void Service::Init() {
   _serviceGroup[ID_CHAT_LOGIN_INIT] =
-      std::bind(&Service::LoginHandler, this, std::placeholders::_1,
-                std::placeholders::_2, std::placeholders::_3);
-
-  _serviceGroup[ID_PING_PONG_REQ] =
-      std::bind(&Service::PingKeepAlive, this, std::placeholders::_1,
+      std::bind(&Service::Login, this, std::placeholders::_1,
                 std::placeholders::_2, std::placeholders::_3);
 
   _serviceGroup[ID_SEARCH_USER_REQ] =
@@ -711,10 +770,11 @@ void Service::Init() {
   _serviceGroup[ID_GROUP_TEXT_SEND_REQ] =
       std::bind(&GroupTextSend, std::placeholders::_1, std::placeholders::_2,
                 std::placeholders::_3);
-}
 
-void Service::PingKeepAlive(std::shared_ptr<ChatSession> session,
-                            unsigned int msgID, const std::string &msgData) {}
+  _serviceGroup[ID_PING_REQ] =
+      std::bind(&PingHandle, std::placeholders::_1, std::placeholders::_2,
+                std::placeholders::_3);
+}
 
 void Service::PushService(std::shared_ptr<protocol::LogicPackage> msg) {
   std::unique_lock<std::mutex> lock(_mutex);
@@ -769,16 +829,16 @@ void Service::Run() {
   }
 }
 
-void ReLogin(int uid, std::shared_ptr<ChatSession> userSession) {
+void ReLogin(int uid, std::shared_ptr<ChatSession> oldSession,
+             std::shared_ptr<ChatSession> newSession) {
   Json::Value info;
   info["uid"] = uid;
+  info["status"] = "close";
 
   // todo...  需要可靠通知机制
-  userSession->Send(info.toStyledString(), ID_LOGIN_SQUEEZE);
-  userSession->ClearSession();
-  userSession->Close();
-  OnlineUser::GetInstance()->RemoveUser(uid);
-  OnlineUser::GetInstance()->MapUser(uid, userSession);
+  oldSession->Send(info.toStyledString(), ID_LOGIN_SQUEEZE);
+  ClearChannel(uid, oldSession);
+  OnlineUser::GetInstance()->MapUser(uid, newSession);
 }
 
 void UserQuitWait(std::shared_ptr<ChatSession> session, unsigned int msgID,
@@ -838,11 +898,27 @@ void UserQuit(std::shared_ptr<ChatSession> session, unsigned int msgID,
   userSession->Close();
 }
 
-void Service::LoginHandler(std::shared_ptr<ChatSession> session,
-                           unsigned int msgID, const std::string &msgData) {
+void Pong(int uid, int seq, std::shared_ptr<ChatSession> session) {
+  Json::Value pong;
+  pong["seq"] = seq;
+  pong["uid"] = uid;
+  pong["error"] = ErrorCodes::Success;
+  session->Send(pong.toStyledString(), ID_PING_RSP);
+  OnRewriteTimer(session, seq, pong.toStyledString(), ID_PING_RSP, uid);
+  util::seqGenerator++;
+}
+
+void Service::Login(std::shared_ptr<ChatSession> session, unsigned int msgID,
+                    const std::string &msgData) {
   Json::Reader parser;
   Json::Value req;
   Json::Value rsp;
+
+  Defer _([&rsp, session]() {
+    std::string rt = rsp.toStyledString();
+    session->Send(rt, ID_CHAT_LOGIN_INIT_RSP);
+  });
+
   bool parserSuccess = parser.parse(msgData, req);
   if (!parserSuccess) {
     rsp["error"] = ErrorCodes::JsonParserErr;
@@ -850,22 +926,19 @@ void Service::LoginHandler(std::shared_ptr<ChatSession> session,
     return;
   }
 
-  Defer _([&rsp, session]() {
-    std::string rt = rsp.toStyledString();
-    session->Send(rt, ID_CHAT_LOGIN_INIT_RSP);
-  });
-
   auto uid = req["uid"].asInt();
   // auto token = req["token"].asString();
 
+  int seq = static_cast<int>(util::seqGenerator.load());
   if (OnlineUser::GetInstance()->isOnline(uid)) {
     spdlog::info("[ServiceSystem::LoginHandle] THIS USER IS ONLINE, uid-{}",
                  uid);
     rsp["error"] = ErrorCodes::UserOnline;
 
-    auto userSession = OnlineUser::GetInstance()->GetUser(uid);
-    ReLogin(uid, userSession);
+    auto oldSession = OnlineUser::GetInstance()->GetUser(uid);
+    ReLogin(uid, oldSession, session);
 
+    Pong(uid, seq, session);
     return;
   } else {
     rsp["error"] = ErrorCodes::Success;
@@ -874,7 +947,8 @@ void Service::LoginHandler(std::shared_ptr<ChatSession> session,
     spdlog::info(
         "[ServiceSystem::LoginHandle] user logining, <uid: {} => session >",
         uid);
-    return;
+
+    Pong(uid, seq, session);
   }
 
   // spdlog::info(

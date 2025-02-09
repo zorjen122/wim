@@ -1,9 +1,32 @@
 #pragma once
 
 #include "Const.h"
+#include <atomic>
 #include <memory>
+#include <string>
+#include <unordered_map>
 
 class ChatSession;
+
+// todo...
+class UserBase {
+private:
+  size_t id;
+  std::shared_ptr<ChatSession> network;
+};
+
+class User : public UserBase {
+private:
+  std::string name;
+  std::string ip;
+  std::string token;
+  std::string sex;
+  std::string icon;
+};
+
+static std::unordered_map<size_t, std::atomic<size_t>> seqUserMessage;
+
+// ok
 class OnlineUser : public Singleton<OnlineUser> {
   friend class Singleton<OnlineUser>;
 

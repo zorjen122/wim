@@ -24,6 +24,9 @@ public:
   ChatServer() = delete;
   ChatServer(net::io_context &ioContext, unsigned short port);
   ~ChatServer();
+
+  size_t GetSessionID();
+
   void ClearSession(size_t id);
   void Start();
 

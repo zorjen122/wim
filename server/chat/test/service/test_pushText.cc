@@ -5,6 +5,7 @@
 #include "json/value.h"
 #include <boost/asio/ip/host_name.hpp>
 #include <memory>
+#include <string>
 #include <unistd.h>
 
 void sender(std::shared_ptr<net::ip::tcp::socket> socket, int from, int to) {
@@ -106,6 +107,56 @@ void testTextSend(User user, std::shared_ptr<net::ip::tcp::socket> socket,
   }
 }
 
+int testGroupMessage(std::shared_ptr<net::ip::tcp::socket> socket, User user,
+                     int to) {
+  if (loginHandle(socket, user.uid) == -1) {
+    spdlog::error("login-failed");
+    return -1;
+  } else {
+    spdlog::info("login-success");
+  }
+
+  if (groupJoin(socket, user.uid, 1001) == -1) {
+    spdlog::error("group-join-failed");
+    return -1;
+  } else {
+    spdlog::info("group-join-success");
+  }
+
+  if (groupMemberText(socket, 1001, user.uid, to, "Hello, Group!") == -1) {
+    spdlog::error("group-member-text-failed");
+    return -1;
+  } else {
+    spdlog::info("group-member-text-success");
+  }
+  return 0;
+}
+
+void testPing(std::shared_ptr<net::ip::tcp::socket> socket, User user) {
+  int rt;
+  rt = loginHandle(socket, user.uid);
+  if (rt == -1) {
+    spdlog::error("login-failed");
+  }
+  Json::Value req1;
+  req1["uid"] = user.uid;
+  sleep(10);
+  std::string s;
+  s = base::recviceMessage(socket);
+  if (s.empty())
+    spdlog::error("recvice-message-failed");
+  s = base::recviceMessage(socket);
+  sleep(10);
+}
+
+void testReLogin(std::shared_ptr<net::ip::tcp::socket> socket, User user) {
+  int rt;
+  rt = loginHandle(socket, user.uid);
+  if (rt == -1) {
+    spdlog::error("login-failed");
+  }
+}
+
 int main() {
 
   fetchUsersFromDatabase(&base::userManager);
@@ -137,26 +188,9 @@ int main() {
                user.port);
 
   socket = base::startChatClient(ioc, user.host, user.port);
-  if (loginHandle(socket, user.uid) == -1) {
-    spdlog::error("login-failed");
-    return -1;
-  } else {
-    spdlog::info("login-success");
-  }
+  // testGroupMessage(socket, user, to);
+  testPing(socket, user);
 
-  if (groupJoin(socket, user.uid, 1001) == -1) {
-    spdlog::error("group-join-failed");
-    return -1;
-  } else {
-    spdlog::info("group-join-success");
-  }
-
-  if (groupMemberText(socket, 1001, user.uid, to, "Hello, Group!") == -1) {
-    spdlog::error("group-member-text-failed");
-    return -1;
-  } else {
-    spdlog::info("group-member-text-success");
-  }
   ioc.run();
 
   return 0;

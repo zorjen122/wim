@@ -47,3 +47,5 @@ void ChatServer::ClearSession(size_t id) {
   }
   sessionGroup.erase(id);
 }
+
+size_t ChatServer::GetSessionID() { return count; }

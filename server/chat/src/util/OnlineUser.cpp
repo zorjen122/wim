@@ -26,7 +26,7 @@ void OnlineUser::MapUser(size_t uid, std::shared_ptr<ChatSession> session) {
 }
 
 void OnlineUser::RemoveUser(size_t uid) {
-  auto uid_str = std::to_string(uid);
+  auto uidStr = std::to_string(uid);
   // RedisManager::GetInstance()->Del(PREFIX_REDIS_UIP + uid_str);
   {
     std::lock_guard<std::mutex> lock(sessionMutex);

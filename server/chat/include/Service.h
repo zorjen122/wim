@@ -29,10 +29,8 @@ private:
   void Init();
   void WeachKeepAlive();
 
-  void PingKeepAlive(std::shared_ptr<ChatSession> session, unsigned int msgID,
-                     const std::string &msgData);
-  void LoginHandler(std::shared_ptr<ChatSession> session, unsigned int msgID,
-                    const std::string &msgData);
+  void Login(std::shared_ptr<ChatSession> session, unsigned int msgID,
+             const std::string &msgData);
 
   void OnlinePullHandler(std::shared_ptr<ChatSession> session,
                          unsigned int msgID, const std::string &msgData);

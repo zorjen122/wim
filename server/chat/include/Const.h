@@ -14,10 +14,10 @@ enum ErrorCodes {
   PasswdInvalid = 1009,  // ??????????
   TokenInvalid = 1010,   // Token?
   UidInvalid = 1011,     // uid??
-  UserNotOnline,
-  UserNotFriend,
-  UserOnline,
-  UserOffline
+  UserNotOnline = 1012,
+  UserNotFriend = 1013,
+  UserOnline = 1014,
+  UserOffline = 1015,
 };
 
 #include <memory>
@@ -60,8 +60,8 @@ private:
 enum ServiceID {
   ID_ONLINE_PULL_REQ = 1001, // 在线拉取
   ID_ONLINE_PULL_RSP = 1002,
-  ID_PING_PONG_REQ = 1003, // 心跳
-  ID_PING_PONG_RSP = 1004,
+  ID_PING_REQ = 1003, // 心跳
+  ID_PING_RSP = 1004,
   ID_CHAT_LOGIN_INIT = 1005, // 登录
   ID_CHAT_LOGIN_INIT_RSP = 1006,
   ID_SEARCH_USER_REQ = 1007, // 搜索
@@ -103,8 +103,8 @@ enum ServiceID {
 static std::unordered_map<ServiceID, std::string> __serviceIdMap = {
     {ID_ONLINE_PULL_REQ, "Online Pull Request"},
     {ID_ONLINE_PULL_RSP, "Online Pull Response"},
-    {ID_PING_PONG_REQ, "Ping Request"},
-    {ID_PING_PONG_RSP, "Pong Response"},
+    {ID_PING_REQ, "Ping Request"},
+    {ID_PING_RSP, "Pong Response"},
     {ID_CHAT_LOGIN_INIT, "Chat Login Init"},
     {ID_CHAT_LOGIN_INIT_RSP, "Chat Login Init Response"},
     {ID_SEARCH_USER_REQ, "Search User Request"},

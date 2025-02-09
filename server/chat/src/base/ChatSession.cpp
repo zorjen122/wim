@@ -4,6 +4,7 @@
 #include <boost/asio/detail/socket_ops.hpp>
 #include <boost/asio/error.hpp>
 #include <boost/asio/io_context.hpp>
+#include <cstddef>
 #include <mutex>
 #include <spdlog/spdlog.h>
 #include <string>
@@ -256,5 +257,7 @@ void ChatSession::asyncRead(
 tcp::socket &ChatSession::GetSocket() { return sock; }
 
 net::io_context &ChatSession::GetIoc() { return ioc; }
+
+size_t ChatSession::GetSessionID() { return id; }
 
 void ChatSession::ClearSession() { chatServer->ClearSession(id); }
