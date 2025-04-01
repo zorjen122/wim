@@ -45,6 +45,7 @@ startChatClient(net::io_context &io_context, const std::string &host,
   net::ip::tcp::endpoint endpoint(net::ip::make_address(server_address),
                                   server_port);
 
+  spdlog::info("[connect...]");
   // 连接到服务器
   socket->connect(endpoint, ec);
   if (ec) {
@@ -57,7 +58,8 @@ startChatClient(net::io_context &io_context, const std::string &host,
 }
 
 void pushMessage(std::shared_ptr<net::ip::tcp::socket> socket,
-                 unsigned int serviceID, const std::string &package) {
+                 unsigned int serviceID, const std::string &package,
+                 bool async) {
   try {
     Json::Value data;
     serviceID = net::detail::socket_ops::host_to_network_long(serviceID);
@@ -89,10 +91,21 @@ void pushMessage(std::shared_ptr<net::ip::tcp::socket> socket,
 
     // spdlog::info("[service-package] {}", servicePackage);
 
-    net::write(*socket, net::buffer(servicePackage, sizeof(serviceID) +
-                                                        sizeof(packageSize) +
-                                                        package.size()));
-
+    if (async) {
+      net::async_write(
+          *socket,
+          net::buffer(servicePackage,
+                      sizeof(serviceID) + sizeof(packageSize) + package.size()),
+          [](const boost::system::error_code &ec, std::size_t bytes) {
+            if (ec) {
+              spdlog::error("async-write is wrong! | ec {} ", ec.message());
+            }
+          });
+    } else {
+      net::write(*socket, net::buffer(servicePackage, sizeof(serviceID) +
+                                                          sizeof(packageSize) +
+                                                          package.size()));
+    }
   } catch (const std::exception &e) {
     spdlog::error("Error: {} ", e.what());
   }

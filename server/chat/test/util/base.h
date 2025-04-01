@@ -20,11 +20,9 @@
 #include <boost/random.hpp>
 #include <boost/random/random_device.hpp>
 #include <boost/random/uniform_int_distribution.hpp>
-#include <iostream>
 #include <string>
 
 #include <ctime>
-#include <iostream>
 #include <string>
 
 #include "util.h"
@@ -48,7 +46,8 @@ startChatClient(net::io_context &io_context, const std::string &host,
                 const std::string &port);
 
 void pushMessage(std::shared_ptr<net::ip::tcp::socket> socket,
-                 unsigned int serviceID, const std::string &package);
+                 unsigned int serviceID, const std::string &package,
+                 bool async = 0);
 std::string recviceMessage(std::shared_ptr<net::ip::tcp::socket> socket);
 
 void login(int uid);
@@ -65,7 +64,7 @@ enum ServiceID {
   ID_ONLINE_PULL_RSP = 1002,
   ID_PING_REQ = 1003, // 心跳
   ID_PING_RSP = 1004,
-  ID_CHAT_LOGIN_INIT = 1005, // 登录
+  ID_CHAT_LOGIN_REQ = 1005, // 登录
   ID_CHAT_LOGIN_INIT_RSP = 1006,
   ID_SEARCH_USER_REQ = 1007, // 搜索
   ID_SEARCH_USER_RSP = 1008,
@@ -75,8 +74,6 @@ enum ServiceID {
   ID_AUTH_FRIEND_REQ = 1013,
   ID_AUTH_FRIEND_RSP = 1014,
   ID_NOTIFY_AUTH_FRIEND_REQ = 1015,
-  ID_PUSH_TEXT_MSG_REQ = 1017,
-  ID_TEXT_CHAT_MSG_RSP = 1018,
   ID_NOTIFY_PUSH_TEXT_MSG_REQ = 1019,
   ID_TEXT_SEND_REQ = 1020, // 发送消息
   ID_TEXT_SEND_RSP = 1021,

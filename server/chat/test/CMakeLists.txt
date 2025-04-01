@@ -22,7 +22,8 @@ set(_LIB_SPDLOG spdlog)
 set(_LIB_MYSQLCPPCONN mysqlcppconn)
 
 # 搜索 util 和 service 目录下的所有 .cc 文件
-file(GLOB UTIL_CPP ${CMAKE_CURRENT_SOURCE_DIR}/util/*.cc)
+file(GLOB UTIL_CPP ${CMAKE_CURRENT_SOURCE_DIR}/util/*.cc )
+file(GLOB SERVICE_CPP ${CMAKE_CURRENT_SOURCE_DIR}/service/*.cc)
 file(GLOB SERVICE_CPP ${CMAKE_CURRENT_SOURCE_DIR}/service/*.cc)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/util)

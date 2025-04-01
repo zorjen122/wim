@@ -2,13 +2,16 @@
 #include <string>
 
 #include "Const.h"
+#include <boost/asio.hpp>
 
+using tcp = boost::asio::ip::tcp;
+namespace net = boost::asio;
 class GateServer : public std::enable_shared_from_this<GateServer> {
- public:
-  GateServer(boost::asio::io_context &ioc, unsigned short &port);
+public:
+  GateServer(net::io_context &ioc, unsigned short &port);
   void Start();
 
- private:
-  tcp::acceptor _acceptor;
-  net::io_context &_ioc;
+private:
+  net::io_context &gateContext;
+  tcp::acceptor acceptor;
 };

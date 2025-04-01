@@ -22,3 +22,8 @@ void fetchUsersFromDatabase(UserManager *);
 unsigned long long generateRandomNumber(unsigned long long left,
                                         unsigned long long right);
 void toNormalString(std::string &str);
+
+#include <cstdlib>
+#include <ctime>
+
+int generateGroupId(int min, int max);

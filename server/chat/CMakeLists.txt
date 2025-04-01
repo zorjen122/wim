@@ -1,32 +1,40 @@
 cmake_minimum_required(VERSION 3.16)
-project(ChatServer LANGUAGES CXX)
+project(Chat LANGUAGES CXX)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# 依赖库
 find_package(Threads REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system filesystem)  
-
-# protobuf link
-set(protobuf_MODULE_COMPATIBLE TRUE)
 find_package(Protobuf CONFIG REQUIRED)
-message(STATUS "Using protobuf ${Protobuf_VERSION}")
-
 find_package(gRPC CONFIG REQUIRED)
+
+message(STATUS "Using Threads ${CMAKE_THREAD_LIBS_INIT}")
+message(STATUS "Using Boost ${Boost_VERSION}")
+message(STATUS "Using protobuf ${Protobuf_VERSION}")
 message(STATUS "Using gRPC ${gRPC_VERSION}")
 
+set(protobuf_MODULE_COMPATIBLE TRUE)
+# 本地头文件
 set(_LOCAL_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include)
+set(_PUBLIC_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../public/include)
+set(_RPC_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/rpc/)
+
+# 第三方库头文件
 set(_DIR_JSONCPP /usr/include/jsoncpp)
+set(_DIR_RDKAFKA /usr/include/librdkafka)
 set(_DIR_HIREDIS /usr/include/hiredis)
 set(_DIR_MYSQLCPPCONN /usr/include/)
 set(_DIR_YAML_CPP_DIR /usr/local/include/)
 set(_DIR_SPDLOG /usr/local/spdlog/include)
 
+# 第三方库链接目录
 set(_LIB_SPDLOG_DIR /usr/local/spdlog/lib/)
 set(_LIB_YAML_CPP_DIR /usr/local/yaml-cpp/lib/)
 
-
+# 库名称
 set(_GRPC_GRPCPP gRPC::grpc++)
 set(_PROTOBUF_LIBPROTOBUF protobuf::libprotobuf)
 set(_REFLECTION gRPC::grpc++_reflection)
@@ -36,42 +44,37 @@ set(_MYSQLCPPCONN mysqlcppconn)
 set(_HIREDIS hiredis)
 set(_SPDLOG spdlog)
 set(_YAML yaml-cpp)
+set(_RDKAFKA rdkafka++ rdkafka)
 
-# 添加可执行文件和源文件
-file(GLOB SOURCES_SERVICE 
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/service/*.cpp
-)
-file(GLOB SOURCES_BASE 
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/util/*.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/base/*.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/rpc/*.cc
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp
-)
+file(GLOB SOURCES ${CMAKE_SOURCE_DIR}/src/**/*.cc)
+file(GLOB RPC_SOURCES ${CMAKE_SOURCE_DIR}/rpc/*.cc)
+file(GLOB PUBLIC_SOURCES ${CMAKE_SOURCE_DIR}/../public/src/*.cc)
 
-# TODO, 启用asio中io_uring选项
-# add_definitions(-DASIO_HAS_IO_URING)
-# add_definitions(-DASIO_DISABLE_EPOLL)
+add_executable(Chat 
+        ${CMAKE_SOURCE_DIR}/src/main.cc
+        ${SOURCES}
+        ${RPC_SOURCES}
+        ${PUBLIC_SOURCES})
 
-add_executable(ChatServer 
-        ${SOURCES_SERVICE}
-        ${SOURCES_BASE})
-
-target_include_directories(ChatServer PUBLIC
+target_include_directories(Chat PUBLIC
     ${_DIR_JSONCPP}
     ${_DIR_HIREDIS}
     ${_DIR_MYSQLCPPCONN}
     ${_LOCAL_INCLUDE_DIR}
+    ${_PUBLIC_INCLUDE_DIR}
+    ${_RPC_INCLUDE_DIR}
     ${_DIR_SPDLOG}
     ${_DIR_YAML_CPP_DIR}
+    ${_DIR_RRDKAFKA}
 )
 
-target_link_directories(ChatServer PUBLIC 
+target_link_directories(Chat PUBLIC 
     ${_LIB_SPDLOG_DIR}  
     ${_LIB_YAML_CPP_DIR}
 )
 
 
-target_link_libraries(ChatServer
+target_link_libraries(Chat
     ${_REFLECTION}
     ${_GRPC_GRPCPP}
     ${_PROTOBUF_LIBPROTOBUF}
@@ -81,9 +84,7 @@ target_link_libraries(ChatServer
     ${_BOOST}
     ${_SPDLOG}
     ${_YAML}
+    ${_RDKAFKA}
 )
 
-target_compile_options(ChatServer PRIVATE -Wall -g)
-
-
-# error
+target_compile_options(Chat PRIVATE -Wall -g)

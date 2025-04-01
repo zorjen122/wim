@@ -1,42 +1,50 @@
-﻿#include <iostream>
-#include <json/json.h>
-#include <json/value.h>
-#include <json/reader.h>
-#include "Const.h"
+﻿#include "Configer.h"
 #include "GateServer.h"
-#include "Configer.h"
-#include "hiredis.h"
-#include "RedisManager.h"
-#include "MysqlManager.h"
-#include "IOServicePool.h"
+#include "IocPool.h"
+#include "RedisOperator.h"
+#include <iostream>
+#include <json/json.h>
+#include <json/reader.h>
+#include <json/value.h>
 
-int main()
-{
-	try
-	{
-		MysqlManager::GetInstance();
-		RedisManager::GetInstance();
-		auto &gCfgMgr = Configer::GetInstance();
-		std::string gate_port_str = gCfgMgr["GateServer"]["Port"];
-		unsigned short gate_port = atoi(gate_port_str.c_str());
-		net::io_context ioc{1};
-		boost::asio::signal_set signals(ioc, SIGINT, SIGTERM);
-		signals.async_wait([&ioc](const boost::system::error_code &error, int signal_number)
-						   {
-			if (error) 
-				return;
-			
-			ioc.stop(); });
-		std::make_shared<GateServer>(ioc, gate_port)->Start();
-		std::cout << "Gate Server listen on port: " << gate_port << "\n";
+int main() {
+  try {
+    RedisOperator::GetInstance();
+    IocPool::GetInstance();
 
-		ioc.run();
-		RedisManager::GetInstance()->Close();
-	}
-	catch (std::exception const &e)
-	{
-		std::cerr << "Error: " << e.what() << "\n";
-		RedisManager::GetInstance()->Close();
-		return EXIT_FAILURE;
-	}
+    auto existConfig = Configer::loadConfig("../config.yaml");
+    if (!existConfig) {
+      spdlog::error("Config load failed");
+      return 0;
+    }
+
+    auto config = Configer::getConfig("server");
+    if (!config || !config["self"]) {
+      spdlog::error("self config not found");
+      return 0;
+    }
+
+    unsigned short port = config["GateServer"]["Port"].as<unsigned short>();
+
+    net::io_context ioc{1};
+    boost::asio::signal_set signals(ioc, SIGINT, SIGTERM);
+    signals.async_wait(
+        [&ioc](const boost::system::error_code &error, int signal_number) {
+          if (error)
+            return;
+
+          ioc.stop();
+        });
+
+    auto gate = std::make_shared<GateServer>(ioc, port);
+    gate->Start();
+    std::cout << "Gate Server listen on port: " << port << "\n";
+
+    ioc.run();
+    RedisOperator::GetInstance()->Close();
+  } catch (std::exception const &e) {
+    std::cerr << "Error: " << e.what() << "\n";
+    RedisOperator::GetInstance()->Close();
+    return EXIT_FAILURE;
+  }
 }

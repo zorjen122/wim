@@ -1,0 +1,11 @@
+syntax = "proto3";
+package state;
+
+message ConnectUser { int32 id = 1; };
+
+message ConnectUserRsp {
+  string ip = 1;
+  int32 port = 2;
+};
+
+service StateService { rpc GetImServer(ConnectUser) returns (ConnectUserRsp); }

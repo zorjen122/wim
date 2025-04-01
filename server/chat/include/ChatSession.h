@@ -12,8 +12,6 @@
 #include <unistd.h>
 
 #include "Const.h"
-#include "Protocol.h"
-#include "Timer.h"
 
 namespace beast = boost::beast;   // from <boost/beast.hpp>
 namespace http = beast::http;     // from <boost/beast/http.hpp>
@@ -23,11 +21,49 @@ using namespace boost::asio;
 using boost::system::error_code;
 } // namespace net
 
-class ChatServer;
+class ChatSession;
 class Service;
 
+class LogicProtocol;
+
+class Tlv {
+  friend class LogicProtocol;
+  friend class ChatSession;
+  friend class Service;
+
+public:
+  Tlv(unsigned int packageLength, unsigned int msgID);
+  Tlv(unsigned int msgID, unsigned int maxLength, char *msg);
+  ~Tlv();
+
+  std::string getData();
+
+private:
+  unsigned int id;
+  unsigned int length;
+  char *data;
+  unsigned int cur;
+};
+
+class LogicProtocol {
+  friend class ChatSession;
+  friend class Service;
+
+public:
+  LogicProtocol(std::shared_ptr<ChatSession>, std::shared_ptr<Tlv>);
+  std::string getData();
+
+private:
+  std::shared_ptr<ChatSession> session;
+  std::shared_ptr<Tlv> recvPackage;
+};
+
+class ChatServer;
 class ChatSession : public std::enable_shared_from_this<ChatSession> {
 public:
+  using RequestPackage = LogicProtocol;
+  using Protocol = Tlv;
+
   ChatSession(boost::asio::io_context &ioContext, ChatServer *server,
               size_t id);
   ~ChatSession();
@@ -66,9 +102,9 @@ private:
   ChatServer *chatServer;
   bool closeEnable;
 
-  std::queue<std::shared_ptr<protocol::SendPackage>> sender;
+  std::queue<std::shared_ptr<Tlv>> sender;
   std::mutex _sendMutex;
 
-  std::shared_ptr<protocol::RecvPackage> packageNode;
+  std::shared_ptr<ChatSession::Protocol> packageNode;
   net::io_context &ioc;
 };

@@ -109,3 +109,11 @@ void toNormalString(std::string &str) {
 
   str = str.substr(first + 1, last - 1);
 }
+
+#include <cstdlib>
+#include <ctime>
+
+int generateGroupId(int min, int max) {
+  std::srand(std::time(0)); // 使用当前时间作为随机数生成器的种子
+  return std::rand() % (max - min + 1) + min;
+}

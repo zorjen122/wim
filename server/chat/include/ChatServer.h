@@ -38,6 +38,6 @@ private:
   unsigned short Port;
   tcp::acceptor Acceptor;
   std::mutex Mutex;
-  std::atomic<size_t> count;
+  std::atomic<size_t> sessionID;
   std::unordered_map<size_t, std::shared_ptr<ChatSession>> sessionGroup;
 };
