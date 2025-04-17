@@ -8,6 +8,10 @@ message ConnectUserRsp {
   int32 port = 2;
 }
 
+message TestNetwork { string msg = 1; }
+
 service StateService {
   rpc GetImServer(ConnectUser) returns (ConnectUserRsp) {}
+  rpc ActiveImBackupServer(ConnectUser) returns (ConnectUserRsp) {}
+  rpc TestNetworkPing(TestNetwork) returns (TestNetwork) {}
 }

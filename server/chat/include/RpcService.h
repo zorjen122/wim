@@ -15,6 +15,4 @@ public:
   grpc::Status ActiveService(ServerContext *context,
                              const ActiveRequest *request,
                              ActiveResponse *response);
-
-  static std::unique_ptr<grpc::Server> CreateImRpcServer();
 };

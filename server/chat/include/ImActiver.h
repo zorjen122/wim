@@ -1,8 +1,14 @@
 #pragma once
 // ChatServiceManager.h
 #include "ChatServer.h"
+#include "RpcPool.h"
+
 #include "Configer.h"
 #include "Const.h"
+#include "IocPool.h"
+
+#include "Mysql.h"
+#include "Redis.h"
 #include <boost/asio.hpp>
 #include <spdlog/spdlog.h>
 #include <thread>
@@ -17,9 +23,9 @@ public:
       return false;
 
     try {
-      // 初始化资源（Redis、MySQL等）
-      // RedisManager::GetInstance();
-      // MySqlOperator::GetInstance();
+      IocPool::GetInstance();
+      wim::db::MysqlDao::GetInstance();
+      wim::db::RedisDao::GetInstance();
 
       // 创建独立的 io_context 和线程
       ioc = std::make_shared<net::io_context>();
@@ -29,10 +35,7 @@ public:
 
       // 启动聊天服务器
       auto config = Configer::getConfig("server");
-      if (!config || !config["self"]) {
-        spdlog::error("self config not found");
-        return false;
-      }
+
       int port = config["self"]["port"].as<int>();
       imServer = std::make_shared<ChatServer>(*ioc, port);
       imServer->Start();
@@ -67,7 +70,7 @@ public:
       ioc.reset();
     }
     // 清理资源
-    // RedisOperator::GetInstance()->Close();
+    // wim::db::RedisDao::GetInstance()->Close();
     imServer.reset();
     isActive = false;
   }

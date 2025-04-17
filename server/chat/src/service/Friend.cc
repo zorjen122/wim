@@ -1,6 +1,6 @@
 #include "Friend.h"
 #include "Channel.h"
-#include "MysqlOperator.h"
+#include "Mysql.h"
 #include "OnlineUser.h"
 #include "Service.h"
 
@@ -29,7 +29,7 @@ int OnlineAddFriend(int seq, int from, int to,
   rsp["error"] = ErrorCodes::Success;
 
   // todo
-  // MySqlOperator::GetInstance()->AddFriend(from, to);
+  // wim::db::MysqlDao::GetInstance()->AddFriend(from, to);
 
   // 当客户端接收到ID_ADD_FRIEND_REQ时，意味着这只能是服务端的消息
   toSession->Send(rsp.toStyledString(), ID_ADD_FRIEND_REQ);
@@ -41,7 +41,8 @@ int OnlineAddFriend(int seq, int from, int to,
 int OfflineAddFriend(int seq, int from, int to, const std::string &msgData) {
   spdlog::info("[ServiceSystem::OfflineAddFriend] seq-{}, from-{}, to-{}", seq,
                from, to);
-  bool rt = MysqlOperator::GetInstance()->SaveService(from, to, msgData);
+  // bool rt = wim::db::MysqlDao::GetInstance()->SaveService(from, to, msgData);
+  bool rt = true; // todo...
   if (rt == false) {
     spdlog::error("OffineAddFriend save service to mysql failed");
     return -1;
@@ -71,7 +72,7 @@ void AddFriend(std::shared_ptr<ChatSession> session, unsigned int msgID,
   int from = req["from"].asInt();
   int to = req["to"].asInt();
 
-  // bool hasUser = MySqlOperator::GetInstance()->HasUser(to);
+  // bool hasUser = wim::db::MysqlDao::GetInstance()->HasUser(to);
   bool hasUser = true;
   if (!hasUser) {
     rsp["uid"] = to;
@@ -113,7 +114,8 @@ int OnlineRemoveFriend(int seq, int from, int to,
   }
 
   // todo... remove friend in mysql
-  bool isRemoved = MysqlOperator::GetInstance()->RemovePair(from, to);
+  // bool isRemoved = wim::db::MysqlDao::GetInstance()->RemovePair(from, to);
+  bool isRemoved = true;
 
   if (isRemoved) {
     Json::Value notify{};
@@ -133,7 +135,8 @@ int OnlineRemoveFriend(int seq, int from, int to,
 int OfflineRemoveFriend(int seq, int from, int to, const std::string &msgData) {
   spdlog::info("[ServiceSystem::OfflineRemoveFriend] seq-{}, from-{}, to-{}",
                seq, from, to);
-  int rt = MysqlOperator::GetInstance()->SaveService(from, to, msgData);
+  // int rt = wim::db::MysqlDao::GetInstance()->SaveService(from, to, msgData);
+  bool rt = true; // todo...
   if (rt == false) {
     spdlog::error(
         "[ServiceSystem::OffineAddFriend] save service to mysql failed");
@@ -165,7 +168,7 @@ void RemoveFriend(std::shared_ptr<ChatSession> session, unsigned int msgID,
   int to = req["to"].asInt();
 
   // todo... hasFriend function in mysql
-  // bool hasFriend = MySqlOperator::GetInstance()->PairSearch(from, to);
+  // bool hasFriend = wim::db::MysqlDao::GetInstance()->PairSearch(from, to);
   bool hasFriend = true;
   if (!hasFriend) {
     rsp["uid"] = to;

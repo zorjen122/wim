@@ -10,9 +10,8 @@
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <unistd.h>
 
-auto logger = spdlog::stdout_color_mt("test_service_logger");
+inline auto businessLogger = spdlog::stdout_color_mt("test_service_logger");
 
-namespace test {
 int loginHandle(std::shared_ptr<net::ip::tcp::socket> socket, int uid) {
 
   Json::Value req1;
@@ -47,19 +46,19 @@ int groupJoin(std::shared_ptr<net::ip::tcp::socket> socket, int from, int gid) {
 }
 
 int ack(std::shared_ptr<net::ip::tcp::socket> socket, std::string rt) {
-  logger->info("Send ACK....");
+  businessLogger->info("Send ACK....");
   if (!rt.empty()) {
     constexpr int ID_ACK = 0xff33;
     base::pushMessage(socket, ID_ACK, rt);
     rt = base::recviceMessage(socket);
     if (!rt.empty()) {
-      logger->info("[ack is success!]");
+      businessLogger->info("[ack is success!]");
     } else {
-      logger->info("[ack is failed!]");
+      businessLogger->info("[ack is failed!]");
       return -1;
     }
   } else {
-    logger->info("[Recvice message is failed!]");
+    businessLogger->info("[Recvice message is failed!]");
     return -1;
   }
 
@@ -78,7 +77,7 @@ int sendGroupText(std::shared_ptr<net::ip::tcp::socket> socket, int gid,
   auto rt = base::recviceMessage(socket);
 
   sleep(2);
-  logger->info("Send ACK....");
+  businessLogger->info("Send ACK....");
 
   return ack(socket, rt);
 }
@@ -93,16 +92,16 @@ int TextSend(User user, std::shared_ptr<net::ip::tcp::socket> socket, int from,
 
   base::pushMessage(socket, ID_PUSH_TEXT_MESSAGE, req1.toStyledString());
 
-  logger->info("Sleep...");
+  businessLogger->info("Sleep...");
   sleep(8);
 
   auto res = base::recviceMessage(socket);
 
   if (ack(socket, res) == -1) {
-    logger->error("ack-failed");
+    businessLogger->error("ack-failed");
     return -1;
   } else {
-    logger->info("ack-success");
+    businessLogger->info("ack-success");
   }
 
   return 0;
@@ -111,24 +110,24 @@ int TextSend(User user, std::shared_ptr<net::ip::tcp::socket> socket, int from,
 int GroupMessage(std::shared_ptr<net::ip::tcp::socket> socket, User user,
                  int to) {
   if (loginHandle(socket, user.uid) == -1) {
-    logger->error("login-failed");
+    businessLogger->error("login-failed");
     return -1;
   } else {
-    logger->info("login-success");
+    businessLogger->info("login-success");
   }
 
   if (groupJoin(socket, user.uid, 1001) == -1) {
-    logger->error("group-join-failed");
+    businessLogger->error("group-join-failed");
     return -1;
   } else {
-    logger->info("group-join-success");
+    businessLogger->info("group-join-success");
   }
 
   if (sendGroupText(socket, 1001, user.uid, to, "Hello, Group!") == -1) {
-    logger->error("group-member-text-failed");
+    businessLogger->error("group-member-text-failed");
     return -1;
   } else {
-    logger->info("group-member-text-success");
+    businessLogger->info("group-member-text-success");
   }
   return 0;
 }
@@ -138,29 +137,29 @@ int Ping(std::shared_ptr<net::ip::tcp::socket> socket, User user) {
   int rt;
   rt = loginHandle(socket, user.uid);
   if (rt == -1) {
-    logger->error("login-failed");
+    businessLogger->error("login-failed");
     return -1;
   }
 
-  logger->info("Sleep 10s....");
+  businessLogger->info("Sleep 10s....");
   sleep(10);
 
   int cnt{};
   std::string s{};
   while (cnt++ <= 5) {
-    logger->info("Wait PING.... | count: {}\n", cnt);
+    businessLogger->info("Wait PING.... | count: {}\n", cnt);
 
     if (s.empty()) {
-      logger->error("recvice-message-failed");
+      businessLogger->error("recvice-message-failed");
       return -1;
     }
-    logger->info("Send PING.... | count: {}\n", cnt);
+    businessLogger->info("Send PING.... | count: {}\n", cnt);
 
-    logger->info("Sleep 5s....");
+    businessLogger->info("Sleep 5s....");
     sleep(5);
     base::pushMessage(socket, ID_PING_REQ, s);
   }
-  logger->info("[Ping-success!!]");
+  businessLogger->info("[Ping-success!!]");
 
   return 0;
 }
@@ -169,7 +168,7 @@ int ReLogin(std::shared_ptr<net::ip::tcp::socket> socket, User user) {
   int rt;
   rt = loginHandle(socket, user.uid);
   if (rt == -1) {
-    logger->error("login-failed");
+    businessLogger->error("login-failed");
 
     return -1;
   }
@@ -184,8 +183,8 @@ auto produceEnvStart() {
   std::shared_ptr<net::ip::tcp::socket> socket{};
 
   auto &user = base::userManager.back();
-  logger->info("[fetch-user]: id {}, email {}, password {} ", user.id,
-               user.email, user.password);
+  businessLogger->info("[fetch-user]: id {}, email {}, password {} ", user.id,
+                       user.email, user.password);
 
   // base::login(user.uid);
 
@@ -203,8 +202,8 @@ auto produceEnvStart() {
   assert(!user.port.empty());
   user.host = "127.0.0.1";
   user.port = "8090";
-  logger->info("[login-user]: id {}, host {}, port {} ", user.id, user.host,
-               user.port);
+  businessLogger->info("[login-user]: id {}, host {}, port {} ", user.id,
+                       user.host, user.port);
 
   socket = base::startChatClient(ioc, user.host, user.port);
 
@@ -213,9 +212,7 @@ auto produceEnvStart() {
   ioc.run();
 }
 
-} // namespace test
-
-int main() {
+int test() {
 
   fetchUsersFromDatabase(&base::userManager);
 
@@ -223,13 +220,13 @@ int main() {
   std::shared_ptr<net::ip::tcp::socket> socket{};
 
   auto &user = base::userManager.back();
-  logger->info("[fetch-user]: id {}, email {}, password {} ", user.id,
-               user.email, user.password);
+  businessLogger->info("[fetch-user]: id {}, email {}, password {} ", user.id,
+                       user.email, user.password);
 
   user.host = "127.0.0.1";
   user.port = "8090";
-  logger->info("[login-user]: id {}, host {}, port {} ", user.id, user.host,
-               user.port);
+  businessLogger->info("[login-user]: id {}, host {}, port {} ", user.id,
+                       user.host, user.port);
 
   socket = base::startChatClient(ioc, user.host, user.port);
 

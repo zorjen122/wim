@@ -3,8 +3,10 @@
 #include <boost/asio.hpp>
 #include <map>
 #include <memory.h>
+#include <set>
 #include <spdlog/spdlog.h>
 
+namespace IM {
 static std::map<int, std::shared_ptr<net::steady_timer>> waitAckTimerMap;
 
 // 注意，目前重发机制仅限于文本消息，可能支持其他消息类型————未验证
@@ -69,7 +71,6 @@ static void readRun(std::shared_ptr<tcp::socket> socket, char *buf) {
         readRun(socket, buf);
       });
 }
-#include <set>
 
 static std::set<int> seqCache;
 static std::map<int, bool> seqCacheExpireMap;
@@ -144,3 +145,5 @@ void handleRun(std::shared_ptr<tcp::socket> socket, std::shared_ptr<TLV> tlv) {
     spdlog::info("ACK seq:{}", seq);
   }
 }
+
+}; // namespace IM

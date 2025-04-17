@@ -1,10 +1,27 @@
-﻿#include "ImActiver.h"
-#include "RpcService.h"
+﻿#include "RpcService.h"
+
+#include "ImActiver.h"
+#include "Logger.h"
 #include <string>
 
 void ImBackupServiceRunner() {
-  auto rpcServer(ImRpcService::CreateImRpcServer());
-  rpcServer->Wait();
+
+  auto conf = Configer::getConfig("server");
+
+  auto host = conf["self"]["host"].as<std::string>();
+  auto rpcPort = conf["self"]["rpcPort"].as<std::string>();
+  auto address = host + ":" + rpcPort;
+
+  ImRpcService service;
+  ServerBuilder builder;
+  builder.AddListeningPort(address, grpc::InsecureServerCredentials());
+  builder.RegisterService(&service);
+  std::unique_ptr<grpc::Server> server(builder.BuildAndStart());
+
+  LOG_INFO(wim::netLogger, "ImBackupServiceRunner started on {}", address);
+
+  server->Wait();
+  LOG_INFO(wim::netLogger, "ImBackupServiceRunner stopped");
 }
 
 int main(int argc, char *argv[]) {

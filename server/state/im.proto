@@ -1,9 +1,0 @@
-syntax = "proto3";
-
-package im;
-
-message ActiveRequest { string null = 1; }
-
-message ActiveResponse { string error = 1; }
-
-service ImService { rpc ActiveService(ActiveRequest) returns (ActiveResponse); }

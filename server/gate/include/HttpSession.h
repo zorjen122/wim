@@ -1,7 +1,11 @@
 #pragma once
+
 #include "Const.h"
 #include <boost/asio.hpp>
 #include <boost/beast.hpp>
+
+namespace wim {
+
 using tcp = boost::asio::ip::tcp;
 namespace beast = boost::beast;
 namespace http = beast::http;
@@ -24,6 +28,7 @@ private:
   void CheckDeadline();
   void WriteResponse();
   void HandleRequest();
+  void ClearStatusMessage();
   tcp::socket socket;
   // The buffer for performing reads.
   beast::flat_buffer _buffer{8192};
@@ -40,3 +45,4 @@ private:
   std::string url;
   std::unordered_map<std::string, std::string> paramMap;
 };
+}; // namespace wim

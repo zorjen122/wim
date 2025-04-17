@@ -1,9 +1,4 @@
 server:
-  self:
-    name : chatServer1
-    host: 0.0.0.0
-    port: 8090
-    rpcPort: 50055
   gateway:
     host: 127.0.0.1
     port: 8080
@@ -13,13 +8,12 @@ server:
   state:
     host: 127.0.0.1
     port: 50052
-  peerServer:
-    - chatServer1:
-        host: 127.0.0.1
-        port: 50056
-    - chatServer2:
-        host: 127.0.0.1
-        port: 50057
+  im:
+    host: 127.0.0.1
+    port: 50056
+  im2:
+    host: 127.0.0.1
+    port: 50057
   mysql:
     host: 127.0.0.1
     port: 33060

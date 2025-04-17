@@ -39,22 +39,18 @@ set(_PROTOBUF_LIBPROTOBUF protobuf::libprotobuf)
 set(_REFLECTION gRPC::grpc++_reflection)
 set(_BOOST Boost::filesystem Boost::system)
 set(_JSONCPP jsoncpp)
-set(_MYSQLCPPCONN mysqlcppconn)
-set(_HIREDIS hiredis)
+set(_MYSQLCPPCONN mysqlcppconn8)
+set(_HIREDIS hiredis redis++)
 set(_SPDLOG spdlog)
 set(_YAML yaml-cpp)
 
 
-file(GLOB SOURCES ${CMAKE_SOURCE_DIR}/src/**/*.cc)
+file(GLOB SOURCES ${CMAKE_SOURCE_DIR}/src/**/*.cc )
 file(GLOB RPC_SOURCES ${CMAKE_SOURCE_DIR}/rpc/*.cc)
 file(GLOB PUBLIC_SOURCES ${CMAKE_SOURCE_DIR}/../public/src/*.cc)
 
-
-# TODO, 启用asio中io_uring选项
-# add_definitions(-DASIO_HAS_IO_URING)
-# add_definitions(-DASIO_DISABLE_EPOLL)
-
-add_executable(Gate 
+add_executable(Gate
+        ${CMAKE_SOURCE_DIR}/src/main.cc
         ${SOURCES}
         ${RPC_SOURCES}
         ${PUBLIC_SOURCES})
@@ -88,4 +84,4 @@ target_link_libraries(Gate
     ${_YAML}
 )
 
-target_compile_options(Gate PRIVATE -Wall -g)
+target_compile_options(Gate PRIVATE -std=c++17 -Wall -g)

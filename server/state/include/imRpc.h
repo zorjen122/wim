@@ -1,6 +1,6 @@
 #pragma once
-#include "Const.h"
 #include "RpcPool.h"
+#include "global.h"
 #include "im.grpc.pb.h"
 #include "im.pb.h"
 #include <grpc/grpc.h>
@@ -8,10 +8,12 @@
 using im::ActiveRequest;
 using im::ActiveResponse;
 using im::ImService;
-class ImRpc : public Singleton<ImRpc> {
+
+class ImRpc {
 public:
-  ImRpc();
+  ImRpc(ImNode::ptr node, size_t poolSize);
   bool ActiveService();
+  size_t getPoolSize() const;
 
 private:
   std::unique_ptr<RpcPool<ImService>> pool = nullptr;

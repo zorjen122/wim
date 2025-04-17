@@ -50,8 +50,8 @@ void pushMessage(std::shared_ptr<net::ip::tcp::socket> socket,
                  bool async = 0);
 std::string recviceMessage(std::shared_ptr<net::ip::tcp::socket> socket);
 
-void login(int uid);
-void reg(int count);
+void signIn(int uid);
+void signUp(int count);
 
 std::string post(const std::string &host, const std::string &port,
                  const std::string &path, const std::string &data,

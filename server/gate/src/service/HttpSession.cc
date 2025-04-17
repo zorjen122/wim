@@ -6,6 +6,8 @@
 #include <spdlog/spdlog.h>
 #include <string>
 
+namespace wim {
+
 namespace util {
 unsigned char ToHex(unsigned char x) { return x > 9 ? x + 55 : x + 48; }
 
@@ -66,22 +68,26 @@ HttpSession::HttpSession(boost::asio::io_context &ioc)
 
 void HttpSession::Start() {
   auto self = shared_from_this();
-  http::async_read(socket, _buffer, *request,
-                   [=](beast::error_code ec, std::size_t bytes_transferred) {
-                     try {
-                       if (ec) {
-                         spdlog::info(
-                             "http read err is {}, bytes_transferred is {}",
-                             ec.message(), bytes_transferred);
-                         return;
-                       }
+  http::async_read(
+      socket, _buffer, *request,
+      [=](beast::error_code ec, std::size_t bytes_transferred) {
+        try {
+          if (ec.failed()) {
+            spdlog::info("http read err is {}, bytes_transferred is {}",
+                         ec.message(), bytes_transferred);
+            return;
+          }
 
-                       self->HandleRequest();
-                       self->CheckDeadline();
-                     } catch (std::exception &exp) {
-                       std::cout << "exception is " << exp.what() << "\n";
-                     }
-                   });
+          spdlog::debug("http read success, bytes_transferred is {}",
+                        bytes_transferred);
+
+          self->HandleRequest();
+          self->CheckDeadline();
+          self->ClearStatusMessage();
+        } catch (std::exception &exp) {
+          std::cout << "exception is " << exp.what() << "\n";
+        }
+      });
 }
 
 void HttpSession::PreParseGetParam() {
@@ -129,17 +135,7 @@ void HttpSession::HandleRequest() {
     path = request->target();
   }
 
-  bool success =
-      Service::GetInstance()->Handle(shared_from_this(), path, method);
-
-  if (success) {
-    response->result(http::status::ok);
-    response->set(http::field::server, "GateServer");
-  } else {
-    response->result(http::status::not_found);
-    response->set(http::field::content_type, "text/plain");
-    beast::ostream(response->body()) << "url not found\r\n";
-  }
+  Service::GetInstance()->Handle(shared_from_this(), path, method);
 
   WriteResponse();
   return;
@@ -155,14 +151,26 @@ void HttpSession::CheckDeadline() {
   });
 }
 
+void HttpSession::ClearStatusMessage() {
+  response->body().clear();
+  request->body().clear();
+}
+
 void HttpSession::WriteResponse() {
   auto self = shared_from_this();
 
   response->content_length(response->body().size());
-
+  spdlog::info("Write response, source is {}, size is {}",
+               beast::buffers_to_string(response->body().data()),
+               response->body().size());
   http::async_write(socket, *response,
                     [self](beast::error_code ec, std::size_t) {
+                      if (ec.failed()) {
+                        spdlog::warn("http write err is {}", ec.message());
+                      }
                       self->socket.shutdown(tcp::socket::shutdown_send, ec);
                       self->deadline.cancel();
                     });
 }
+
+}; // namespace wim

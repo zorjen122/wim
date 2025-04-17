@@ -1,25 +1,19 @@
 #include "imRpc.h"
 #include "Configer.h"
 #include "RpcPool.h"
+#include "global.h"
 #include "im.grpc.pb.h"
 #include "im.pb.h"
 #include <grpcpp/client_context.h>
 #include <grpcpp/support/status.h>
 #include <spdlog/spdlog.h>
-ImRpc::ImRpc() {
+
+ImRpc::ImRpc(ImNode::ptr node, size_t poolSize) {
 
   auto conf = Configer::getConfig("server");
 
-  if (conf.IsNull())
-    spdlog::error("Configer::getConfig(\"Server\") failed");
-
-  auto imBackup = conf["imBackup"];
-  auto im_1 = imBackup["im-1"];
-  auto im_1_host = im_1["host"].as<std::string>();
-  auto im_1_port = im_1["port"].as<std::string>();
-  auto im_1_rpcCount = im_1["rpcCount"].as<int>();
-
-  pool.reset(new RpcPool<ImService>(im_1_rpcCount, im_1_host, im_1_port));
+  pool.reset(new RpcPool<ImService>(poolSize, node->getIp(), node->getPort()));
+  spdlog::info("ImRpc initialized with pool size {}", pool->getPoolSize());
 }
 
 bool ImRpc::ActiveService() {
@@ -29,6 +23,7 @@ bool ImRpc::ActiveService() {
   auto caller = pool->getConnection();
   if (caller == nullptr) {
     rsp.set_error("No available connection");
+    spdlog::warn("No available connection");
     return false;
   }
   auto status = caller->ActiveService(&context, req, &rsp);
@@ -36,5 +31,8 @@ bool ImRpc::ActiveService() {
     spdlog::warn("ActiveService failed: {}", status.error_message());
     return false;
   }
+  spdlog::info("ActiveService success");
   return true;
 }
+
+size_t ImRpc::getPoolSize() const { return pool->getPoolSize(); }

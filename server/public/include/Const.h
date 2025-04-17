@@ -20,12 +20,12 @@ public:
 };
 class Defer {
 public:
-  Defer(std::function<void()> func) : func_(func) {}
+  Defer(std::function<void()> func) : func(func) {}
 
-  ~Defer() { func_(); }
+  ~Defer() { func(); }
 
 private:
-  std::function<void()> func_;
+  std::function<void()> func;
 };
 #include <limits.h>
 #define PACKAGE_MAX_LENGTH (UINT_MAX)
@@ -169,3 +169,14 @@ inline std::string __MapSerivceIdToString(ServiceID id) {
 #define PREFIX_REDIS_USER_INFO "ubaseinfo_"
 #define PREFIX_REDIS_USER_ACTIVE_COUNT "logincount"
 #define PREFIX_REDIS_NAME_INFO "nameinfo_"
+
+static std::string getCurrentDateTime() {
+  auto now = std::chrono::system_clock::now();
+  std::time_t now_c = std::chrono::system_clock::to_time_t(now);
+
+  static char buffer[80];
+  std::tm *now_tm = std::localtime(&now_c);
+  std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", now_tm);
+  std::string dateTime(buffer);
+  return dateTime;
+}

@@ -1,0 +1,15 @@
+server:
+  mysql:
+    host: 127.0.0.1
+    port: 33060
+    user: zorjen
+    password: root
+    schema: chatServ
+    clientCount: 2
+    machineId: 1
+  redis:
+    host: 127.0.0.1
+    port: 6380
+    password: root
+    clientCount: 2
+    machineId: 1

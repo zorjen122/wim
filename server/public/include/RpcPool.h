@@ -1,6 +1,8 @@
 #pragma once
+#include "spdlog/spdlog.h"
 #include <atomic>
 #include <condition_variable>
+#include <grpcpp/channel.h>
 #include <grpcpp/grpcpp.h>
 #include <queue>
 
@@ -17,6 +19,15 @@ public:
     for (size_t i = 0; i < _poolSize; ++i) {
       std::shared_ptr<Channel> channel = grpc::CreateChannel(
           _host + ":" + _port, grpc::InsecureChannelCredentials());
+      bool isConnected = channel->WaitForConnected(
+          std::chrono::system_clock::now() +
+          std::chrono::seconds(2)); // 2 seconds timeout
+      if (!isConnected) {
+        spdlog::warn("rpc connection failed, host: {}, port: {}, pool size: {}",
+                     _host, _port, _poolSize);
+        --poolSize;
+        continue;
+      }
       channelQueue.push(RPC::NewStub(channel));
     }
   }
@@ -58,6 +69,10 @@ public:
     isStop = true;
     cond.notify_all();
   }
+
+  bool empty() { return channelQueue.empty(); }
+
+  size_t getPoolSize() const { return poolSize; }
 
 private:
   std::atomic<bool> isStop;

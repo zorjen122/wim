@@ -6,6 +6,8 @@
 
 using tcp = boost::asio::ip::tcp;
 namespace net = boost::asio;
+
+namespace wim {
 class GateServer : public std::enable_shared_from_this<GateServer> {
 public:
   GateServer(net::io_context &ioc, unsigned short &port);
@@ -15,3 +17,5 @@ private:
   net::io_context &gateContext;
   tcp::acceptor acceptor;
 };
+
+} // namespace wim

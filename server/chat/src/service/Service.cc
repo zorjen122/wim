@@ -7,12 +7,12 @@
 #include "File.h"
 #include "KafkaOperator.h"
 #include "OnlineUser.h"
-#include "RedisOperator.h"
+#include "Redis.h"
 
 #include "Friend.h"
 #include "Group.h"
 
-#include "MysqlOperator.h"
+#include "Mysql.h"
 #include <boost/asio/error.hpp>
 #include <boost/asio/steady_timer.hpp>
 #include <boost/system/detail/error_code.hpp>
@@ -333,7 +333,7 @@ bool SaveService(size_t seq, int from, int to, std::string msg) {
 }
 
 bool SaveServiceDB(size_t seq, int from, int to, const std::string &msg) {
-  return MysqlOperator::GetInstance()->SaveService(from, to, msg);
+  // todo...
 }
 
 int PullText(size_t seq, int from, int to, const std::string &msg) {
@@ -422,7 +422,7 @@ void UserSearch(std::shared_ptr<ChatSession> session, unsigned int msgID,
   });
   int uid = request["uid"].asInt();
   // todo... hasUser(uid) function
-  // bool hasUser = MySqlOperator::GetInstance()->UserSerach(uid);
+  // bool hasUser = wim::db::MysqlDao::GetInstance()->UserSerach(uid);
   // todo... get user [info] from redis or stack/heap
   bool isOnline = OnlineUser::GetInstance()->isOnline(uid);
   if (isOnline) {
@@ -537,7 +537,7 @@ void Login(std::shared_ptr<ChatSession> session, unsigned int msgID,
   } else {
     rsp["error"] = ErrorCodes::Success;
     // 应用层上的用户管理，而在ChatServer中则是对传输层连接的管理
-    // MysqlOperator::GetInstance()->UserLogin(uid);
+    // wim::db::MysqlDao::GetInstance()->UserLogin(uid);
     OnlineUser::GetInstance()->MapUser(uid, session);
 
     spdlog::info(

@@ -1,14 +1,17 @@
 #include "Service.h"
+#include "StateClient.h"
 
 #include "Const.h"
 #include "HttpSession.h"
-#include "MysqlOperator.h"
-#include "RedisOperator.h"
-#include "StateClient.h"
+#include "Logger.h"
+#include "Mysql.h"
+#include "Redis.h"
 #include "spdlog/spdlog.h"
 #include "json/value.h"
 #include <json/json.h>
 #include <yaml-cpp/parser.h>
+
+namespace wim {
 
 Service::Service() {
   using namespace std::placeholders;
@@ -20,15 +23,28 @@ Service::Service() {
                 return true;
               });
 
-  OnPostHandle("/post-verifycode",
-               std::bind(&Service::verifycodeHandle, this, _1, _2));
-  OnPostHandle("/post-register",
-               std::bind(&Service::registerHandle, this, _1, _2));
-  OnPostHandle("/post-reset", std::bind(&Service::resetHandle, this, _1, _2));
+  OnGetHandle("/test-net",
+              [this](HttpSession::ResponsePtr response,
+                     Json::Value &requestData) -> bool {
+                LOG_INFO(businessLogger, "[test_net handle called]");
+                auto ret = rpc::StateClient::GetInstance()->TestNetworkPing();
+                if (ret.empty()) {
+                  responseWrite(response, "[Network is not reachable]");
+                } else {
+                  responseWrite(response, "[TEST SUCCESS!]");
+                }
+                return true;
+              });
 
-  OnPostHandle("/post-login", std::bind(&Service::loginHandle, this, _1, _2));
+  OnPostHandle("/post-verifycode",
+               std::bind(&Service::verifycode, this, _1, _2));
+  OnPostHandle("/post-signUp", std::bind(&Service::signUp, this, _1, _2));
+  OnPostHandle("/post-forget-password",
+               std::bind(&Service::forgetPassword, this, _1, _2));
+
+  OnPostHandle("/post-signIn", std::bind(&Service::signIn, this, _1, _2));
   OnPostHandle("/post-arrhythmia",
-               std::bind(&Service::chatArrhythmiaHandle, this, _1, _2));
+               std::bind(&Service::chatArrhythmia, this, _1, _2));
 }
 
 void Service::responseWrite(HttpSession::ResponsePtr response,
@@ -40,24 +56,23 @@ Json::Value Service::parseRequest(std::shared_ptr<HttpSession> connection) {
   auto buffer = connection->GetRequest()->body().data();
   auto body = boost::beast::buffers_to_string(buffer);
 
-  connection->GetRequest()->set(http::field::content_type, "text/json");
-  Json::Reader reader;
-  Json::Value src;
-  reader.parse(body, src);
+  Json::Reader reader{};
+  Json::Value src{};
+  bool parseSuccess = reader.parse(body, src);
 
-  return src;
+  return parseSuccess ? src : Json::Value();
 }
 
 void Service::OnGetHandle(std::string url, HttpHandler handler) {
   auto ret = getHandlers.insert(make_pair(url, handler));
   if (ret.second == false)
-    spdlog::error("RegisterGet insert is wrong!");
+    businessLogger->error("RegisterGet insert is wrong!");
 }
 
 void Service::OnPostHandle(std::string url, HttpHandler handler) {
   auto ret = postHandlers.insert(make_pair(url, handler));
   if (ret.second == false)
-    spdlog::error("RegisterPost insert is wrong!");
+    businessLogger->error("RegisterPost insert is wrong!");
 }
 
 Service::~Service() {}
@@ -66,45 +81,54 @@ bool Service::Handle(std::shared_ptr<HttpSession> connection, std::string path,
                      http::verb method) {
 
   HttpHandler handler;
+  bool hasFound = false;
   if (method == http::verb::get) {
-    if (getHandlers.find(path) == getHandlers.end()) {
-      return false;
+    if (getHandlers.find(path) != getHandlers.end()) {
+      handler = getHandlers[path];
+      hasFound = true;
     }
-    handler = getHandlers[path];
   } else if (method == http::verb::post) {
-    if (postHandlers.find(path) == postHandlers.end()) {
-      return false;
+    if (postHandlers.find(path) != postHandlers.end()) {
+      handler = postHandlers[path];
+      hasFound = true;
     }
-    handler = postHandlers[path];
   }
 
-  if (handler == nullptr)
-    return false;
-
-  Json::Value source = parseRequest(connection);
   auto response = connection->GetResponse();
-  connection->GetResponse()->set(http::field::content_type, "text/json");
+  if (hasFound == false || handler == nullptr) {
+    response->result(http::status::not_found);
+    response->set(http::field::content_type, "text/plain");
+    responseWrite(response, "url not found");
+    return false;
+  }
 
-  if (source.empty()) {
+  connection->GetResponse()->set(http::field::content_type, "application/json");
+  Json::Value source = parseRequest(connection);
+
+  if (source.empty() && method == http::verb::post) {
     Json::Value rsp;
     rsp["error"] = ErrorCodes::JsonParser;
-    beast::ostream(response->body()) << rsp.toStyledString();
-    return false;
+    responseWrite(response,
+                  "content-type not support | " + rsp.toStyledString());
+    return true;
   }
 
+  businessLogger->info("[service-handle] path as {}", path);
+
+  response->result(http::status::ok);
+  response->set(http::field::server, "GateServer");
   bool handleSuccess = handler(response, source);
 
   return handleSuccess;
-}
-
-bool Service::verifycodeHandle(HttpSession::ResponsePtr response,
-                               Json::Value &requestData) {
+} // namespace wim
+bool Service::verifycode(HttpSession::ResponsePtr response,
+                         Json::Value &requestData) {
 
   Json::Value rspInfo;
   Defer _([&]() { responseWrite(response, rspInfo.toStyledString()); });
 
   if (!requestData.isMember("email")) {
-    spdlog::info("[post_verifycode-email] Failed to parse JSON data!");
+    businessLogger->info("[post_verifycode-email] Failed to parse JSON data!");
 
     rspInfo["error"] = ErrorCodes::JsonParser;
     return false;
@@ -113,152 +137,99 @@ bool Service::verifycodeHandle(HttpSession::ResponsePtr response,
   auto email = requestData["email"].asString();
   // GetVerifyRsp rsp = VerifyGrpcClient::GetInstance()->GetVerifyCode(email);
 
-  spdlog::info("service-post_verifycode] email as {}", email);
+  businessLogger->info("service-post_verifycode] email as {}", email);
 
   // rspInfo["error"] = rsp.error();
   rspInfo["email"] = requestData["email"];
   return true;
 }
 
-bool Service::registerHandle(HttpSession::ResponsePtr response,
-                             Json::Value &requestData) {
+bool Service::signUp(HttpSession::ResponsePtr response,
+                     Json::Value &requestData) {
+
+  businessLogger->info("[signUp]: start, requestData as {}",
+                       requestData.toStyledString());
 
   Json::Value rspInfo;
   Defer _([&]() { responseWrite(response, rspInfo.toStyledString()); });
 
-  auto email = requestData["email"].asString();
-  auto name = requestData["user"].asString();
+  auto username = requestData["username"].asString();
   auto pwd = requestData["password"].asString();
-  auto confirm = requestData["confirm"].asString();
-  auto icon = requestData["icon"].asString();
+  auto email = requestData["email"].asString();
 
-  if (pwd != confirm) {
-    spdlog::info("[post_register] password is wrong");
-    rspInfo["error"] = ErrorCodes::PasswdErr;
-    return true;
-  }
-
-  std::string verifycode;
+  std::string verifycode = "1234";
   // verifycode logic...
 
-  int uid = MysqlOperator::GetInstance()->RegisterUser(name, email, pwd);
-  if (uid == 0 || uid == -1) {
-    spdlog::info("[post_register] user or email exist");
+  auto uid = db::RedisDao::GetInstance()->generateUserId();
+
+  db::User::Ptr user(new db::User(0, uid, username, pwd, email));
+  bool hasUser = db::MysqlDao::GetInstance()->userRegister(user);
+  if (hasUser == 1) {
+    businessLogger->info("[signUp]: user or email exist");
     rspInfo["error"] = -1;
-    return true;
+    return false;
   }
-
+  // verifycode logic...
+  businessLogger->info(
+      "[signUp]: success! uid as {}, username as {}, password as {}, "
+      "email as {}",
+      uid, username, pwd, email);
   rspInfo["error"] = 0;
-  rspInfo["uid"] = uid;
-  rspInfo["email"] = email;
-  rspInfo["user"] = name;
+  rspInfo["uid"] = Json::Value::Int64(uid);
+  rspInfo["username"] = username;
   rspInfo["password"] = pwd;
-  rspInfo["confirm"] = confirm;
-  rspInfo["icon"] = icon;
-  rspInfo["verifycode"] = requestData["verifycode"].asString();
+  rspInfo["email"] = email;
 
   return true;
 }
 
-bool Service::resetHandle(HttpSession::ResponsePtr response,
-                          Json::Value &requestData) {
+bool Service::signIn(HttpSession::ResponsePtr response,
+                     Json::Value &requestData) {
 
+  businessLogger->info("[signIn]: start, requestData as {}",
+                       requestData.toStyledString());
   Json::Value rspInfo;
   Defer _([&]() { responseWrite(response, rspInfo.toStyledString()); });
 
-  auto email = requestData["email"].asString();
-  auto name = requestData["user"].asString();
-  auto pwd = requestData["password"].asString();
+  db::User userInfo;
+  auto username = requestData["username"].asString();
+  auto password = requestData["password"].asString();
 
-  std::string verifycode;
-  bool has_verifycode = RedisOperator::GetInstance()->Get(
-      requestData["email"].asString(), verifycode);
-  if (!has_verifycode) {
-    spdlog::info("[post-reset] Verify code is expired");
-    rspInfo["error"] = ErrorCodes::VarifyCodeErr;
+  auto user = wim::db::MysqlDao::GetInstance()->getUser(username);
+  if (user == nullptr) {
+    businessLogger->error("[password or email input is wrong!]");
+    rspInfo["error"] = -1;
     return false;
   }
 
-  if (verifycode != requestData["verifycode"].asString()) {
-    spdlog::info("[post-reset] verifycode is invalid");
-
-    rspInfo["error"] = ErrorCodes::VarifyCodeErr;
-    return false;
-  }
-  bool email_valid = MysqlOperator::GetInstance()->CheckEmail(name, email);
-  if (!email_valid) {
-    spdlog::info("[post-reset] email input is invalid");
-    rspInfo["error"] = ErrorCodes::EmailNotMatch;
+  auto node = rpc::StateClient::GetInstance()->GetImServer(userInfo.uid);
+  if (node.empty()) {
+    businessLogger->info("rpc request state service is fialed, user id as {} ",
+                         userInfo.uid);
+    rspInfo["error"] = -1;
     return false;
   }
 
-  bool update_success = MysqlOperator::GetInstance()->UpdatePassword(name, pwd);
-  if (!update_success) {
-    spdlog::error(" update password is failed");
-    rspInfo["error"] = ErrorCodes::PasswdUpFailed;
-    return false;
-  }
-
-  spdlog::info("[post-reset] success! new password is {}", pwd);
-
+  businessLogger->info("[sigIn] user: {} login success", userInfo.username);
   rspInfo["error"] = 0;
-  rspInfo["email"] = email;
-  rspInfo["user"] = name;
-  rspInfo["password"] = pwd;
-  rspInfo["verifycode"] = requestData["verifycode"].asString();
-
-  return true;
-}
-bool Service::loginHandle(HttpSession::ResponsePtr response,
-                          Json::Value &requestData) {
-
-  Json::Value rspInfo;
-  Defer _([&]() { responseWrite(response, rspInfo.toStyledString()); });
-
-  UserInfo userInfo;
-  auto email = requestData["email"].asString();
-  auto pwd = requestData["password"].asString();
-  spdlog::info("debug: email: {}, pwd: {} ", email, pwd);
-
-  bool userIsExist =
-      MysqlOperator::GetInstance()->CheckUserExist(email, pwd, userInfo);
-  if (!userIsExist) {
-    spdlog::error("[post_login: password or email input is wrong!]");
-    rspInfo["error"] = ErrorCodes::PasswdInvalid;
-    return false;
-  }
-
-  // auto reply = StatusGrpcClient::GetInstance()->GetImServer(userInfo.uid);
-  // if (reply.error()) {
-  //   spdlog::error("[grpc about gateway im server is failed, error as {}",
-  //                 reply.error());
-  //   rspInfo["error"] = ErrorCodes::RPCFailed;
-  //   return false;
-  // }
-
-  // spdlog::info("[post-login] success!, user id as {} ", userInfo.uid);
-  // rspInfo["error"] = 0;
-  // rspInfo["email"] = email;
-  // rspInfo["uid"] = userInfo.uid;
-  // rspInfo["token"] = reply.token();
-  // rspInfo["host"] = reply.host();
-  // rspInfo["port"] = reply.port();
-  // rsp_package = rspInfo.toStyledString();
+  rspInfo["uid"] = (int)userInfo.uid;
+  rspInfo["ip"] = node.ip;
+  rspInfo["port"] = node.port;
 
   return true;
 }
 
-bool Service::chatArrhythmiaHandle(HttpSession::ResponsePtr response,
-                                   Json::Value &requestData) {
+bool Service::chatArrhythmia(HttpSession::ResponsePtr response,
+                             Json::Value &requestData) {
 
   Json::Value rspInfo;
   Defer _([&]() { responseWrite(response, rspInfo.toStyledString()); });
 
   auto uid = requestData["uid"].asInt();
   // Mysql select...
-  ServerNode node = StateClient::GetInstance()->GetImServer(uid);
+  rpc::ServerNode node = rpc::StateClient::GetInstance()->GetImServer(uid);
   if (node.ip.empty() || node.port == 0) {
-    spdlog::error("[chat_arrhythmia] get im server failed");
+    businessLogger->error("[chat_arrhythmia] get im server failed");
     rspInfo["error"] = ErrorCodes::RPCFailed;
     return false;
   }
@@ -269,3 +240,42 @@ bool Service::chatArrhythmiaHandle(HttpSession::ResponsePtr response,
 
   return true;
 }
+
+bool Service::forgetPassword(HttpSession::ResponsePtr response,
+                             Json::Value &requestData) {
+
+  Json::Value rspInfo;
+  Defer _([&]() { responseWrite(response, rspInfo.toStyledString()); });
+
+  auto username = requestData["username"].asString();
+  auto password = requestData["password"].asString();
+  auto email = requestData["email"].asString();
+  auto verifycode = requestData["verifycode"].asString();
+
+  bool hasVerifycode =
+      db::RedisDao::GetInstance()->authVerifycode(email, verifycode);
+  if (!hasVerifycode) {
+    businessLogger->info(" Verify code is expired or not existed");
+    rspInfo["error"] = ErrorCodes::VarifyCodeErr;
+    return false;
+  }
+
+  auto user = db::MysqlDao::GetInstance()->getUser(username);
+  bool updateSuccess = db::MysqlDao::GetInstance()->userModifyPassword(user);
+  if (!updateSuccess) {
+    businessLogger->error(" update password is failed");
+    rspInfo["error"] = ErrorCodes::PasswdUpFailed;
+    return false;
+  }
+
+  businessLogger->info("success! new password is {}", password);
+
+  rspInfo["error"] = 0;
+  rspInfo["email"] = email;
+  rspInfo["username"] = username;
+  rspInfo["password"] = password;
+  rspInfo["verifycode"] = requestData["verifycode"].asString();
+
+  return true;
+}
+}; // namespace wim

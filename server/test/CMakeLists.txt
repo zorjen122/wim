@@ -12,21 +12,29 @@ find_package(Boost REQUIRED COMPONENTS system filesystem)
 set(_DIR_JSONCPP /usr/include/jsoncpp)
 set(_DIR_SPDLOG /usr/local/spdlog/include)
 set(_DIR_MYSQLCPPCONN /usr/include/)
+set(_DIR_YAML /usr/local/include/)
+
 
 set(_LIB_SPDLOG_DIR /usr/local/spdlog/lib/)
+set(_LIB_YAML_DIR /usr/local/yaml-cpp/lib/)
+
 
 set(_LIB_BOOST Boost::filesystem Boost::system)
 set(_LIB_JSONCPP jsoncpp)
 set(_LIB_PTHREAD pthread)
 set(_LIB_SPDLOG spdlog)
 set(_LIB_MYSQLCPPCONN mysqlcppconn)
+set(_LIB_YAML yaml-cpp)
+
 
 # 搜索 util 和 service 目录下的所有 .cc 文件
-file(GLOB UTIL_CPP ${CMAKE_CURRENT_SOURCE_DIR}/util/*.cc )
-file(GLOB SERVICE_CPP ${CMAKE_CURRENT_SOURCE_DIR}/service/*.cc)
-file(GLOB SERVICE_CPP ${CMAKE_CURRENT_SOURCE_DIR}/service/*.cc)
+file(GLOB UTIL_CPP ${CMAKE_CURRENT_SOURCE_DIR}/util/*.cc ${CMAKE_CURRENT_SOURCE_DIR}/../public/src/Configer.cc)
+# file(GLOB SERVICE_CPP ${CMAKE_CURRENT_SOURCE_DIR}/service/*.cc)
+file(GLOB LINK_CPP ${CMAKE_CURRENT_SOURCE_DIR}/service/client.cc)
+file(GLOB SERVICE_CPP ${CMAKE_CURRENT_SOURCE_DIR}/service/main.cc)
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/util)
+
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/util ${CMAKE_CURRENT_SOURCE_DIR}/../public/include)
 
 # 遍历 SERVICE_CPP 中的每个 .cc 文件
 foreach(SRC_FILE ${SERVICE_CPP})
@@ -34,7 +42,7 @@ foreach(SRC_FILE ${SERVICE_CPP})
     get_filename_component(EXEC_NAME ${SRC_FILE} NAME_WE)
 
     # 创建一个新的可执行文件，每个 .cc 文件对应一个可执行文件
-    add_executable(${EXEC_NAME} ${UTIL_CPP} ${SRC_FILE})
+    add_executable(${EXEC_NAME} ${UTIL_CPP} ${SRC_FILE} ${LINK_CPP})
 
    # 设置每个可执行文件的输出目录为 ./bin
     set_target_properties(${EXEC_NAME} PROPERTIES
@@ -46,9 +54,10 @@ foreach(SRC_FILE ${SERVICE_CPP})
         ${_DIR_JSONCPP}
         ${_DIR_SPDLOG}
         ${_DIR_MYSQLCPPCONN}
+        ${_DIR_YAML}
     )
 
-    target_link_directories(${EXEC_NAME} PUBLIC ${_LIB_SPDLOG_DIR})
+    target_link_directories(${EXEC_NAME} PUBLIC ${_LIB_SPDLOG_DIR} ${_LIB_YAML_DIR})
 
     # 设置每个可执行文件的链接库
     target_link_libraries(${EXEC_NAME}
@@ -57,6 +66,7 @@ foreach(SRC_FILE ${SERVICE_CPP})
         ${_LIB_SPDLOG}
         ${_LIB_PTHREAD}
         ${_LIB_MYSQLCPPCONN}
+        ${_LIB_YAML}
     )
 
     # 添加编译选项

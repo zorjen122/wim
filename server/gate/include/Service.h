@@ -8,6 +8,9 @@
 #include "Const.h"
 #include "HttpSession.h"
 #include <boost/beast.hpp>
+
+namespace wim {
+
 namespace http = boost::beast::http;
 
 typedef std::function<bool(HttpSession::ResponsePtr, Json::Value &)>
@@ -24,12 +27,12 @@ public:
   void OnPostHandle(std::string, HttpHandler);
 
 private:
-  bool verifycodeHandle(HttpSession::ResponsePtr, Json::Value &);
-  bool registerHandle(HttpSession::ResponsePtr, Json::Value &);
-  bool loginHandle(HttpSession::ResponsePtr, Json::Value &);
+  bool verifycode(HttpSession::ResponsePtr, Json::Value &);
+  bool signUp(HttpSession::ResponsePtr, Json::Value &);
+  bool signIn(HttpSession::ResponsePtr, Json::Value &);
   bool logoutHandle(HttpSession::ResponsePtr, Json::Value &);
-  bool resetHandle(HttpSession::ResponsePtr, Json::Value &);
-  bool chatArrhythmiaHandle(HttpSession::ResponsePtr, Json::Value &);
+  bool forgetPassword(HttpSession::ResponsePtr, Json::Value &);
+  bool chatArrhythmia(HttpSession::ResponsePtr, Json::Value &);
 
   void responseWrite(HttpSession::ResponsePtr, const std::string &);
   Json::Value parseRequest(std::shared_ptr<HttpSession> connection);
@@ -39,3 +42,4 @@ private:
   std::map<std::string, HttpHandler> postHandlers;
   std::map<std::string, HttpHandler> getHandlers;
 };
+}; // namespace wim

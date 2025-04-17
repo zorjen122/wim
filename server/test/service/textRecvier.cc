@@ -38,7 +38,7 @@ bool login() {
   }
   return true;
 }
-int main() {
+int test() {
   bool loginStatus = login();
   if (!loginStatus) {
     assert(0);

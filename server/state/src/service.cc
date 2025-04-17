@@ -1,43 +1,112 @@
 #include "service.h"
 #include "Configer.h"
+#include "global.h"
 #include "im.pb.h"
 #include "imRpc.h"
+#include "spdlog/spdlog.h"
+#include <grpcpp/server_context.h>
 #include <grpcpp/support/status.h>
+#include <string>
 
+StateServiceImpl::StateServiceImpl() {
+  auto conf = Configer::getConfig("server");
+
+  auto imTotal = conf["im"]["im-total"].as<int>();
+  for (int index = 1; index <= imTotal; index++) {
+    auto im = conf["im"]["s" + std::to_string(index)];
+    auto host = im["host"].as<std::string>();
+    auto port = im["rpcPort"].as<std::string>();
+    auto name = im["name"].as<std::string>();
+    auto status = im["status"].as<std::string>();
+    ImNode::ptr node(new ImNode(host, port, status));
+    spdlog::info("ImNode({}) {}:{} {} {}", std::to_string(index), host, port,
+                 name, status);
+
+    if (status == "backup" || status == "active") {
+      if (status == "backup")
+        imRpcMap[name] = std::make_unique<ImRpc>(node, 1);
+
+      imNodeMap[name] = node;
+      imNodeName.push_back(name);
+    }
+  }
+}
 grpc::Status StateServiceImpl::GetImServer(grpc::ServerContext *context,
                                            const ConnectUser *request,
                                            ConnectUserRsp *response) {
-
-  auto conf = Configer::getConfig("server");
-
-  if (conf.IsNull())
-    spdlog::error("Configer::getConfig(\"Server\") failed");
-
-  auto backupIM = conf["imBackup"]["im-1"];
-  auto im1Host = backupIM["host"].as<std::string>();
-  auto im1Port = backupIM["port"].as<std::string>();
-
-  static std::map<int, std::vector<int>> imInfo;
-  static std::vector<int> backupImID = {1};
-  static std::map<int, std::pair<std::string, std::string>> ImNode = {
-      {1, {im1Host, im1Port}}};
-  static std::map<int, bool> imState;
+  static int routeCount = 0;
 
   int uid = request->id();
-  int idx = 0;
 
-  if (imState.find(backupImID[idx]) == imState.end()) {
-    imState[backupImID[idx]] = true;
-    bool onActive = ImRpc::GetInstance()->ActiveService();
-    if (!onActive) {
-      response->set_ip("");
-      response->set_port(0);
-      return grpc::Status(grpc::StatusCode::INTERNAL, "ImRpc active failed");
+  int imTotal = imNodeName.size();
+  for (int _ = 0; _ < imTotal; ++_) {
+    auto nodeIndex = imNodeName[routeCount++];
+
+    auto &node = imNodeMap[nodeIndex];
+    routeCount = routeCount % imTotal;
+
+    if (node->getStatus() == "active") {
+      response->set_ip(node->getIp());
+      response->set_port(atoi(node->getPort().c_str()));
+      node->appendConnection(uid);
+      break;
     }
   }
 
-  imInfo[backupImID[idx]].push_back(uid);
-  response->set_ip(ImNode[backupImID[idx]].first);
-  response->set_port(atoi(ImNode[backupImID[idx]].second.c_str()));
+  return grpc::Status::OK;
+}
+
+grpc::Status
+StateServiceImpl::ActiveImBackupServer(grpc::ServerContext *context,
+                                       const ConnectUser *request,
+                                       ConnectUserRsp *response) {
+  static int routeCount = 0;
+
+  int uid = request->id();
+  int imTotal = imNodeName.size();
+  bool onActive;
+
+  for (int _ = 0; _ < imTotal; ++_) {
+    auto nodeIndex = imNodeName[routeCount++];
+
+    auto &node = imNodeMap[nodeIndex];
+    routeCount = routeCount % imTotal;
+
+    if (node->getStatus() == "backup") {
+      auto &imBackupRpc = imRpcMap[nodeIndex];
+
+      bool rpcSuccess = imBackupRpc->ActiveService();
+      if (!rpcSuccess) {
+        return grpc::Status::CANCELLED;
+      }
+      response->set_ip(node->getIp());
+      response->set_port(atoi(node->getPort().c_str()));
+      node->appendConnection(uid);
+      node->setStatus("active");
+      imRpcMap.erase(nodeIndex);
+      onActive = true;
+      break;
+    }
+  }
+
+  return onActive ? grpc::Status::OK : grpc::Status::CANCELLED;
+}
+
+grpc::Status StateServiceImpl::TestNetworkPing(grpc::ServerContext *context,
+                                               const TestNetwork *request,
+                                               TestNetwork *response) {
+
+  spdlog::info("imBackupRpc-TestNetworkPing, req {}", request->msg());
+
+  auto &imBackupRpc = imRpcMap["hunan-im"];
+  if (imBackupRpc == nullptr) {
+    spdlog::error("imBackupRpc is nullptr");
+    return grpc::Status::CANCELLED;
+  }
+  auto rpcSuccess = imBackupRpc->ActiveService();
+  if (!rpcSuccess) {
+    return grpc::Status::CANCELLED;
+  }
+  response->set_msg("Pong!");
   return grpc::Status::OK;
 }

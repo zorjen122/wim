@@ -70,7 +70,7 @@ int groupCreate(std::shared_ptr<net::ip::tcp::socket> socket, int up) {
   return rt.empty() ? -1 : 0;
 };
 
-int main(int argc, char *argv[]) {
+int test(int argc, char *argv[]) {
 
   using base::userManager;
   fetchUsersFromDatabase(&userManager);

@@ -8,17 +8,21 @@ server:
   stateRPC:
     host: 127.0.0.1
     port: 50052
-    rpcCount: 10
+    rpcCount: 2
   mysql:
     host: 127.0.0.1
-    port: 3309
+    port: 33060
     user: zorjen
     password: root
-    schema: im
+    schema: chatServ
+    clientCount: 2
+    machineId: 1
   redis:
     host: 127.0.0.1
     port: 6380
-    password: root.
+    password: root
+    clientCount: 2
+    machineId: 1
   kafka:
     broker: bootstrap.servers
     host: 127.0.0.1

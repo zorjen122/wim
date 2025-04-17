@@ -134,7 +134,7 @@ void onRePingWrite(int uid, std::shared_ptr<tcp::socket> socket,
 
 void heartbeatRun(int uid, std::shared_ptr<tcp::socket> socket) {}
 
-int main() {
+int test() {
   fetchUsersFromDatabase(&base::userManager);
 
   auto &user = base::userManager.back();

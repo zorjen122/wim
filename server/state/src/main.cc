@@ -29,7 +29,7 @@ int main() {
   builder.RegisterService(&stateImpl);
   std::unique_ptr<grpc::Server> server(builder.BuildAndStart());
 
-  spdlog::info("State Service on startting, listening on {}:{}");
+  spdlog::info("State Service on startting, listening on {}:{}", host, port);
   server->Wait();
 
   return 0;
