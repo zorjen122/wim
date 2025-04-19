@@ -13,9 +13,6 @@
 net::io_context ioc;
 static std::shared_ptr<net::ip::tcp::socket> globalSocket;
 bool login() {
-  fetchUsersFromDatabase(&base::userManager);
-
-  auto &user = base::userManager.back();
   spdlog::info("[fetch-user]: id {}, email {}, password {} ", user.id,
                user.email, user.password);
 
@@ -50,8 +47,8 @@ int test() {
   static std::atomic<int> seq{0};
 
   Json::Value textSendRequest;
-  textSendRequest["from"] = 10;
-  textSendRequest["to"] = 20;
+  textSendRequest["fromUid"] = 10;
+  textSendRequest["toUid"] = 20;
   textSendRequest["text"] = "hello world";
 
   // 该id仅是客户端的序列号，其作用是在之后接收到服务器ACK能找到并取消重传定时器

@@ -34,7 +34,7 @@ public:
   std::string TestNetworkPing();
 
 private:
-  std::unique_ptr<RpcPool<StateService>> pool = nullptr;
+  std::unique_ptr<RpcPool<StateService>> rpcPool = nullptr;
 };
 
 }; // namespace wim::rpc

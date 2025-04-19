@@ -65,23 +65,17 @@ enum ServiceID {
   ID_PING_REQ = 1003, // 心跳
   ID_PING_RSP = 1004,
 
-  ID_CHAT_LOGIN_REQ = 1005, // 登录
-  ID_CHAT_LOGIN_INIT_RSP = 1006,
+  ID_LOGIN_INIT_REQ = 1005, // 登录
+  ID_LOGIN_INIT_RSP = 1006,
 
   ID_SEARCH_USER_REQ = 1007, // 搜索
   ID_SEARCH_USER_RSP = 1008,
 
-  ID_ADD_FRIEND_REQ = 1009,
-  ID_ADD_FRIEND_RSP = 1010,
+  ID_NOTIFY_ADD_FRIEND_REQ = 1009,
+  ID_NOTIFY_ADD_FRIEND_RSP = 1010,
 
-  ID_NOTIFY_ADD_FRIEND_REQ = 1011,
-
-  ID_AUTH_FRIEND_REQ = 1013,
-  ID_AUTH_FRIEND_RSP = 1014,
-
-  ID_NOTIFY_AUTH_FRIEND_REQ = 1015,
-
-  ID_NOTIFY_PUSH_TEXT_MSG_REQ = 1019,
+  ID_REPLY_ADD_FRIEND_REQ = 1013,
+  ID_REPLY_ADD_FRIEND_RSP = 1014,
 
   ID_TEXT_SEND_REQ = 1020, // 发送消息
   ID_TEXT_SEND_RSP = 1021,
@@ -117,17 +111,15 @@ static std::unordered_map<ServiceID, std::string> __serviceIdMap = {
     {ID_ONLINE_PULL_RSP, "Online Pull Response"},
     {ID_PING_REQ, "Ping Request"},
     {ID_PING_RSP, "Pong Response"},
-    {ID_CHAT_LOGIN_REQ, "Chat Login Init"},
-    {ID_CHAT_LOGIN_INIT_RSP, "Chat Login Init Response"},
+    {ID_LOGIN_INIT_REQ, "Chat Login Init"},
+    {ID_LOGIN_INIT_RSP, "Chat Login Init Response"},
     {ID_SEARCH_USER_REQ, "Search User Request"},
     {ID_SEARCH_USER_RSP, "Search User Response"},
-    {ID_ADD_FRIEND_REQ, "Add Friend Request"},
-    {ID_ADD_FRIEND_RSP, "Add Friend Response"},
+    {ID_NOTIFY_ADD_FRIEND_REQ, "Add Friend Request"},
+    {ID_NOTIFY_ADD_FRIEND_RSP, "Add Friend Response"},
     {ID_NOTIFY_ADD_FRIEND_REQ, "Notify Add Friend Request"},
-    {ID_AUTH_FRIEND_REQ, "Auth Friend Request"},
-    {ID_AUTH_FRIEND_RSP, "Auth Friend Response"},
-    {ID_NOTIFY_AUTH_FRIEND_REQ, "Notify Auth Friend Request"},
-    {ID_NOTIFY_PUSH_TEXT_MSG_REQ, "Notify Push Text Message Request"},
+    {ID_REPLY_ADD_FRIEND_REQ, "Auth Friend Request"},
+    {ID_REPLY_ADD_FRIEND_RSP, "Auth Friend Response"},
     {ID_UTIL_ACK_SEQ, "Util Ack Sequence"},
     {ID_UTIL_ACK_RSP, "Util Ack Response"},
 

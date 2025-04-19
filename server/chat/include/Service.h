@@ -9,6 +9,9 @@
 
 #include "ChatSession.h"
 #include "Const.h"
+
+namespace wim {
+
 class Service : public Singleton<Service> {
   friend class Singleton<Service>;
 
@@ -69,8 +72,8 @@ void ClearChannel(size_t uid, std::shared_ptr<ChatSession> session);
 void PingHandle(std::shared_ptr<ChatSession> session, unsigned int msgID,
                 const Service::PackageType &msgData);
 
-void Login(std::shared_ptr<ChatSession> session, unsigned int msgID,
-           const Service::PackageType &msgData);
+void OnLogin(std::shared_ptr<ChatSession> session, unsigned int msgID,
+             const Service::PackageType &msgData);
 
 void ReLogin(int uid, std::shared_ptr<ChatSession> oldSession,
              std::shared_ptr<ChatSession> newSession);
@@ -101,3 +104,4 @@ void UserSearch(std::shared_ptr<ChatSession> session, unsigned int msgID,
 
 void TextSend(std::shared_ptr<ChatSession> session, unsigned int msgID,
               const Service::PackageType &msgData);
+}; // namespace wim

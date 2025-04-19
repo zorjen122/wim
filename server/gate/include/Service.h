@@ -33,6 +33,7 @@ private:
   bool logoutHandle(HttpSession::ResponsePtr, Json::Value &);
   bool forgetPassword(HttpSession::ResponsePtr, Json::Value &);
   bool chatArrhythmia(HttpSession::ResponsePtr, Json::Value &);
+  bool initUserinfo(HttpSession::ResponsePtr, Json::Value &);
 
   void responseWrite(HttpSession::ResponsePtr, const std::string &);
   Json::Value parseRequest(std::shared_ptr<HttpSession> connection);

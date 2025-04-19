@@ -8,9 +8,10 @@
 
 #include "Configer.h"
 #include "Const.h"
+#include "DbGlobal.h"
 #include "Logger.h"
-#include "spdlog/logger.h"
 #include <condition_variable>
+#include <json/json.h>
 #include <mutex>
 #include <queue>
 #include <spdlog/spdlog.h>
@@ -187,6 +188,16 @@ public:
     }
   }
 
+  std::string getPrefixUserId() {
+    static const std::string PrefixUserId = "im:userId:";
+    return PrefixUserId;
+  }
+
+  std::string getPrefixOnlineUserInfo() {
+    static const std::string PrefixOnlineUserInfo = "im:user:";
+    return PrefixOnlineUserInfo;
+  }
+
   int64_t generateUserId() {
     static std::string __prefixUid = "im:uesrId";
     return generateId(__prefixUid);
@@ -207,6 +218,73 @@ public:
         [this, &redis]() { redisPool->ReturnConnection(std::move(redis)); });
     auto result = redis->get(email);
     return result.has_value() && result.value() == verifycode;
+  }
+
+  // 未使用，待废弃
+  std::string getUserId(long uid) {
+    auto redis = redisPool->GetConnection();
+    if (!redis) {
+      LOG_DEBUG(wim::dbLogger, "redis connection is null");
+      return "";
+    }
+    Defer defer(
+        [this, &redis]() { redisPool->ReturnConnection(std::move(redis)); });
+    auto result = redis->get(getPrefixUserId() + std::to_string(uid));
+    return result->data();
+  }
+
+  bool setUserId(long uid);
+
+  bool setOnlineUserInfo(long uid, db::UserInfo::Ptr userInfo) {
+    auto redis = redisPool->GetConnection();
+    if (!redis) {
+      LOG_DEBUG(wim::dbLogger, "redis connection is null");
+      return false;
+    }
+    Defer defer(
+        [this, &redis]() { redisPool->ReturnConnection(std::move(redis)); });
+
+    Json::Value jsonData;
+    jsonData["userId"] = Json::Value::Int64(userInfo->uid);
+    jsonData["name"] = userInfo->name;
+    jsonData["age"] = userInfo->age;
+    jsonData["sex"] = userInfo->sex;
+    jsonData["headImageURL"] = userInfo->headImageURL;
+    redis->set(getPrefixOnlineUserInfo() + std::to_string(uid),
+               jsonData.toStyledString());
+    return true;
+  }
+
+  std::string getOnlineUserInfo(long uid) {
+    auto redis = redisPool->GetConnection();
+    if (!redis) {
+      LOG_DEBUG(wim::dbLogger, "redis connection is null");
+    }
+    Defer defer(
+        [this, &redis]() { redisPool->ReturnConnection(std::move(redis)); });
+
+    auto source = redis->get(getPrefixOnlineUserInfo() + std::to_string(uid));
+    if (!source.has_value())
+      return "";
+
+    return source.value();
+  }
+
+  UserInfo::Ptr getOnlineUserInfoObject(long uid) {
+    std::string source = getOnlineUserInfo(uid);
+    if (source.empty())
+      return nullptr;
+    Json::Reader reader;
+    Json::Value jsonData;
+    if (!reader.parse(source, jsonData)) {
+      LOG_DEBUG(wim::dbLogger, "parse online user info json data error");
+      return nullptr;
+    }
+    UserInfo::Ptr userInfo(
+        new UserInfo(jsonData["userId"].asInt64(), jsonData["name"].asString(),
+                     jsonData["age"].asInt(), jsonData["sex"].asString(),
+                     jsonData["headImageURL"].asString()));
+    return userInfo;
   }
 
 private:

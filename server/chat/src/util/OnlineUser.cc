@@ -2,21 +2,16 @@
 #include "Mysql.h"
 #include "Redis.h"
 
-namespace util {
-
-auto RandomUid() {
-  // todo: mult-server random uid allocate
-  return "";
-}
-} // namespace util
+namespace wim {
 
 OnlineUser::~OnlineUser() { sessionMap.clear(); }
+// userId:machineId
+// machineId -> machine IP
 
 std::shared_ptr<ChatSession> OnlineUser::GetUser(size_t uid) {
   std::lock_guard<std::mutex> lock(sessionMutex);
   auto iter = sessionMap.find(uid);
   if (iter == sessionMap.end()) {
-    // else(wim::db::RedisDao::GetInstance()->HasUser(uid))
     return nullptr;
   }
 
@@ -40,3 +35,4 @@ void OnlineUser::RemoveUser(size_t uid) {
 OnlineUser::OnlineUser() {}
 
 bool OnlineUser::isOnline(size_t uid) { return GetUser(uid) != nullptr; }
+}; // namespace wim

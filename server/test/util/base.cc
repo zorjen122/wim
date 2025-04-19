@@ -12,38 +12,20 @@
 #include <unordered_map>
 
 namespace base {
-UserManager userManager{};
-
-Json::Value buildRegPackage() {
-  Json::Value pack;
-
-  auto email = generateRandomEmail();
-  auto name = email.substr(0, email.find('@'));
-
-  pack["email"] = email;
-  pack["name"] = name;
-  pack["password"] = PASSWORD;
-  pack["confirm"] = PASSWORD;
-  pack["icon"] = "null";
-
-  return pack;
-}
 
 std::shared_ptr<net::ip::tcp::socket>
-startChatClient(net::io_context &io_context, const std::string &host,
-                const std::string &port) {
+startChatClient(net::io_context &io_context, const std::string &ip,
+                unsigned short port) {
   boost::system::error_code ec;
 
-  std::string server_address = host;               // 服务器地址
-  unsigned short server_port = atoi(port.c_str()); // 服务器端口
+  std::string server_address = ip; // 服务器地址
 
   // 创建 TCP 协议的 socket
   std::shared_ptr<net::ip::tcp::socket> socket(
       new net::ip::tcp::socket(io_context));
 
   // 解析目标地址
-  net::ip::tcp::endpoint endpoint(net::ip::make_address(server_address),
-                                  server_port);
+  net::ip::tcp::endpoint endpoint(net::ip::make_address(server_address), port);
 
   spdlog::info("[connect...]");
   // 连接到服务器
@@ -53,7 +35,7 @@ startChatClient(net::io_context &io_context, const std::string &host,
     return nullptr;
   }
 
-  spdlog::info("connect im-server is success |  {} : {} ", host, port);
+  spdlog::info("connect im-server is success |  {} : {} ", ip, port);
   return socket;
 }
 

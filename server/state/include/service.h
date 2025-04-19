@@ -4,6 +4,7 @@
 #include "state.grpc.pb.h"
 #include "state.pb.h"
 
+namespace wim::rpc {
 using state::ConnectUser;
 using state::ConnectUserRsp;
 using state::StateService;
@@ -28,3 +29,4 @@ public:
   std::unordered_map<std::string, std::unique_ptr<ImRpc>> imRpcMap;
   std::vector<std::string> imNodeName;
 };
+}; // namespace wim::rpc

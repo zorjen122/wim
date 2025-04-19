@@ -22,7 +22,7 @@ int main() {
   auto host = config["state"]["host"].as<std::string>();
   auto port = config["state"]["port"].as<std::string>();
 
-  StateServiceImpl stateImpl;
+  wim::rpc::StateServiceImpl stateImpl;
   grpc::ServerBuilder builder;
   builder.AddListeningPort(host + ":" + port,
                            grpc::InsecureServerCredentials());

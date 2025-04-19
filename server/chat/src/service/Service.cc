@@ -6,12 +6,14 @@
 
 #include "File.h"
 #include "KafkaOperator.h"
+#include "Logger.h"
 #include "OnlineUser.h"
 #include "Redis.h"
 
 #include "Friend.h"
 #include "Group.h"
 
+#include "Logger.h"
 #include "Mysql.h"
 #include <boost/asio/error.hpp>
 #include <boost/asio/steady_timer.hpp>
@@ -26,6 +28,7 @@
 #include <string>
 #include <unordered_map>
 
+namespace wim {
 Service::Service() : isStop(false) {
   Init();
   worker = std::thread(&Service::Run, this);
@@ -38,9 +41,13 @@ Service::~Service() {
 }
 
 void Service::Init() {
-  serviceGroup[ID_CHAT_LOGIN_REQ] =
-      std::bind(&Login, std::placeholders::_1, std::placeholders::_2,
+  serviceGroup[ID_LOGIN_INIT_REQ] =
+      std::bind(&OnLogin, std::placeholders::_1, std::placeholders::_2,
                 std::placeholders::_3);
+
+  serviceGroup[ID_NOTIFY_ADD_FRIEND_REQ] =
+      std::bind(wim::NotifyAddFriend, std::placeholders::_1,
+                std::placeholders::_2, std::placeholders::_3);
 
   serviceGroup[ID_TEXT_SEND_REQ] =
       std::bind(&TextSend, std::placeholders::_1, std::placeholders::_2,
@@ -90,9 +97,10 @@ void Service::Run() {
         unsigned int id = package->recvPackage->id;
         const char *data = package->recvPackage->data;
         unsigned int cur = package->recvPackage->cur;
-        spdlog::info("[ServiceSystem::Run] recv service ID  is {}, service "
-                     "Package is {}",
-                     id, data);
+        LOG_DEBUG(wim::businessLogger,
+                  "[ServiceSystem::Run] recv service ID  is {}, service "
+                  "Package is {}",
+                  id, data);
 
         auto handleCall = serviceGroup.find(id);
         if (handleCall == serviceGroup.end()) {
@@ -122,9 +130,10 @@ void Service::Run() {
     unsigned int id = package->recvPackage->id;
     const char *data = package->recvPackage->data;
     unsigned int cur = package->recvPackage->cur;
-    spdlog::info("[ServiceSystem::Run] recv service ID  is {}, service "
-                 "Package is {}",
-                 id, data);
+    LOG_DEBUG(wim::businessLogger,
+              "[ServiceSystem::Run] recv service ID  is {}, service "
+              "Package is {}",
+              id, data);
 
     auto handleCall = serviceGroup.find(id);
     if (handleCall == serviceGroup.end()) {
@@ -159,7 +168,8 @@ void ClearChannel(size_t uid, std::shared_ptr<ChatSession> session) {
   OnlineUser::GetInstance()->RemoveUser(uid);
   session->ClearSession();
   session->Close();
-  spdlog::info("[Service::ClearChannel] clear channel success, uid-{}", uid);
+  LOG_DEBUG(wim::businessLogger,
+            "[Service::ClearChannel] clear channel success, uid-{}", uid);
 }
 
 void Pong(int uid, std::shared_ptr<ChatSession> session);
@@ -178,7 +188,7 @@ void onReWrite(int seq, std::shared_ptr<ChatSession> session,
   waitAckTimer->async_wait(
       [=, &waitAckTimer](const boost::system::error_code &ec) {
         if (ec == boost::asio::error::operation_aborted) {
-          spdlog::info("timer cancel");
+          LOG_DEBUG(wim::businessLogger, "timer cancel");
           waitAckTimerMap.erase(seq);
           return;
         } else if (ec == boost::asio::error::timed_out) {
@@ -215,8 +225,9 @@ int OnRewriteTimer(std::shared_ptr<ChatSession> session, size_t seq,
 
     timer->async_wait([=](const net::error_code &ec) {
       if (ec == net::error::operation_aborted) {
-        spdlog::info("[OnRewriteTimer] timer by cancelled | seq {}, member {}",
-                     seq, member);
+        LOG_DEBUG(wim::businessLogger,
+                  "[OnRewriteTimer] timer by cancelled | seq {}, member {}",
+                  seq, member);
 
         switch (rspID) {
         case ID_PING_REQ:
@@ -235,9 +246,10 @@ int OnRewriteTimer(std::shared_ptr<ChatSession> session, size_t seq,
 
         // timer timeout, retransf package
         if (util::retansfCountMap[seq][member] == maxRewrite) {
-          spdlog::info("[OnRewriteTimer] retransf count exceed 3 | seq-id "
-                       "[{}],member [{}]",
-                       seq, member);
+          LOG_DEBUG(wim::businessLogger,
+                    "[OnRewriteTimer] retransf count exceed 3 | seq-id "
+                    "[{}],member [{}]",
+                    seq, member);
 
           switch (rspID) {
           case ID_PING_REQ:
@@ -252,16 +264,18 @@ int OnRewriteTimer(std::shared_ptr<ChatSession> session, size_t seq,
           return;
         }
 
-        spdlog::info("[OnRewriteTimer] timeout, on rewrite package | "
-                     "seq-id [{}], count [{}]",
-                     seq, util::retansfCountMap[seq][member] + 1);
+        LOG_DEBUG(wim::businessLogger,
+                  "[OnRewriteTimer] timeout, on rewrite package | "
+                  "seq-id [{}], count [{}]",
+                  seq, util::retansfCountMap[seq][member] + 1);
 
         session->Send(rsp, rspID);
         util::retansfCountMap[seq][member]++;
         (*lam)();
       } else {
-        spdlog::info("[OnRewriteTimer] other timer click cased,  | ec: {}",
-                     ec.message());
+        LOG_DEBUG(wim::businessLogger,
+                  "[OnRewriteTimer] other timer click cased,  | ec: {}",
+                  ec.message());
 
         util::retansfTimerMap[seq].erase(member);
         util::retansfCountMap[seq].erase(member);
@@ -271,8 +285,9 @@ int OnRewriteTimer(std::shared_ptr<ChatSession> session, size_t seq,
 
   (*lam)();
 
-  spdlog::info("[OnRewriteTimer] start rewrite timer, seq-id{}, member-{}", seq,
-               member);
+  LOG_DEBUG(wim::businessLogger,
+            "[OnRewriteTimer] start rewrite timer, seq-id{}, member-{}", seq,
+            member);
   return 0;
 }
 
@@ -287,7 +302,7 @@ void Pong(int uid, std::shared_ptr<ChatSession> session) {
   OnRewriteTimer(session, seq, pong.toStyledString(), ID_PING_RSP, uid);
   util::seqGenerator++;
 
-  spdlog::info("[ PONG | seq {}, uid {} ]", seq, uid);
+  LOG_DEBUG(wim::businessLogger, "[ PONG | seq {}, uid {} ]", seq, uid);
 }
 
 // bug
@@ -298,8 +313,9 @@ void PingHandle(std::shared_ptr<ChatSession> session, unsigned int msgID,
   auto seq = request["seq"].asInt();
   util::clearRetransfTimer(seq, uid);
 
-  spdlog::info("[ServiceSystem::Ping] ping handle success, seq-id{}, uid-{}",
-               seq, uid);
+  LOG_DEBUG(wim::businessLogger,
+            "[ServiceSystem::Ping] ping handle success, seq-id{}, uid-{}", seq,
+            uid);
 }
 
 int PushText(std::shared_ptr<ChatSession> toSession, size_t seq, int from,
@@ -325,7 +341,8 @@ bool SaveService(size_t seq, int from, int to, std::string msg) {
     spdlog::error("[ServiceSystem::SaveService] write file error");
     return false;
   } else {
-    spdlog::info("[ServiceSystem::SaveService] save service log success");
+    LOG_DEBUG(wim::businessLogger,
+              "[ServiceSystem::SaveService] save service log success");
   }
   close(file);
 
@@ -397,7 +414,8 @@ void AckHandle(std::shared_ptr<ChatSession> session, unsigned int msgID,
   util::retansfTimerMap[seq].erase(member);
   util::retansfCountMap[seq].erase(member);
   rsp["error"] = ErrorCodes::Success;
-  spdlog::info(
+  LOG_DEBUG(
+      wim::businessLogger,
       "[ServiceSystem::AckHandle] ack handle success, seq-id{}, member-{}", seq,
       member);
 
@@ -428,7 +446,8 @@ void UserSearch(std::shared_ptr<ChatSession> session, unsigned int msgID,
   if (isOnline) {
     response["error"] = ErrorCodes::Success;
     response["uid"] = uid;
-    spdlog::info("[ServiceSystem::SearchUser user-{} online", uid);
+    LOG_DEBUG(wim::businessLogger, "[ServiceSystem::SearchUser user-{} online",
+              uid);
   }
 
   bool hasUser = true;
@@ -441,7 +460,7 @@ void UserSearch(std::shared_ptr<ChatSession> session, unsigned int msgID,
 
   response["error"] = ErrorCodes::Success;
   response["uid"] = uid;
-  spdlog::info("[ServiceSystem::SearchUser] users-{}", uid);
+  LOG_DEBUG(wim::businessLogger, "[ServiceSystem::SearchUser] users-{}", uid);
   OnRewriteTimer(session, util::seqGenerator, response.toStyledString(),
                  ID_SEARCH_USER_RSP, 0);
   ++util::seqGenerator;
@@ -514,34 +533,86 @@ void ReLogin(int uid, std::shared_ptr<ChatSession> oldSession,
   OnlineUser::GetInstance()->MapUser(uid, newSession);
 }
 
-void Login(std::shared_ptr<ChatSession> session, unsigned int msgID,
-           const Json::Value &request) {
+void OnLogin(std::shared_ptr<ChatSession> session, unsigned int msgID,
+             const Json::Value &request) {
   Json::Value rsp;
-  int uid;
+  long uid = request["uid"].asInt64();
 
-  uid = request["uid"].asInt();
-  Defer _([&rsp, &uid, session]() {
+  Defer _([&]() {
     std::string rt = rsp.toStyledString();
-    session->Send(rt, ID_CHAT_LOGIN_INIT_RSP);
-    Pong(uid, session);
+    session->Send(rt, ID_LOGIN_INIT_RSP);
   });
 
-  if (OnlineUser::GetInstance()->isOnline(uid)) {
+  // 待实现，先不做处理
+  if (false && OnlineUser::GetInstance()->isOnline(uid)) {
+
     rsp["error"] = ErrorCodes::UserOnline;
     auto oldSession = OnlineUser::GetInstance()->GetUser(uid);
     ReLogin(uid, oldSession, session);
 
-    spdlog::info("[ServiceSystem::LoginHandle] THIS USER IS ONLINE, uid-{}",
-                 uid);
+    LOG_DEBUG(wim::businessLogger,
+              "[ServiceSystem::LoginHandle] THIS USER IS ONLINE, uid-{}", uid);
     return;
-  } else {
-    rsp["error"] = ErrorCodes::Success;
-    // 应用层上的用户管理，而在ChatServer中则是对传输层连接的管理
-    // wim::db::MysqlDao::GetInstance()->UserLogin(uid);
-    OnlineUser::GetInstance()->MapUser(uid, session);
-
-    spdlog::info(
-        "[ServiceSystem::LoginHandle] user logining, <uid: {} => session >",
-        uid);
   }
+
+  auto hasUser = db::RedisDao::GetInstance()->getUserId(uid);
+  // 分布式情况，待实现
+  if (false && !hasUser.empty()) {
+    rsp["error"] = ErrorCodes::Success;
+    return;
+  }
+
+  // 用户信息处理
+  auto isFirstLoginObject = request["init"];
+  int status = 0;
+  if (!isFirstLoginObject.empty() && isFirstLoginObject.asBool() == true) {
+    // 首次登录，需要同步用户信息
+    std::string name = request["name"].asString();
+    short age = request["age"].asInt();
+    std::string sex = request["sex"].asString();
+    std::string headImageURL = request["headImageURL"].asString();
+    db::UserInfo::Ptr userInfo(
+        new db::UserInfo(uid, name, age, sex, headImageURL));
+
+    status = db::MysqlDao::GetInstance()->insertUserInfo(userInfo);
+    if (status != 0) {
+      LOG_DEBUG(wim::businessLogger, "insert user info failed, uid-{} ", uid);
+      rsp["error"] = -1;
+      return;
+    }
+
+    status = db::RedisDao::GetInstance()->setOnlineUserInfo(uid, userInfo);
+    if (status == false) {
+      LOG_DEBUG(wim::businessLogger, "set online user info failed, uid-{} ",
+                uid);
+      rsp["error"] = -1;
+      return;
+    }
+  } else {
+    db::UserInfo::Ptr userInfo = db::MysqlDao::GetInstance()->getUserInfo(uid);
+    if (userInfo == nullptr) {
+      LOG_DEBUG(wim::businessLogger, "get user info failed, uid-{} ", uid);
+      rsp["error"] = -1;
+      return;
+    }
+    rsp["uid"] = Json::Value::Int64(userInfo->uid);
+    rsp["name"] = userInfo->name;
+    rsp["age"] = userInfo->age;
+    rsp["sex"] = userInfo->sex;
+    rsp["headImageURL"] = userInfo->headImageURL;
+    rsp["error"] = ErrorCodes::Success;
+
+    status = db::RedisDao::GetInstance()->setOnlineUserInfo(uid, userInfo);
+    if (status == false) {
+      LOG_DEBUG(wim::businessLogger, "set online user info failed, uid-{} ",
+                uid);
+      rsp["error"] = -1;
+      return;
+    }
+  }
+  // 建立<userId, session>用户网络线路映射
+  OnlineUser::GetInstance()->MapUser(uid, session);
+
+  LOG_DEBUG(wim::businessLogger, "user login success!, uid-{} ", uid);
 }
+}; // namespace wim

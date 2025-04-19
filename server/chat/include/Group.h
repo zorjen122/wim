@@ -7,6 +7,8 @@
 #include <memory>
 #include <unordered_map>
 #include <vector>
+
+namespace wim {
 class Group {
 public:
   Group() { channel = nullptr; }
@@ -47,3 +49,4 @@ void GroupQuit(std::shared_ptr<ChatSession> session, unsigned int msgID,
                const Json::Value &request);
 void GroupTextSend(std::shared_ptr<ChatSession> session, unsigned int msgID,
                    const Json::Value &request);
+}; // namespace wim

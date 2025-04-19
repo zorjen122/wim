@@ -1,47 +1,30 @@
 #include "Friend.h"
-#include "Channel.h"
+#include "ImRpc.h"
+
+#include "Const.h"
+#include "Logger.h"
 #include "Mysql.h"
 #include "OnlineUser.h"
+#include "Redis.h"
 #include "Service.h"
 
+#include "json/reader.h"
+#include "json/value.h"
 #include <json/json.h>
 #include <spdlog/spdlog.h>
+namespace wim {
 
-Friend::Friend(int from, int to, std::string name, std::string icon) {
-  channel = std::make_shared<Channel>(from, to, Channel::Type::FRIEND);
-  this->name = name;
-  this->icon = icon;
-}
-
-Friend::~Friend(){};
-
-int OnlineAddFriend(int seq, int from, int to,
-                    std::shared_ptr<ChatSession> toSession) {
-  if (toSession == nullptr) {
-    spdlog::error("[ServiceSystem::OnlineAddFriend] toSession is nullptr");
-    return -1;
-  }
-
-  Json::Value rsp{};
-  rsp["seq"] = seq;
-  rsp["from"] = from;
-  rsp["to"] = to;
-  rsp["error"] = ErrorCodes::Success;
-
-  // todo
-  // wim::db::MysqlDao::GetInstance()->AddFriend(from, to);
-
-  // 当客户端接收到ID_ADD_FRIEND_REQ时，意味着这只能是服务端的消息
-  toSession->Send(rsp.toStyledString(), ID_ADD_FRIEND_REQ);
-  OnRewriteTimer(toSession, seq, rsp.toStyledString(), ID_ADD_FRIEND_REQ, to);
-
+int OnlineNotifyAddFriend(std::shared_ptr<ChatSession> user,
+                          const Json::Value &request) {
+  user->Send(request.toStyledString(), ID_NOTIFY_ADD_FRIEND_REQ);
+  // on rewrite...
   return 0;
 }
 
-int OfflineAddFriend(int seq, int from, int to, const std::string &msgData) {
-  spdlog::info("[ServiceSystem::OfflineAddFriend] seq-{}, from-{}, to-{}", seq,
-               from, to);
-  // bool rt = wim::db::MysqlDao::GetInstance()->SaveService(from, to, msgData);
+int OfflineAddFriend(int seq, int from, int to, const Json::Value &request) {
+  spdlog::info("[Service::OfflineAddFriend] seq-{}, from-{}, to-{}", seq, from,
+               to);
+  // bool rt = wim::db::MysqlDao::GetInstance()->SaveService(from, to, request);
   bool rt = true; // todo...
   if (rt == false) {
     spdlog::error("OffineAddFriend save service to mysql failed");
@@ -51,65 +34,84 @@ int OfflineAddFriend(int seq, int from, int to, const std::string &msgData) {
   return 0;
 }
 
-void AddFriend(std::shared_ptr<ChatSession> session, unsigned int msgID,
-               const std::string &msgData) {
-  Json::Reader parser;
-  Json::Value req;
+void SerachUser(std::shared_ptr<ChatSession> session, unsigned int msgID,
+                const Json::Value &request) {
   Json::Value rsp;
-
-  Defer _([&rsp, session]() {
-    std::string rt = rsp.toStyledString();
-    session->Send(rt, ID_ADD_FRIEND_RSP);
+  Defer defer([&] {
+    auto rt = rsp.toStyledString();
+    session->Send(rt, ID_SEARCH_USER_RSP);
+  });
+  auto username = request["username"].asString();
+  auto user = db::MysqlDao::GetInstance()->getUser(username);
+  if (user == nullptr) {
+    rsp["error"] = -1;
+    return;
+  }
+  auto userInfo = db::MysqlDao::GetInstance()->getUserInfo(user->uid);
+  if (userInfo == nullptr) {
+    rsp["error"] = -1;
+    return;
+  }
+  rsp["uid"] = Json::Value::Int64(userInfo->uid);
+  rsp["username"] = user->username;
+  rsp["age"] = userInfo->age;
+  rsp["headImageURL"] = userInfo->headImageURL;
+  rsp["error"] = 0;
+}
+void NotifyAddFriend(std::shared_ptr<ChatSession> session, unsigned int msgID,
+                     const Json::Value &request) {
+  Json::Value rsp;
+  Defer defer([&] {
+    auto rt = rsp.toStyledString();
+    session->Send(rt, ID_NOTIFY_ADD_FRIEND_RSP);
   });
 
-  bool parserSuccess = parser.parse(msgData, req);
-  if (!parserSuccess) {
-    rsp["error"] = ErrorCodes::JsonParser;
-    spdlog::error("[ServiceSystem::AddFriend] parse msg_data error!");
-    return;
-  }
+  long fromUid = request["fromUid"].asInt64();
+  long toUid = request["toUid"].asInt64();
 
-  int from = req["from"].asInt();
-  int to = req["to"].asInt();
-
-  // bool hasUser = wim::db::MysqlDao::GetInstance()->HasUser(to);
-  bool hasUser = true;
-  if (!hasUser) {
-    rsp["uid"] = to;
-    rsp["error"] = ErrorCodes::UserNotOnline;
-    rsp["status"] = "x";
-    spdlog::error("[ServiceSystem::AddFriend] no this a user, user-{}", to);
-    return;
-  }
-
-  bool isOnline = OnlineUser::GetInstance()->isOnline(to);
-
-  rsp["uid"] = to;
-  rsp["error"] = ErrorCodes::Success;
-  rsp["status"] = "wait";
-  if (isOnline) {
-    auto toSession = OnlineUser::GetInstance()->GetUser(to);
-    int rt = OnlineAddFriend(util::seqGenerator, from, to, toSession);
-    if (rt == -1) {
-      rsp["error"] = -1;
+  auto user = OnlineUser::GetInstance()->GetUser(toUid);
+  if (user != nullptr) {
+    // 本地在线推送
+    int status = OnlineNotifyAddFriend(user, request);
+    if (status != 0) {
+      LOG_DEBUG(wim::businessLogger,
+                "OnlineAddFriend failed, uid-{}, status-{}", toUid, status);
+    }
+    LOG_DEBUG(wim::businessLogger, "OnlineAddFriend success, to-{}", toUid);
+    rsp["error"] = 0;
+    rsp["status"] = "wait";
+  } else {
+    // rpc转发服务
+    auto source = db::RedisDao::GetInstance()->getUserId(toUid);
+    Json::Reader parser;
+    Json::Value userOnlineInfo;
+    if (parser.parse(source, userOnlineInfo) == false) {
+      rsp["error"] = ErrorCodes::JsonParser;
+      spdlog::error("[Service::NotifyAddFriend] parse userOnlineInfo error!");
       return;
     }
-  } else {
-    int rt = OfflineAddFriend(util::seqGenerator, from, to, msgData);
-    if (rt == -1) {
+    auto machineId = userOnlineInfo["machineId"].asString();
+    rpc::NotifyAddFriendRequest notifyRequest;
+    rpc::NotifyAddFriendResponse notifyResponse;
+    notifyRequest.set_fromuid(fromUid);
+    notifyRequest.set_touid(toUid);
+    notifyRequest.set_requestmessage(request.toStyledString());
+    notifyResponse =
+        rpc::ImRpc::GetInstance()->getRpc(machineId)->forwardNotifyAddFriend(
+            notifyRequest);
+    if (notifyResponse.status() == "success") {
+      rsp["error"] = 0;
+      rsp["status"] = "wait";
+    } else {
       rsp["error"] = -1;
     }
   }
-
-  OnRewriteTimer(session, util::seqGenerator, rsp.toStyledString(),
-                 ID_ADD_FRIEND_RSP, from);
-  ++util::seqGenerator;
 }
 
 int OnlineRemoveFriend(int seq, int from, int to,
                        std::shared_ptr<ChatSession> toSession) {
   if (toSession == nullptr) {
-    spdlog::error("[ServiceSystem::OnlineRemoveFriend] toSession is nullptr");
+    spdlog::error("[Service::OnlineRemoveFriend] toSession is nullptr");
     return -1;
   }
 
@@ -127,19 +129,17 @@ int OnlineRemoveFriend(int seq, int from, int to,
                    ID_REMOVE_FRIEND_REQ, to);
   }
 
-  spdlog::error(
-      "[ServiceSystem::OnlineRemoveFriend] mysql remove friend failed");
+  spdlog::error("[Service::OnlineRemoveFriend] mysql remove friend failed");
   return -1;
 }
 
-int OfflineRemoveFriend(int seq, int from, int to, const std::string &msgData) {
-  spdlog::info("[ServiceSystem::OfflineRemoveFriend] seq-{}, from-{}, to-{}",
-               seq, from, to);
-  // int rt = wim::db::MysqlDao::GetInstance()->SaveService(from, to, msgData);
+int OfflineRemoveFriend(int seq, int from, int to, const Json::Value &request) {
+  spdlog::info("[Service::OfflineRemoveFriend] seq-{}, from-{}, to-{}", seq,
+               from, to);
+  // int rt = wim::db::MysqlDao::GetInstance()->SaveService(from, to, request);
   bool rt = true; // todo...
   if (rt == false) {
-    spdlog::error(
-        "[ServiceSystem::OffineAddFriend] save service to mysql failed");
+    spdlog::error("[Service::OffineAddFriend] save service to mysql failed");
     return -1;
   }
 
@@ -147,22 +147,15 @@ int OfflineRemoveFriend(int seq, int from, int to, const std::string &msgData) {
 }
 
 void RemoveFriend(std::shared_ptr<ChatSession> session, unsigned int msgID,
-                  const std::string &msgData) {
+                  const Json::Value &request) {
   Json::Reader parser;
   Json::Value req;
   Json::Value rsp;
 
   Defer _([&rsp, session]() {
     std::string rt = rsp.toStyledString();
-    session->Send(rt, ID_ADD_FRIEND_RSP);
+    session->Send(rt, ID_NOTIFY_ADD_FRIEND_RSP);
   });
-
-  bool parserSuccess = parser.parse(msgData, req);
-  if (!parserSuccess) {
-    rsp["error"] = ErrorCodes::JsonParser;
-    spdlog::error("[ServiceSystem::RemoveFriend] parse msg_data error!");
-    return;
-  }
 
   int from = req["from"].asInt();
   int to = req["to"].asInt();
@@ -174,7 +167,7 @@ void RemoveFriend(std::shared_ptr<ChatSession> session, unsigned int msgID,
     rsp["uid"] = to;
     rsp["error"] = ErrorCodes::UserNotFriend;
     rsp["status"] = "x";
-    spdlog::error("[ServiceSystem::RemoveFriend] no this a user, user-{}", to);
+    spdlog::error("[Service::RemoveFriend] no this a user, user-{}", to);
     return;
   }
 
@@ -191,13 +184,14 @@ void RemoveFriend(std::shared_ptr<ChatSession> session, unsigned int msgID,
       return;
     }
   } else {
-    int rt = OfflineRemoveFriend(util::seqGenerator, from, to, msgData);
+    int rt = OfflineRemoveFriend(util::seqGenerator, from, to, request);
     if (rt == -1) {
       rsp["error"] = -1;
     }
   }
 
   OnRewriteTimer(session, util::seqGenerator, rsp.toStyledString(),
-                 ID_ADD_FRIEND_RSP, from);
+                 ID_NOTIFY_ADD_FRIEND_RSP, from);
   ++util::seqGenerator;
 }
+}; // namespace wim

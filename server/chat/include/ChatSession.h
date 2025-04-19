@@ -21,6 +21,7 @@ using namespace boost::asio;
 using boost::system::error_code;
 } // namespace net
 
+namespace wim {
 class ChatSession;
 class Service;
 
@@ -108,3 +109,4 @@ private:
   std::shared_ptr<ChatSession::Protocol> packageNode;
   net::io_context &ioc;
 };
+}; // namespace wim

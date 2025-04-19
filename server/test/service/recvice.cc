@@ -51,7 +51,7 @@ int groupRecv(std::shared_ptr<net::ip::tcp::socket> socket) {
 
 int groupJoin(std::shared_ptr<net::ip::tcp::socket> socket, int from, int gid) {
   Json::Value req1;
-  req1["from"] = from;
+  req1["fromUid"] = from;
   req1["gid"] = gid;
 
   base::pushMessage(socket, 1025, req1.toStyledString());

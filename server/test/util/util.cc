@@ -1,6 +1,5 @@
 #include "util.h"
 
-#include <cppconn/connection.h>
 #include <ctime>
 #include <iostream>
 #include <random>
@@ -43,52 +42,6 @@ string generateRandomEmail() {
   string username = generateRandomUserName(usernameLength);
 
   return username + domain;
-}
-
-#include <cppconn/resultset.h>
-#include <cppconn/statement.h>
-#include <mysql_connection.h>
-#include <mysql_driver.h>
-#include <spdlog/spdlog.h>
-
-void fetchUsersFromDatabase(UserManager *users) {
-  std::unique_ptr<sql::mysql::MySQL_Driver> driver;
-
-  try {
-    // 创建连接
-    driver.reset(sql::mysql::get_mysql_driver_instance());
-    std::unique_ptr<sql::Connection> con(
-        driver->connect("tcp://127.0.0.1:3309", "zorjen", "root"));
-    // 选择数据库
-    con->setSchema("chatServ");
-
-    std::unique_ptr<sql::Statement> stmtResult(con->createStatement());
-    // 执行查询
-    std::unique_ptr<sql::ResultSet> res(stmtResult->executeQuery(
-        "SELECT id, uid, name, email, password FROM users"));
-
-    bool isEmpty = 0;
-
-    while (res->next()) {
-      isEmpty = true;
-      User user;
-      user.id = res->getInt("id");
-      user.uid = res->getInt("uid");
-      user.username = res->getString("name");
-      user.email = res->getString("email");
-      user.password = res->getString("password");
-      users->push_back(user);
-    }
-
-    if (!isEmpty) {
-      spdlog::error("No such select users");
-      return;
-    }
-
-  } catch (sql::SQLException &e) {
-    std::cerr << "Error fetching users from database: " << e.what()
-              << std::endl;
-  }
 }
 
 unsigned long long generateRandomNumber(unsigned long long left,

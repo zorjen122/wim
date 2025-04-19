@@ -19,6 +19,7 @@ using namespace boost::asio;
 using boost::system::error_code;
 } // namespace net
 
+namespace wim {
 class ChatServer {
 public:
   ChatServer() = delete;
@@ -41,3 +42,4 @@ private:
   std::atomic<size_t> sessionID;
   std::unordered_map<size_t, std::shared_ptr<ChatSession>> sessionGroup;
 };
+}; // namespace wim

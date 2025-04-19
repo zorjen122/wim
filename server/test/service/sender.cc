@@ -36,7 +36,7 @@ int groupCreate(std::shared_ptr<net::ip::tcp::socket> socket, int up) {
 
 int groupJoin(std::shared_ptr<net::ip::tcp::socket> socket, int from, int gid) {
   Json::Value req1;
-  req1["from"] = from;
+  req1["fromUid"] = from;
   req1["gid"] = gid;
 
   base::pushMessage(socket, 1025, req1.toStyledString());
@@ -69,8 +69,8 @@ int sendGroupText(std::shared_ptr<net::ip::tcp::socket> socket, int gid,
                   int from, int to, std::string text = "Hello, Group!") {
   Json::Value req1;
   req1["gid"] = gid;
-  req1["from"] = from;
-  req1["to"] = to;
+  req1["fromUid"] = from;
+  req1["toUid"] = to;
   req1["text"] = text;
 
   base::pushMessage(socket, 1027, req1.toStyledString());
@@ -86,8 +86,8 @@ int TextSend(User user, std::shared_ptr<net::ip::tcp::socket> socket, int from,
              int to) {
 
   Json::Value req1;
-  req1["from"] = from;
-  req1["to"] = to;
+  req1["fromUid"] = from;
+  req1["toUid"] = to;
   req1["text"] = "Hello, IM!";
 
   base::pushMessage(socket, ID_PUSH_TEXT_MESSAGE, req1.toStyledString());

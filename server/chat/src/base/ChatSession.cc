@@ -15,6 +15,7 @@
 #include <boost/asio/detail/socket_ops.hpp>
 #include <climits>
 
+namespace wim {
 Tlv::Tlv(unsigned int maxLen, unsigned int msgID) {
   int len = boost::asio::detail::socket_ops::network_to_host_long(maxLen) +
             PACKAGE_TOTAL_LEN;
@@ -289,3 +290,4 @@ net::io_context &ChatSession::GetIoc() { return ioc; }
 size_t ChatSession::GetSessionID() { return id; }
 
 void ChatSession::ClearSession() { chatServer->ClearSession(id); }
+}; // namespace wim

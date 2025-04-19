@@ -8,15 +8,15 @@ server:
       host: 0.0.0.0
       port: 8090
       rpcPort: 50055
-      rpcCOunt: 2
-      status: backup
+      rpcCount: 1
+      status: active
     s2:
       name: beijing-im
       host: 127.0.0.1
       port: 8091
-      rpcPort: 20001
-      rpcCount: 2
-      status: backup
+      rpcPort: 50056
+      rpcCount: 1
+      status: active
     im-total: 2
   mysql:
     host: 127.0.0.1

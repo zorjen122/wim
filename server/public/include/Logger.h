@@ -44,12 +44,12 @@ createDebugLogger(std::string name, std::string path,
 }
 
 static std::shared_ptr<spdlog::logger> dbLogger =
-    createDebugLogger("db", "logs/db", spdlog::level::info);
+    createDebugLogger("db", "logs/db", spdlog::level::debug);
 
 static std::shared_ptr<spdlog::logger> netLogger =
-    createDebugLogger("net", "logs/net", spdlog::level::info);
+    createDebugLogger("net", "logs/net", spdlog::level::debug);
 
 static std::shared_ptr<spdlog::logger> businessLogger =
-    createDebugLogger("bussiness", "logs/bussiness", spdlog::level::info);
+    createDebugLogger("bussiness", "logs/bussiness", spdlog::level::debug);
 
 }; // namespace wim

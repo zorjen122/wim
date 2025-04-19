@@ -12,12 +12,12 @@
 #include <boost/asio.hpp>
 #include <spdlog/spdlog.h>
 #include <thread>
-
+namespace wim {
 // 若prc发送方发送合理，则无需互斥锁
 class ImServiceRunner : public Singleton<ImServiceRunner> {
 public:
-  enum RunnerType { NORMAL_RUN, BACKUP_RUN };
-  bool Activate() {
+  enum RunnerType { NORMAL_ACTIVE, BACKUP_ACTIVE };
+  bool Activate(RunnerType type) {
     std::lock_guard<std::mutex> lock(activeMutex);
     if (isActive)
       return false;
@@ -27,26 +27,31 @@ public:
       wim::db::MysqlDao::GetInstance();
       wim::db::RedisDao::GetInstance();
 
-      // 创建独立的 io_context 和线程
       ioc = std::make_shared<net::io_context>();
-      worker = std::make_shared<
-          net::executor_work_guard<net::io_context::executor_type>>(
-          ioc->get_executor());
+      boost::asio::signal_set signals(*ioc, SIGINT, SIGTERM);
+      signals.async_wait(
+          [this](const boost::system::error_code &error, int signal_number) {
+            if (error)
+              return;
+            ioc->stop();
+          });
 
-      // 启动聊天服务器
       auto config = Configer::getConfig("server");
+      unsigned short port = config["self"]["port"].as<int>();
 
-      int port = config["self"]["port"].as<int>();
       imServer = std::make_shared<ChatServer>(*ioc, port);
       imServer->Start();
-
-      // 启动独立线程运行 io_context
-      runThread = std::thread([this] {
-        ioc->run();
-        spdlog::info("Chat service stopped");
-      });
-
       isActive = true;
+
+      if (type == BACKUP_ACTIVE) {
+        runThread = std::thread([this] {
+          ioc->run();
+          spdlog::info("Chat service stopped");
+        });
+      } else if (type == NORMAL_ACTIVE) {
+        ioc->run();
+      }
+
       return true;
     } catch (const std::exception &e) {
       spdlog::error("Failed to activate chat service: {}", e.what());
@@ -56,35 +61,23 @@ public:
 
   // 停止聊天服务
   void Deactivate() {
-    std::lock_guard<std::mutex> lock(activeMutex);
-    if (!isActive)
-      return;
-
-    // 停止 io_context
-    if (ioc) {
-      ioc->stop();
-      if (runThread.joinable()) {
-        runThread.join();
-      }
-      worker.reset();
-      ioc.reset();
-    }
-    // 清理资源
-    // wim::db::RedisDao::GetInstance()->Close();
-    imServer.reset();
+    // todo...
     isActive = false;
   }
 
   bool IsActive() const { return isActive; }
   ImServiceRunner() = default;
-  ~ImServiceRunner() { Deactivate(); }
+  ~ImServiceRunner() {
+    if (runThread.joinable())
+      runThread.join();
+  }
 
 private:
   std::shared_ptr<net::io_context> ioc;
-  std::shared_ptr<net::executor_work_guard<net::io_context::executor_type>>
-      worker;
+
   std::shared_ptr<ChatServer> imServer;
   std::thread runThread;
   bool isActive = false;
   mutable std::mutex activeMutex;
 };
+}; // namespace wim

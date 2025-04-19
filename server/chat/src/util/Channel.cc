@@ -1,16 +1,11 @@
 #include "Channel.h"
 #include <atomic>
 
-namespace util {
-static std::atomic<size_t> nextChannelId;
-
-static int channelAllocateID() { return nextChannelId++; }
-} // namespace util
-
+namespace wim {
 Channel::Channel(int from, int to, Channel::Type type) {
 
   if (type == FRIEND) {
-    id = PREFIX_FRIEND_CHANNEL_ID + util::channelAllocateID();
+    id = 0; // todo...
   } else if (type == GROUP) {
     id = to;
   }
@@ -26,3 +21,4 @@ Channel::Channel(int from, int to, Channel::Type type) {
 }
 
 Channel::~Channel() {}
+}; // namespace wim

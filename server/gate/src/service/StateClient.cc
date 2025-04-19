@@ -14,22 +14,22 @@ StateClient::StateClient() {
   auto host = conf["stateRPC"]["host"].as<std::string>();
   auto port = conf["stateRPC"]["port"].as<std::string>();
   auto rpcCount = conf["stateRPC"]["rpcCount"].as<int>();
-  pool.reset(new RpcPool<StateService>(rpcCount, host, port));
+  rpcPool.reset(new RpcPool<StateService>(rpcCount, host, port));
 
-  if (pool->empty()) {
+  if (rpcPool->empty()) {
     netLogger->warn(
         "StateClient init failed, host: {}, port: {}, rpcCount: {}");
     return;
   }
   netLogger->info("StateClient init success, host: {}, port: {}, rpcCount: {}",
-                  host, port, pool->getPoolSize());
+                  host, port, rpcPool->getPoolSize());
 }
 
 ServerNode StateClient::GetImServer(int uid) {
   state::ConnectUser req;
   state::ConnectUserRsp rsp;
   req.set_id(uid);
-  auto caller = pool->getConnection();
+  auto caller = rpcPool->getConnection();
 
   grpc::ClientContext context;
   auto status = caller->GetImServer(&context, req, &rsp);
@@ -45,7 +45,7 @@ ServerNode StateClient::ActiveImBackupServer(int uid) {
   state::ConnectUser req;
   state::ConnectUserRsp rsp;
   req.set_id(uid);
-  auto caller = pool->getConnection();
+  auto caller = rpcPool->getConnection();
 
   grpc::ClientContext context;
   auto status = caller->ActiveImBackupServer(&context, req, &rsp);
@@ -60,8 +60,9 @@ ServerNode StateClient::ActiveImBackupServer(int uid) {
 std::string StateClient::TestNetworkPing() {
   state::TestNetwork req, rsp;
   req.set_msg("Ping");
-  auto caller = pool->getConnection();
-  Defer defer([&caller, this]() { pool->returnConnection(std::move(caller)); });
+  auto caller = rpcPool->getConnection();
+  Defer defer(
+      [&caller, this]() { rpcPool->returnConnection(std::move(caller)); });
   grpc::ClientContext context;
   LOG_DEBUG(netLogger, "TestNetworkPing: {}", req.msg());
   auto status = caller->TestNetworkPing(&context, req, &rsp);

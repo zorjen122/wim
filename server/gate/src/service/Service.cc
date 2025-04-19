@@ -154,30 +154,44 @@ bool Service::signUp(HttpSession::ResponsePtr response,
   Defer _([&]() { responseWrite(response, rspInfo.toStyledString()); });
 
   auto username = requestData["username"].asString();
-  auto pwd = requestData["password"].asString();
+  auto password = requestData["password"].asString();
   auto email = requestData["email"].asString();
 
   std::string verifycode = "1234";
   // verifycode logic...
 
+  int hasEmail = db::MysqlDao::GetInstance()->hasEmail(email);
+  if (hasEmail != 0) {
+    businessLogger->info("[signUp]: email is exist");
+    rspInfo["error"] = -1;
+    return false;
+  }
+
+  int hasUsername = db::MysqlDao::GetInstance()->hasUsername(username);
+  if (hasUsername != 0) {
+    businessLogger->info("[signUp]: username is exist");
+    rspInfo["error"] = -1;
+    return false;
+  }
   auto uid = db::RedisDao::GetInstance()->generateUserId();
 
-  db::User::Ptr user(new db::User(0, uid, username, pwd, email));
-  bool hasUser = db::MysqlDao::GetInstance()->userRegister(user);
-  if (hasUser == 1) {
+  db::User::Ptr user(new db::User(0, uid, username, password, email));
+  int hasUser = db::MysqlDao::GetInstance()->userRegister(user);
+  if (hasUser != 0) {
     businessLogger->info("[signUp]: user or email exist");
     rspInfo["error"] = -1;
     return false;
   }
+
   // verifycode logic...
   businessLogger->info(
       "[signUp]: success! uid as {}, username as {}, password as {}, "
       "email as {}",
-      uid, username, pwd, email);
+      uid, username, password, email);
   rspInfo["error"] = 0;
   rspInfo["uid"] = Json::Value::Int64(uid);
   rspInfo["username"] = username;
-  rspInfo["password"] = pwd;
+  rspInfo["password"] = password;
   rspInfo["email"] = email;
 
   return true;
@@ -191,34 +205,70 @@ bool Service::signIn(HttpSession::ResponsePtr response,
   Json::Value rspInfo;
   Defer _([&]() { responseWrite(response, rspInfo.toStyledString()); });
 
-  db::User userInfo;
   auto username = requestData["username"].asString();
   auto password = requestData["password"].asString();
 
   auto user = wim::db::MysqlDao::GetInstance()->getUser(username);
   if (user == nullptr) {
-    businessLogger->error("[password or email input is wrong!]");
+    businessLogger->debug("user is not existd!");
     rspInfo["error"] = -1;
     return false;
   }
 
-  auto node = rpc::StateClient::GetInstance()->GetImServer(userInfo.uid);
+  if (user->password != password) {
+    businessLogger->debug("password or email input is wrong!");
+    rspInfo["error"] = -1;
+    return false;
+  }
+
+  auto node = rpc::StateClient::GetInstance()->GetImServer(user->uid);
   if (node.empty()) {
     businessLogger->info("rpc request state service is fialed, user id as {} ",
-                         userInfo.uid);
+                         user->uid);
     rspInfo["error"] = -1;
     return false;
   }
 
-  businessLogger->info("[sigIn] user: {} login success", userInfo.username);
+  auto hasFirstSignIn = db::MysqlDao::GetInstance()->getUserInfo(user->uid);
+  if (hasFirstSignIn == nullptr)
+    rspInfo["init"] = 1;
+
+  businessLogger->info("[sigIn] user: {} login success", user->username);
   rspInfo["error"] = 0;
-  rspInfo["uid"] = (int)userInfo.uid;
+  rspInfo["uid"] = Json::Value::Int64(user->uid);
   rspInfo["ip"] = node.ip;
   rspInfo["port"] = node.port;
 
   return true;
 }
 
+bool Service::initUserinfo(HttpSession::ResponsePtr response,
+                           Json::Value &requestData) {
+  Json::Value rspInfo;
+  Defer _([&]() { responseWrite(response, rspInfo.toStyledString()); });
+
+  try {
+    auto uid = requestData["uid"].asInt64();
+    auto name = requestData["name"].asString();
+    auto age = requestData["age"].asInt();
+    auto sex = requestData["sex"].asString();
+    auto headImageURI = requestData.asString();
+
+    db::UserInfo::Ptr userInfo(
+        new db::UserInfo(uid, name, age, sex, headImageURI));
+    int hasUserInfo = db::MysqlDao::GetInstance()->insertUserInfo(userInfo);
+    if (hasUserInfo != 0) {
+      rspInfo["error"] = -1;
+      businessLogger->debug("register user info failed");
+      return false;
+    }
+    rspInfo["error"] = 0;
+    return true;
+  } catch (std::exception &e) {
+    rspInfo["error"] = ErrorCodes::JsonParser;
+    return false;
+  }
+}
 bool Service::chatArrhythmia(HttpSession::ResponsePtr response,
                              Json::Value &requestData) {
 
@@ -248,7 +298,6 @@ bool Service::forgetPassword(HttpSession::ResponsePtr response,
   Defer _([&]() { responseWrite(response, rspInfo.toStyledString()); });
 
   auto username = requestData["username"].asString();
-  auto password = requestData["password"].asString();
   auto email = requestData["email"].asString();
   auto verifycode = requestData["verifycode"].asString();
 
@@ -261,6 +310,11 @@ bool Service::forgetPassword(HttpSession::ResponsePtr response,
   }
 
   auto user = db::MysqlDao::GetInstance()->getUser(username);
+  if (user == nullptr) {
+    businessLogger->info(" user is not existd!");
+    rspInfo["error"] = -1;
+    return false;
+  }
   bool updateSuccess = db::MysqlDao::GetInstance()->userModifyPassword(user);
   if (!updateSuccess) {
     businessLogger->error(" update password is failed");
@@ -268,13 +322,11 @@ bool Service::forgetPassword(HttpSession::ResponsePtr response,
     return false;
   }
 
-  businessLogger->info("success! new password is {}", password);
+  businessLogger->info("success! new password is {}", user->password);
 
   rspInfo["error"] = 0;
-  rspInfo["email"] = email;
   rspInfo["username"] = username;
-  rspInfo["password"] = password;
-  rspInfo["verifycode"] = requestData["verifycode"].asString();
+  rspInfo["password"] = user->password;
 
   return true;
 }

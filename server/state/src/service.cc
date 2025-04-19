@@ -8,23 +8,27 @@
 #include <grpcpp/support/status.h>
 #include <string>
 
+namespace wim::rpc {
+
 StateServiceImpl::StateServiceImpl() {
   auto conf = Configer::getConfig("server");
 
   auto imTotal = conf["im"]["im-total"].as<int>();
-  for (int index = 1; index <= imTotal; index++) {
-    auto im = conf["im"]["s" + std::to_string(index)];
+  for (int i = 1; i <= imTotal; i++) {
+    std::string index = "s" + std::to_string(i);
+    auto im = conf["im"][index];
     auto host = im["host"].as<std::string>();
-    auto port = im["rpcPort"].as<std::string>();
+    auto port = im["port"].as<std::string>();
+    auto rpcPort = im["rpcPort"].as<std::string>();
     auto name = im["name"].as<std::string>();
     auto status = im["status"].as<std::string>();
-    ImNode::ptr node(new ImNode(host, port, status));
-    spdlog::info("ImNode({}) {}:{} {} {}", std::to_string(index), host, port,
-                 name, status);
+    auto rpcCount = im["rpcCount"].as<int>();
+    ImNode::ptr node(new ImNode(host, port, rpcPort, status));
+    spdlog::info("ImNode({}) {}:{} {} {}", index, host, rpcPort, name, status);
 
     if (status == "backup" || status == "active") {
       if (status == "backup")
-        imRpcMap[name] = std::make_unique<ImRpc>(node, 1);
+        imRpcMap[name] = std::make_unique<ImRpc>(node, rpcCount);
 
       imNodeMap[name] = node;
       imNodeName.push_back(name);
@@ -110,3 +114,4 @@ grpc::Status StateServiceImpl::TestNetworkPing(grpc::ServerContext *context,
   response->set_msg("Pong!");
   return grpc::Status::OK;
 }
+}; // namespace wim::rpc

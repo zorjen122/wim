@@ -20,6 +20,7 @@
 
 #include "Configer.h"
 #include "Const.h"
+#include "DbGlobal.h"
 #include "Logger.h"
 
 namespace wim::db {
@@ -201,36 +202,6 @@ private:
   std::thread keepThread;
 }; // MysqlPool
 
-struct User {
-  using Ptr = std::shared_ptr<User>;
-  User() = default;
-  User(size_t id, size_t uid, std::string username, std::string password,
-       std::string email, std::string createTime = "")
-      : id(std::move(id)), uid(std::move(uid)), username(std::move(username)),
-        password(std::move(password)), email(std::move(email)),
-        createTime(std::move(createTime)) {}
-  size_t id;
-  size_t uid;
-  std::string username;
-  std::string password;
-  std::string email;
-  std::string createTime;
-};
-
-struct UserInfo {
-  using Ptr = std::shared_ptr<UserInfo>;
-
-  UserInfo(size_t uid, std::string name, short age, std::string sex,
-           std::string headImageURI)
-      : uid(std::move(uid)), name(std::move(name)), age(std::move(age)),
-        sex(std::move(sex)), headImageURI(std::move(headImageURI)) {}
-  size_t uid;
-  std::string name;
-  short age;
-  std::string sex;
-  std::string headImageURI;
-};
-
 class MysqlDao : public Singleton<MysqlDao>,
                  public std::enable_shared_from_this<MysqlDao> {
 private:
@@ -294,20 +265,6 @@ public:
     }
   }
 
-  struct UserInfo {
-    using Ptr = std::shared_ptr<UserInfo>;
-
-    UserInfo(size_t uid, std::string name, short age, std::string sex,
-             std::string headImageURL)
-        : uid(std::move(uid)), name(std::move(name)), age(std::move(age)),
-          sex(std::move(sex)), headImageURL(std::move(headImageURL)) {}
-
-    size_t uid;
-    std::string name;
-    short age;
-    std::string sex;
-    std::string headImageURL;
-  };
   UserInfo::Ptr getUserInfo(int uid) {
     auto con = mysqlPool->GetConnection();
     if (con == nullptr) {
@@ -341,46 +298,6 @@ public:
       return nullptr;
     }
   }
-
-  struct Friend {
-    using Ptr = std::shared_ptr<Friend>;
-    using FriendGroup = std::shared_ptr<std::vector<Friend::Ptr>>;
-    Friend(size_t uidA, size_t uidB, std::string createDateTime,
-           size_t machineId)
-        : uidA(uidA), uidB(uidB), createDateTime(std::move(createDateTime)),
-          machineId(machineId) {}
-
-    static std::string formatMachineId(size_t id) {
-      switch (id) {
-      case 1:
-        return "hunan";
-      case 2:
-        return "beijing";
-      case 3:
-        return "shanghai";
-      default:
-        return "";
-      }
-    }
-    size_t uidA;
-    size_t uidB;
-    std::string createDateTime;
-    size_t machineId;
-  };
-
-  struct FriendApply {
-    using Ptr = std::shared_ptr<FriendApply>;
-    using FriendApplyGroup = std::shared_ptr<std::vector<FriendApply::Ptr>>;
-    FriendApply(size_t fromUid, size_t toUId, short status = 0)
-        : fromUid(fromUid), toUid(toUId) {}
-
-    std::string formatStatus(short status) {
-      return status == 0 ? "wait" : "done";
-    }
-    size_t fromUid;
-    size_t toUid;
-    short status;
-  };
 
   Friend::FriendGroup getFriendList(int uid) {
     auto con = mysqlPool->GetConnection();
@@ -631,57 +548,7 @@ public:
       return -1;
     }
   }
-  struct Message {
-    using Ptr = std::shared_ptr<Message>;
-    using MessageGroup = std::shared_ptr<std::vector<Message::Ptr>>;
-    Message(int messageId, int fromUid, int toUid, std::string sessionKey,
-            short type, std::string content, short status,
-            std::string sendDateTime, std::string readDateTime = "")
-        : messageId(messageId), fromUid(fromUid), toUid(toUid), type(type),
-          content(std::move(content)), status(status),
-          sendDateTime(std::move(sendDateTime)),
-          readDateTime(std::move(readDateTime)) {}
 
-    std::string formatType(short type) {
-      switch (type) {
-      case 1:
-        return "text";
-      case 2:
-        return "image";
-      case 3:
-        return "audio";
-      case 4:
-        return "video";
-      case 5:
-        return "file";
-      default:
-        LOG_DEBUG(dbLogger, "no such type value: {}", type);
-        return "";
-      }
-    }
-    std::string formatStatus(short status) {
-      switch (status) {
-      case 0:
-        return "withdraw"; // 撤回
-      case 1:
-        return "wait";
-      case 2:
-        return "done";
-      default:
-        LOG_DEBUG(dbLogger, "no such status value: {}", status);
-        return "";
-      }
-    }
-    int messageId;
-    int fromUid;
-    int toUid;
-    std::string sessionKey;
-    short type;
-    std::string content;
-    short status;
-    std::string sendDateTime;
-    std::string readDateTime;
-  };
   int insertMessage(Message::Ptr message) {
     auto con = mysqlPool->GetConnection();
 
@@ -1032,6 +899,59 @@ public:
         [&con, this]() { mysqlPool->ReturnConnection(std::move(con)); });
 
     try {
+      return 0;
+    } catch (mysqlx::Error &e) {
+      LOG_INFO(dbLogger, "Error: {}", e.what());
+      return -1;
+    }
+  }
+
+  int hasEmail(std::string email) {
+    auto con = mysqlPool->GetConnection();
+
+    if (con == nullptr) {
+      // log...
+      LOG_DEBUG(dbLogger, "pool number is empty!");
+      return -1;
+    }
+
+    Defer defer(
+        [&con, this]() { mysqlPool->ReturnConnection(std::move(con)); });
+
+    try {
+      std::string f = R"(SELECT email FROM users WHERE email = ?)";
+      auto result = con->session->sql(f).bind(email).execute();
+      if (!result.hasData()) {
+        // log...
+        LOG_DEBUG(dbLogger, "result fetchOne is null");
+        return 1;
+      }
+      return 0;
+    } catch (mysqlx::Error &e) {
+      LOG_INFO(dbLogger, "Error: {}", e.what());
+      return -1;
+    }
+  }
+  int hasUsername(std::string username) {
+    auto con = mysqlPool->GetConnection();
+
+    if (con == nullptr) {
+      // log...
+      LOG_DEBUG(dbLogger, "pool number is empty!");
+      return -1;
+    }
+
+    Defer defer(
+        [&con, this]() { mysqlPool->ReturnConnection(std::move(con)); });
+
+    try {
+      std::string f = R"(SELECT username FROM users WHERE username = ?)";
+      auto result = con->session->sql(f).bind(username).execute();
+      if (!result.hasData()) {
+        // log...
+        LOG_DEBUG(dbLogger, "result fetchOne is null");
+        return 1;
+      }
       return 0;
     } catch (mysqlx::Error &e) {
       LOG_INFO(dbLogger, "Error: {}", e.what());

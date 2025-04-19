@@ -3,7 +3,7 @@
 #include "OnlineUser.h"
 #include "Service.h"
 #include <spdlog/spdlog.h>
-
+namespace wim {
 void GroupCreate(std::shared_ptr<ChatSession> session, unsigned int msgID,
                  const Json::Value &request) {
 
@@ -168,3 +168,4 @@ void GroupTextSend(std::shared_ptr<ChatSession> session, unsigned int msgID,
     ++util::seqGenerator;
   }
 }
+}; // namespace wim

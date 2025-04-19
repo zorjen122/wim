@@ -6,4 +6,44 @@ message ActiveRequest { string null = 1; }
 
 message ActiveResponse { string error = 1; }
 
-service ImService { rpc ActiveService(ActiveRequest) returns (ActiveResponse); }
+message NotifyAddFriendRequest {
+  int64 fromUid = 1;
+  int64 toUid = 2;
+  string requestMessage = 3;
+}
+
+// status字段既用于回复请求的状态，也用于错误状态
+
+message NotifyAddFriendResponse {
+  int64 fromUid = 1;
+  int64 toUid = 2;
+  string status = 4;
+}
+
+message ReplyAddFriendRequest {
+  int64 fromUid = 1;
+  int64 toUid = 2;
+  string replyMessage = 3;
+  string status = 4;
+}
+
+message ReplyAddFriendResponse { string status = 1; }
+
+message TextSendMessageRequest {
+  int64 fromUid = 1;
+  int64 toUid = 2;
+  string message = 3;
+}
+
+message TextSendMessageResponse {
+  int64 fromUid = 1;
+  int64 toUid = 2;
+  string status = 3;
+}
+
+service ImService {
+  rpc ActiveService(ActiveRequest) returns (ActiveResponse);
+  rpc NotifyAddFriend(NotifyAddFriendRequest) returns (NotifyAddFriendResponse);
+  rpc ReplyAddFriend(ReplyAddFriendRequest) returns (ReplyAddFriendResponse);
+  rpc TextSendMessage(TextSendMessageRequest) returns (TextSendMessageResponse);
+}

@@ -8,17 +8,8 @@
 
 #define __GateSignoutPath__ "/post-signOut"
 
+#define __GateInitUserInfo__ "/post-init-user-info"
+
 #define __GateForgetPasswordPath__ "/post-forget-password"
 
 #define __GateArrhythmiaPath__ "/post-arrhythmia"
-
-#include <functional>
-class Defer {
-public:
-  Defer(std::function<void()> func) : func(func) {}
-
-  ~Defer() { func(); }
-
-private:
-  std::function<void()> func;
-};

@@ -7,12 +7,13 @@
 #include <grpcpp/client_context.h>
 #include <grpcpp/support/status.h>
 #include <spdlog/spdlog.h>
-
+namespace wim::rpc {
 ImRpc::ImRpc(ImNode::ptr node, size_t poolSize) {
 
   auto conf = Configer::getConfig("server");
 
-  pool.reset(new RpcPool<ImService>(poolSize, node->getIp(), node->getPort()));
+  pool.reset(
+      new RpcPool<ImService>(poolSize, node->getIp(), node->getRpcPort()));
   spdlog::info("ImRpc initialized with pool size {}", pool->getPoolSize());
 }
 
@@ -36,3 +37,4 @@ bool ImRpc::ActiveService() {
 }
 
 size_t ImRpc::getPoolSize() const { return pool->getPoolSize(); }
+}; // namespace wim::rpc

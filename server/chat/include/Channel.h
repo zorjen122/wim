@@ -6,6 +6,7 @@
 
 #define PREFIX_FRIEND_CHANNEL_ID 100000
 
+namespace wim {
 class Channel : public std::enable_shared_from_this<Channel> {
 public:
   using Ptr = std::shared_ptr<Channel>;
@@ -32,3 +33,4 @@ private:
 
 static std::unordered_map<size_t, std::unordered_map<size_t, Channel::Ptr>>
     channelManager;
+}; // namespace wim

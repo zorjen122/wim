@@ -4,7 +4,7 @@
 #include "IocPool.h"
 #include <mutex>
 #include <spdlog/spdlog.h>
-
+namespace wim {
 ChatServer::ChatServer(boost::asio::io_context &iocContext, unsigned short port)
     : Ioc(iocContext), Port(port),
       Acceptor(iocContext, tcp::endpoint(tcp::v4(), port)) {
@@ -49,3 +49,4 @@ void ChatServer::ClearSession(size_t id) {
 }
 
 size_t ChatServer::GetSessionID() { return sessionID; }
+}; // namespace wim
