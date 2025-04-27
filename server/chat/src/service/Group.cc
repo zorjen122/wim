@@ -4,7 +4,7 @@
 #include "Service.h"
 #include <spdlog/spdlog.h>
 namespace wim {
-void GroupCreate(std::shared_ptr<ChatSession> session, unsigned int msgID,
+void GroupCreate(ChatSession::Ptr session, unsigned int msgID,
                  const Json::Value &request) {
 
   Json::Value rsp;
@@ -27,7 +27,7 @@ void GroupCreate(std::shared_ptr<ChatSession> session, unsigned int msgID,
   rsp["gid"] = gid;
 }
 
-void GroupJoin(std::shared_ptr<ChatSession> session, unsigned int msgID,
+void GroupJoin(ChatSession::Ptr session, unsigned int msgID,
                const Json::Value &request) {
 
   Json::Value rsp;
@@ -63,7 +63,7 @@ void GroupJoin(std::shared_ptr<ChatSession> session, unsigned int msgID,
 }
 
 // TEXT todo...
-void GroupQuit(std::shared_ptr<ChatSession> session, unsigned int msgID,
+void GroupQuit(ChatSession::Ptr session, unsigned int msgID,
                const Json::Value &request) {
   Json::Value rsp;
 
@@ -104,7 +104,7 @@ void GroupQuit(std::shared_ptr<ChatSession> session, unsigned int msgID,
   rsp["gid"] = gid;
 }
 
-void GroupTextSend(std::shared_ptr<ChatSession> session, unsigned int msgID,
+void GroupTextSend(ChatSession::Ptr session, unsigned int msgID,
                    const Json::Value &request) {
 
   Json::Value rsp;
@@ -150,7 +150,7 @@ void GroupTextSend(std::shared_ptr<ChatSession> session, unsigned int msgID,
       rsp["status"] = "Unread-Push";
       rsp["error"] = ErrorCodes::Success;
 
-      auto toSession = OnlineUser::GetInstance()->GetUser(to);
+      auto toSession = OnlineUser::GetInstance()->GetUserSession(to);
       util::sChannel[toSession] = session;
 
       PushText(toSession, util::seqGenerator, fromID, to,

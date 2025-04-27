@@ -2,17 +2,18 @@
 
 #include "ChatSession.h"
 #include "IocPool.h"
+#include "Logger.h"
 #include <mutex>
 #include <spdlog/spdlog.h>
 namespace wim {
 ChatServer::ChatServer(boost::asio::io_context &iocContext, unsigned short port)
     : Ioc(iocContext), Port(port),
       Acceptor(iocContext, tcp::endpoint(tcp::v4(), port)) {
-  spdlog::info("Server construct listen on port : {}", Port);
+  LOG_INFO(netLogger, "Server construct listen on port : {}", Port);
 }
 
 ChatServer::~ChatServer() {
-  spdlog::info("Server destruct listen on port : {}", Port);
+  LOG_INFO(netLogger, "Server destruct listen on port : {}", Port);
 }
 
 void ChatServer::Start() {
@@ -24,7 +25,7 @@ void ChatServer::Start() {
                                   std::placeholders::_1));
 }
 
-void ChatServer::HandleAccept(std::shared_ptr<ChatSession> session,
+void ChatServer::HandleAccept(ChatSession::Ptr session,
                               const boost::system::error_code &error) {
   if (!error) {
     session->Start();

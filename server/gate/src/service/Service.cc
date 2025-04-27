@@ -7,8 +7,8 @@
 #include "Mysql.h"
 #include "Redis.h"
 #include "spdlog/spdlog.h"
-#include "json/value.h"
-#include <json/json.h>
+#include <jsoncpp/json/json.h>
+#include <jsoncpp/json/value.h>
 #include <yaml-cpp/parser.h>
 
 namespace wim {
@@ -26,7 +26,7 @@ Service::Service() {
   OnGetHandle("/test-net",
               [this](HttpSession::ResponsePtr response,
                      Json::Value &requestData) -> bool {
-                LOG_INFO(businessLogger, "[test_net handle called]");
+                LOG_DEBUG(businessLogger, "[test_net handle called]");
                 auto ret = rpc::StateClient::GetInstance()->TestNetworkPing();
                 if (ret.empty()) {
                   responseWrite(response, "[Network is not reachable]");
@@ -229,10 +229,11 @@ bool Service::signIn(HttpSession::ResponsePtr response,
     return false;
   }
 
-  auto hasFirstSignIn = db::MysqlDao::GetInstance()->getUserInfo(user->uid);
-  if (hasFirstSignIn == nullptr)
+  auto hasFirstSignIn = db::MysqlDao::GetInstance()->hasUserInfo(user->uid);
+  if (hasFirstSignIn == false)
     rspInfo["init"] = 1;
-
+  else
+    rspInfo["init"] = 0;
   businessLogger->info("[sigIn] user: {} login success", user->username);
   rspInfo["error"] = 0;
   rspInfo["uid"] = Json::Value::Int64(user->uid);

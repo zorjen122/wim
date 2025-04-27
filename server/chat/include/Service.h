@@ -1,7 +1,7 @@
 #pragma once
-#include "json/value.h"
 #include <functional>
-#include <json/json.h>
+#include <jsoncpp/json/json.h>
+#include <jsoncpp/json/value.h>
 #include <map>
 #include <queue>
 #include <spdlog/spdlog.h>
@@ -16,12 +16,12 @@ class Service : public Singleton<Service> {
   friend class Singleton<Service>;
 
 public:
-  using HandleType = std::function<void(std::shared_ptr<ChatSession>,
-                                        unsigned int, Json::Value)>;
+  using HandleType =
+      std::function<void(ChatSession::Ptr, unsigned int, Json::Value)>;
   using PackageType = Json::Value;
 
   ~Service();
-  void PushService(std::shared_ptr<ChatSession::RequestPackage> package);
+  void PushService(std::shared_ptr<NetworkMessage> package);
 
 private:
   Service();
@@ -30,7 +30,7 @@ private:
   void PopHandler();
 
   std::thread worker;
-  std::queue<std::shared_ptr<ChatSession::RequestPackage>> messageQueue;
+  std::queue<std::shared_ptr<NetworkMessage>> messageQueue;
   std::mutex _mutex;
   std::condition_variable consume;
   bool isStop;
@@ -45,9 +45,7 @@ static std::unordered_map<
 
 static std::unordered_map<size_t, std::unordered_map<size_t, size_t>>
     retansfCountMap;
-static std::unordered_map<std::shared_ptr<ChatSession>,
-                          std::shared_ptr<ChatSession>>
-    sChannel;
+static std::unordered_map<ChatSession::Ptr, ChatSession::Ptr> sChannel;
 
 static void clearRetransfTimer(size_t seq, size_t member) {
   auto &timer = retansfTimerMap[seq][member];
@@ -61,47 +59,41 @@ static void clearRetransfTimer(size_t seq, size_t member) {
   spdlog::info("[clearRetansfTimer]");
 }
 
-static size_t SeqAllocate() {
-  ++seqGenerator;
-  return static_cast<size_t>(seqGenerator.load());
-}
 } // namespace util
 
-void ClearChannel(size_t uid, std::shared_ptr<ChatSession> session);
+void ClearChannel(size_t uid, ChatSession::Ptr session);
 
-void PingHandle(std::shared_ptr<ChatSession> session, unsigned int msgID,
+void PingHandle(ChatSession::Ptr session, unsigned int msgID,
                 const Service::PackageType &msgData);
 
-void OnLogin(std::shared_ptr<ChatSession> session, unsigned int msgID,
+void OnLogin(ChatSession::Ptr session, unsigned int msgID,
              const Service::PackageType &msgData);
 
-void ReLogin(int uid, std::shared_ptr<ChatSession> oldSession,
-             std::shared_ptr<ChatSession> newSession);
+void ReLogin(int uid, ChatSession::Ptr oldSession, ChatSession::Ptr newSession);
 
-void UserQuit(std::shared_ptr<ChatSession> session, unsigned int msgID,
+void UserQuit(ChatSession::Ptr session, unsigned int msgID,
               const Service::PackageType &msgData);
 
-void Pong(int uid, std::shared_ptr<ChatSession> session);
+void Pong(int uid, ChatSession::Ptr session);
 
 int PullText(size_t seq, int from, int to, const std::string &msg);
 
-int PushText(std::shared_ptr<ChatSession> toSession, size_t seq, int from,
-             int to, const std::string &msg, int msgID = ID_TEXT_SEND_RSP);
+int PushText(ChatSession::Ptr toSession, size_t seq, int from, int to,
+             const std::string &msg, int msgID = ID_TEXT_SEND_RSP);
 
 bool SaveService(size_t seq, int from, int to, std::string msg);
 bool SaveServiceDB(size_t seq, int from, int to, const std::string &msg);
 
-int OnRewriteTimer(std::shared_ptr<ChatSession> session, size_t seq,
-                   const std::string &rsp, unsigned int rspID,
-                   unsigned int member, unsigned int timewait = 5,
-                   unsigned int maxRewrite = 3);
+int OnRewriteTimer(ChatSession::Ptr session, size_t seq, const std::string &rsp,
+                   unsigned int rspID, unsigned int member,
+                   unsigned int timewait = 5, unsigned int maxRewrite = 3);
 
-void AckHandle(std::shared_ptr<ChatSession> session, unsigned int msgID,
+void AckHandle(ChatSession::Ptr session, unsigned int msgID,
                const Service::PackageType &msgData);
 
-void UserSearch(std::shared_ptr<ChatSession> session, unsigned int msgID,
+void UserSearch(ChatSession::Ptr session, unsigned int msgID,
                 const Service::PackageType &msgData);
 
-void TextSend(std::shared_ptr<ChatSession> session, unsigned int msgID,
+void TextSend(ChatSession::Ptr session, unsigned int msgID,
               const Service::PackageType &msgData);
 }; // namespace wim

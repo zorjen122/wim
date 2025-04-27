@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.10)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-project(gate-test)
+project(chat-test)
 
 file(GLOB TARGET_CC cmd/*.cc)
-file(GLOB LINK_CC)  # 待链接的源文件
+file(GLOB LINK_CC)
 
 
 foreach(SRC_FILE ${TARGET_CC})

@@ -4,10 +4,10 @@
 #include "Logger.h"
 #include "Mysql.h"
 #include "OnlineUser.h"
-#include "json/value.h"
 #include <grpcpp/client_context.h>
 #include <grpcpp/server_context.h>
 #include <grpcpp/support/status.h>
+#include <jsoncpp/json/value.h>
 
 #include "Friend.h"
 
@@ -16,14 +16,7 @@ namespace wim::rpc {
 grpc::Status ImRpcService::ActiveService(ServerContext *context,
                                          const ActiveRequest *request,
                                          ActiveResponse *response) {
-  bool success =
-      ImServiceRunner::GetInstance()->Activate(ImServiceRunner::BACKUP_ACTIVE);
-  if (!success) {
-    response->set_error("failed");
-    return grpc::Status::CANCELLED;
-  }
-
-  response->set_error("success");
+  // 废弃
   return grpc::Status::OK;
 }
 
@@ -35,25 +28,25 @@ ImRpcService::NotifyAddFriend(ServerContext *context,
   long toUid = request->touid();
   std::string message = request->requestmessage();
 
+  LOG_DEBUG(wim::netLogger, "NotifyAddFriend, from:{}, to:{}", fromUid, toUid);
   bool isOnlineUser = OnlineUser::GetInstance()->isOnline(toUid);
   if (!isOnlineUser) {
-    // 转存储
     db::FriendApply::Ptr applyData(new db::FriendApply(fromUid, toUid));
     db::MysqlDao::GetInstance()->insertFriendApply(applyData);
-
     return grpc::Status::OK;
   }
 
-  auto user = OnlineUser::GetInstance()->GetUser(toUid);
   Json::Value requestData;
   requestData["from"] = Json::Value::Int64(fromUid);
   requestData["to"] = Json::Value::Int64(toUid);
-  int status = wim::OnlineNotifyAddFriend(user, requestData);
-  if (status != 0) {
+  auto toSession = OnlineUser::GetInstance()->GetUserSession(toUid);
+  int status = wim::OnlineNotifyAddFriend(toSession, requestData);
+  if (status == false) {
     LOG_DEBUG(wim::businessLogger,
               "forward NotifyAddFriend failed, from:{}, to:{}", fromUid, toUid);
     return grpc::Status::CANCELLED;
   }
+
   // 存储，保险方案
   db::FriendApply::Ptr applyData(new db::FriendApply(fromUid, toUid));
   db::MysqlDao::GetInstance()->insertFriendApply(applyData);

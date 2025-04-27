@@ -1,4 +1,6 @@
 #include "OnlineUser.h"
+#include "DbGlobal.h"
+#include "Logger.h"
 #include "Mysql.h"
 #include "Redis.h"
 
@@ -8,7 +10,7 @@ OnlineUser::~OnlineUser() { sessionMap.clear(); }
 // userId:machineId
 // machineId -> machine IP
 
-std::shared_ptr<ChatSession> OnlineUser::GetUser(size_t uid) {
+ChatSession::Ptr OnlineUser::GetUserSession(long uid) {
   std::lock_guard<std::mutex> lock(sessionMutex);
   auto iter = sessionMap.find(uid);
   if (iter == sessionMap.end()) {
@@ -18,21 +20,32 @@ std::shared_ptr<ChatSession> OnlineUser::GetUser(size_t uid) {
   return iter->second;
 }
 
-void OnlineUser::MapUser(size_t uid, std::shared_ptr<ChatSession> session) {
+bool OnlineUser::MapUser(db::UserInfo::Ptr userInfo, ChatSession::Ptr session) {
+  YAML::Node config = Configer::getNode("server");
+  std::string selfMachineId = config["self"]["name"].as<std::string>();
+
+  bool status =
+      db::RedisDao::GetInstance()->setOnlineUserInfo(userInfo, selfMachineId);
+  if (status == false) {
+    LOG_WARN(businessLogger, "setOnlineUserInfo failed, uid:{}, machineId:{}",
+             userInfo->uid, selfMachineId);
+    return false;
+  }
+
   std::lock_guard<std::mutex> lock(sessionMutex);
-  // wim::db::RedisDao::GetInstance()->Set(PREFIX_REDIS_UIP + to_string(uid));
-  sessionMap[uid] = session;
+  sessionMap[userInfo->uid] = session;
+  return true;
 }
 
-void OnlineUser::RemoveUser(size_t uid) {
-  // wim::db::RedisDao::GetInstance()->Del(PREFIX_REDIS_UIP + to_string(uid));
-  {
-    std::lock_guard<std::mutex> lock(sessionMutex);
-    sessionMap.erase(uid);
-  }
+void OnlineUser::RemoveUser(long uid) {
+  // redis原子操作
+  db::RedisDao::GetInstance()->delOnlineUserInfo(uid);
+
+  std::lock_guard<std::mutex> lock(sessionMutex);
+  sessionMap.erase(uid);
 }
 
 OnlineUser::OnlineUser() {}
 
-bool OnlineUser::isOnline(size_t uid) { return GetUser(uid) != nullptr; }
+bool OnlineUser::isOnline(long uid) { return GetUserSession(uid) != nullptr; }
 }; // namespace wim

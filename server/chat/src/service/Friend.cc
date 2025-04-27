@@ -8,17 +8,16 @@
 #include "Redis.h"
 #include "Service.h"
 
-#include "json/reader.h"
-#include "json/value.h"
-#include <json/json.h>
+#include <jsoncpp/json/json.h>
+#include <jsoncpp/json/reader.h>
+#include <jsoncpp/json/value.h>
 #include <spdlog/spdlog.h>
 namespace wim {
 
-int OnlineNotifyAddFriend(std::shared_ptr<ChatSession> user,
-                          const Json::Value &request) {
+bool OnlineNotifyAddFriend(ChatSession::Ptr user, const Json::Value &request) {
   user->Send(request.toStyledString(), ID_NOTIFY_ADD_FRIEND_REQ);
   // on rewrite...
-  return 0;
+  return true;
 }
 
 int OfflineAddFriend(int seq, int from, int to, const Json::Value &request) {
@@ -34,7 +33,7 @@ int OfflineAddFriend(int seq, int from, int to, const Json::Value &request) {
   return 0;
 }
 
-void SerachUser(std::shared_ptr<ChatSession> session, unsigned int msgID,
+void SerachUser(ChatSession::Ptr session, unsigned int msgID,
                 const Json::Value &request) {
   Json::Value rsp;
   Defer defer([&] {
@@ -58,8 +57,9 @@ void SerachUser(std::shared_ptr<ChatSession> session, unsigned int msgID,
   rsp["headImageURL"] = userInfo->headImageURL;
   rsp["error"] = 0;
 }
-void NotifyAddFriend(std::shared_ptr<ChatSession> session, unsigned int msgID,
+void NotifyAddFriend(ChatSession::Ptr session, unsigned int msgID,
                      const Json::Value &request) {
+  int status = 0;
   Json::Value rsp;
   Defer defer([&] {
     auto rt = rsp.toStyledString();
@@ -68,11 +68,15 @@ void NotifyAddFriend(std::shared_ptr<ChatSession> session, unsigned int msgID,
 
   long fromUid = request["fromUid"].asInt64();
   long toUid = request["toUid"].asInt64();
+  LOG_DEBUG(wim::businessLogger, "NotifyAddFriend: fromUid {}, toUid {}",
+            fromUid, toUid);
 
-  auto user = OnlineUser::GetInstance()->GetUser(toUid);
-  if (user != nullptr) {
+  auto toSession = OnlineUser::GetInstance()->GetUserSession(toUid);
+  if (toSession != nullptr) {
     // 本地在线推送
-    int status = OnlineNotifyAddFriend(user, request);
+    LOG_DEBUG(wim::businessLogger, "OnlineAddFriend...");
+
+    status = OnlineNotifyAddFriend(toSession, request);
     if (status != 0) {
       LOG_DEBUG(wim::businessLogger,
                 "OnlineAddFriend failed, uid-{}, status-{}", toUid, status);
@@ -81,26 +85,33 @@ void NotifyAddFriend(std::shared_ptr<ChatSession> session, unsigned int msgID,
     rsp["error"] = 0;
     rsp["status"] = "wait";
   } else {
-    // rpc转发服务
-    auto source = db::RedisDao::GetInstance()->getUserId(toUid);
+    // 全局查找在线用户，所有设备中的在线用户都存放在redis中
+    auto source = db::RedisDao::GetInstance()->getOnlineUserInfo(toUid);
+    LOG_DEBUG(wim::businessLogger, "OfflineAddFriend toUId userinfo-{}",
+              source);
     Json::Reader parser;
     Json::Value userOnlineInfo;
-    if (parser.parse(source, userOnlineInfo) == false) {
+    status = parser.parse(source, userOnlineInfo);
+    if (status == false) {
       rsp["error"] = ErrorCodes::JsonParser;
-      spdlog::error("[Service::NotifyAddFriend] parse userOnlineInfo error!");
+      LOG_WARN(wim::businessLogger, "parse userOnlineInfo error!");
       return;
     }
+
+    // rpc转发
     auto machineId = userOnlineInfo["machineId"].asString();
     rpc::NotifyAddFriendRequest notifyRequest;
     rpc::NotifyAddFriendResponse notifyResponse;
     notifyRequest.set_fromuid(fromUid);
     notifyRequest.set_touid(toUid);
     notifyRequest.set_requestmessage(request.toStyledString());
+
+    // 通过MachineID路由到对应的机器，并转发
     notifyResponse =
         rpc::ImRpc::GetInstance()->getRpc(machineId)->forwardNotifyAddFriend(
             notifyRequest);
     if (notifyResponse.status() == "success") {
-      rsp["error"] = 0;
+      rsp["error"] = ErrorCodes::Success;
       rsp["status"] = "wait";
     } else {
       rsp["error"] = -1;
@@ -108,8 +119,7 @@ void NotifyAddFriend(std::shared_ptr<ChatSession> session, unsigned int msgID,
   }
 }
 
-int OnlineRemoveFriend(int seq, int from, int to,
-                       std::shared_ptr<ChatSession> toSession) {
+int OnlineRemoveFriend(int seq, int from, int to, ChatSession::Ptr toSession) {
   if (toSession == nullptr) {
     spdlog::error("[Service::OnlineRemoveFriend] toSession is nullptr");
     return -1;
@@ -146,7 +156,7 @@ int OfflineRemoveFriend(int seq, int from, int to, const Json::Value &request) {
   return 0;
 }
 
-void RemoveFriend(std::shared_ptr<ChatSession> session, unsigned int msgID,
+void RemoveFriend(ChatSession::Ptr session, unsigned int msgID,
                   const Json::Value &request) {
   Json::Reader parser;
   Json::Value req;
@@ -177,7 +187,7 @@ void RemoveFriend(std::shared_ptr<ChatSession> session, unsigned int msgID,
   rsp["error"] = ErrorCodes::Success;
   rsp["status"] = "wait";
   if (isOnline) {
-    auto toSession = OnlineUser::GetInstance()->GetUser(to);
+    auto toSession = OnlineUser::GetInstance()->GetUserSession(to);
     int rt = OnlineRemoveFriend(util::seqGenerator, from, to, toSession);
     if (rt == -1) {
       rsp["error"] = -1;

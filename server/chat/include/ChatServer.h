@@ -32,7 +32,7 @@ public:
   void Start();
 
 private:
-  void HandleAccept(std::shared_ptr<ChatSession>, const net::error_code &error);
+  void HandleAccept(ChatSession::Ptr, const net::error_code &error);
 
 private:
   net::io_context &Ioc;
@@ -40,6 +40,6 @@ private:
   tcp::acceptor Acceptor;
   std::mutex Mutex;
   std::atomic<size_t> sessionID;
-  std::unordered_map<size_t, std::shared_ptr<ChatSession>> sessionGroup;
+  std::unordered_map<size_t, ChatSession::Ptr> sessionGroup;
 };
 }; // namespace wim

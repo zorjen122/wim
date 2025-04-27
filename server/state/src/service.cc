@@ -11,7 +11,7 @@
 namespace wim::rpc {
 
 StateServiceImpl::StateServiceImpl() {
-  auto conf = Configer::getConfig("server");
+  auto conf = Configer::getNode("server");
 
   auto imTotal = conf["im"]["im-total"].as<int>();
   for (int i = 1; i <= imTotal; i++) {
@@ -44,10 +44,10 @@ grpc::Status StateServiceImpl::GetImServer(grpc::ServerContext *context,
 
   int imTotal = imNodeName.size();
   for (int _ = 0; _ < imTotal; ++_) {
-    auto nodeIndex = imNodeName[routeCount++];
+    auto nodeIndex = imNodeName[routeCount];
 
     auto &node = imNodeMap[nodeIndex];
-    routeCount = routeCount % imTotal;
+    routeCount = (routeCount + 1 == imTotal) ? 0 : routeCount + 1;
 
     if (node->getStatus() == "active") {
       response->set_ip(node->getIp());

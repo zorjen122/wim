@@ -1,15 +1,16 @@
 #pragma once
 
+#include "ChatSession.h"
 #include "Const.h"
+#include "DbGlobal.h"
 #include <atomic>
+#include <jsoncpp/json/value.h>
 #include <memory>
 #include <string>
 #include <unordered_map>
 namespace wim {
 
-class ChatSession;
-
-static std::unordered_map<size_t, std::atomic<size_t>> seqUserMessage;
+static std::unordered_map<long, std::atomic<long>> seqUserMessage;
 
 // ok
 class OnlineUser : public Singleton<OnlineUser> {
@@ -17,14 +18,15 @@ class OnlineUser : public Singleton<OnlineUser> {
 
 public:
   ~OnlineUser();
-  std::shared_ptr<ChatSession> GetUser(size_t uid);
-  void MapUser(size_t uid, std::shared_ptr<ChatSession> session);
-  void RemoveUser(size_t uid);
-  bool isOnline(size_t uid);
+  ChatSession::Ptr GetUserSession(long uid);
+
+  bool MapUser(db::UserInfo::Ptr userInfo, ChatSession::Ptr session);
+  void RemoveUser(long uid);
+  bool isOnline(long uid);
 
 private:
   OnlineUser();
   std::mutex sessionMutex;
-  std::unordered_map<size_t, std::shared_ptr<ChatSession>> sessionMap;
+  std::unordered_map<long, ChatSession::Ptr> sessionMap;
 };
 }; // namespace wim

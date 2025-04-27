@@ -48,20 +48,19 @@ TextSendMessageResponse
 ImRpcNode::forwardTextSendMessage(const TextSendMessageRequest &) {}
 
 ImRpc::ImRpc() {
-  auto conf = Configer::getConfig("server");
+  auto conf = Configer::getNode("server");
 
   auto imTotal = conf["im"]["im-total"].as<int>();
   for (int i = 1; i <= imTotal; i++) {
     std::string index = "s" + std::to_string(i);
     auto im = conf["im"][index];
     auto host = im["host"].as<std::string>();
-    auto port = im["rpcPort"].as<int>();
+    auto port = im["port"].as<int>();
     auto name = im["name"].as<std::string>();
-    auto status = im["status"].as<std::string>();
     auto rpcCount = im["rpcCount"].as<int>();
     rpcGroup[name] = ImRpcNode::Ptr(new ImRpcNode(host, port, rpcCount));
 
-    spdlog::info("ImRpcNode({}) {}:{} {} {}", index, host, port, name, status);
+    spdlog::info("ImRpcNode({}) {}:{} {}", index, host, port, name);
   }
 }
 ImRpcNode::Ptr ImRpc::getRpc(const std::string &machine) {

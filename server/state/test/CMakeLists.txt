@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-project(gate-test)
+project(state-test)
 
 file(GLOB TARGET_CC cmd/*.cc)
 file(GLOB LINK_CC)  # 待链接的源文件
@@ -15,7 +15,7 @@ foreach(SRC_FILE ${TARGET_CC})
 
    # 设置每个可执行文件的输出目录为 ./bin
     set_target_properties(${EXEC_NAME} PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY ./bin
+        RUNTIME_OUTPUT_DIRECTORY ./stateBin
     )
 
     # 设置每个可执行文件的包含目录

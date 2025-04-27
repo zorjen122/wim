@@ -7,9 +7,9 @@
 #include "Mysql.h"
 #include "Redis.h"
 #include <iostream>
-#include <json/json.h>
-#include <json/reader.h>
-#include <json/value.h>
+#include <jsoncpp/json/json.h>
+#include <jsoncpp/json/reader.h>
+#include <jsoncpp/json/value.h>
 
 int main() {
   try {
@@ -19,7 +19,7 @@ int main() {
       return 0;
     }
 
-    auto config = Configer::getConfig("server");
+    auto config = Configer::getNode("server");
     if (!config || !config["gateway"]) {
       spdlog::error("gateway config not found");
       return 0;

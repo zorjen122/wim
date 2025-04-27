@@ -13,7 +13,7 @@ int main() {
     return 0;
   }
 
-  auto config = Configer::getConfig("server");
+  auto config = Configer::getNode("server");
   if (!config || !config["state"]) {
     spdlog::error("self config not found");
     return 0;

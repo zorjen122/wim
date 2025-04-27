@@ -10,7 +10,7 @@ namespace wim::rpc {
 
 StateClient::StateClient() {
 
-  auto conf = Configer::getConfig("server");
+  auto conf = Configer::getNode("server");
   auto host = conf["stateRPC"]["host"].as<std::string>();
   auto port = conf["stateRPC"]["port"].as<std::string>();
   auto rpcCount = conf["stateRPC"]["rpcCount"].as<int>();

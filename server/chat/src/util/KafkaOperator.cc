@@ -1,7 +1,7 @@
 #include "KafkaOperator.h"
 #include "Configer.h"
 KafkaProducer::KafkaProducer() {
-  auto conf = Configer::getConfig("server");
+  auto conf = Configer::getNode("server");
   auto broker = conf["kafka"]["broker"].as<std::string>();
   auto host = conf["kafka"]["host"].as<std::string>();
   auto port = conf["kafka"]["port"].as<std::string>();

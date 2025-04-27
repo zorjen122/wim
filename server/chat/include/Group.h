@@ -3,7 +3,7 @@
 #include "Channel.h"
 #include "ChatSession.h"
 #include <cstddef>
-#include <json/json.h>
+#include <jsoncpp/json/json.h>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -40,13 +40,13 @@ namespace dev {
 static std::unordered_map<size_t, Group> gg;
 };
 
-void GroupCreate(std::shared_ptr<ChatSession> session, unsigned int msgID,
+void GroupCreate(ChatSession::Ptr session, unsigned int msgID,
                  const Json::Value &request);
-void GroupJoin(std::shared_ptr<ChatSession> session, unsigned int msgID,
+void GroupJoin(ChatSession::Ptr session, unsigned int msgID,
                const Json::Value &request);
 // TEXT todo...
-void GroupQuit(std::shared_ptr<ChatSession> session, unsigned int msgID,
+void GroupQuit(ChatSession::Ptr session, unsigned int msgID,
                const Json::Value &request);
-void GroupTextSend(std::shared_ptr<ChatSession> session, unsigned int msgID,
+void GroupTextSend(ChatSession::Ptr session, unsigned int msgID,
                    const Json::Value &request);
 }; // namespace wim

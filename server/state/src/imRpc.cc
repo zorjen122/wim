@@ -10,7 +10,7 @@
 namespace wim::rpc {
 ImRpc::ImRpc(ImNode::ptr node, size_t poolSize) {
 
-  auto conf = Configer::getConfig("server");
+  auto conf = Configer::getNode("server");
 
   pool.reset(
       new RpcPool<ImService>(poolSize, node->getIp(), node->getRpcPort()));

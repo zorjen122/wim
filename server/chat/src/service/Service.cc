@@ -4,7 +4,6 @@
 #include "Configer.h"
 #include "Const.h"
 
-#include "File.h"
 #include "KafkaOperator.h"
 #include "Logger.h"
 #include "OnlineUser.h"
@@ -22,7 +21,7 @@
 #include <cstddef>
 #include <cstdio>
 #include <fcntl.h>
-#include <json/json.h>
+#include <jsoncpp/json/json.h>
 #include <memory>
 #include <spdlog/spdlog.h>
 #include <string>
@@ -74,7 +73,7 @@ void Service::Init() {
                 std::placeholders::_3);
 }
 
-void Service::PushService(std::shared_ptr<ChatSession::RequestPackage> msg) {
+void Service::PushService(std::shared_ptr<NetworkMessage> msg) {
   std::unique_lock<std::mutex> lock(_mutex);
   messageQueue.push(msg);
   KafkaProducer::GetInstance()->SaveMessage(msg->getData());
@@ -94,77 +93,82 @@ void Service::Run() {
     if (isStop) {
       while (!messageQueue.empty()) {
         auto package = messageQueue.front();
-        unsigned int id = package->recvPackage->id;
-        const char *data = package->recvPackage->data;
-        unsigned int cur = package->recvPackage->cur;
-        LOG_DEBUG(wim::businessLogger,
-                  "[ServiceSystem::Run] recv service ID  is {}, service "
-                  "Package is {}",
-                  id, data);
+        unsigned int id = package->protocolData->id;
+        const char *data = package->protocolData->data;
+        unsigned int dataSize = package->protocolData->getDataSize();
+        LOG_INFO(wim::businessLogger,
+                 "read service ID  is {}, service "
+                 "Package is {}",
+                 id, data);
 
         auto handleCall = serviceGroup.find(id);
         if (handleCall == serviceGroup.end()) {
+          LOG_INFO(wim::businessLogger, "not found! service ID  is {}, ", id);
           messageQueue.pop();
           continue;
         }
 
-        std::string msgData{data, cur};
+        std::string msgData{data, dataSize};
         Json::Reader reader;
         Json::Value request;
 
         bool parserSuccess = reader.parse(msgData, request);
         if (!parserSuccess) {
+          LOG_WARN(wim::businessLogger, "parse message data error!, id: {}",
+                   id);
           Json::Value rsp;
           rsp["error"] = ErrorCodes::JsonParser;
-          spdlog::error("[Service::Run] parse message data error!");
-          package->session->Send(rsp.toStyledString(), id);
+          package->contextSession->Send(rsp.toStyledString(), id);
           return;
         }
 
-        handleCall->second(package->session, id, request);
+        handleCall->second(package->contextSession, id, request);
         messageQueue.pop();
       }
       break;
     }
+
     auto package = messageQueue.front();
-    unsigned int id = package->recvPackage->id;
-    const char *data = package->recvPackage->data;
-    unsigned int cur = package->recvPackage->cur;
-    LOG_DEBUG(wim::businessLogger,
-              "[ServiceSystem::Run] recv service ID  is {}, service "
-              "Package is {}",
-              id, data);
+    unsigned int id = package->protocolData->id;
+    const char *data = package->protocolData->data;
+    unsigned int dataSize = package->protocolData->getDataSize();
+    LOG_INFO(wim::businessLogger,
+             "read service ID  is {}, service "
+             "Package is {}",
+             id, data);
 
     auto handleCall = serviceGroup.find(id);
     if (handleCall == serviceGroup.end()) {
+      LOG_INFO(wim::businessLogger, "not found! service ID  is {}, ", id);
+
       Json::Value rsp;
       rsp["error"] = ErrorCodes::NotFound;
-      spdlog::error("[Service::Run] not found!");
-      package->session->Send(rsp.toStyledString(), id);
+      package->contextSession->Send(rsp.toStyledString(), id);
       messageQueue.pop();
       continue;
     }
 
-    std::string msgData{data, cur};
+    std::string msgData{data, dataSize};
     Json::Reader reader;
     Json::Value request;
 
     bool parserSuccess = reader.parse(msgData, request);
     if (!parserSuccess) {
+      LOG_WARN(wim::businessLogger, "parse message data error!, id: {}", id);
+
       Json::Value rsp;
       rsp["error"] = ErrorCodes::JsonParser;
-      spdlog::error("[Service::Run] parse message data error!");
-      package->session->Send(rsp.toStyledString(), id);
+      package->contextSession->Send(rsp.toStyledString(), id);
       messageQueue.pop();
       continue;
     }
 
-    handleCall->second(package->session, id, request);
+    handleCall->second(package->contextSession, id, request);
     messageQueue.pop();
   }
 }
 
-void ClearChannel(size_t uid, std::shared_ptr<ChatSession> session) {
+void ClearChannel(size_t uid, ChatSession::Ptr session) {
   OnlineUser::GetInstance()->RemoveUser(uid);
   session->ClearSession();
   session->Close();
@@ -172,13 +176,13 @@ void ClearChannel(size_t uid, std::shared_ptr<ChatSession> session) {
             "[Service::ClearChannel] clear channel success, uid-{}", uid);
 }
 
-void Pong(int uid, std::shared_ptr<ChatSession> session);
+void Pong(int uid, ChatSession::Ptr session);
 
 // 待验证
 static std::map<int, std::shared_ptr<net::steady_timer>> waitAckTimerMap;
 
-void onReWrite(int seq, std::shared_ptr<ChatSession> session,
-               const std::string &package, int rsp, int callcount = 0) {
+void onReWrite(int seq, ChatSession::Ptr session, const std::string &package,
+               int rsp, int callcount = 0) {
 
   session->Send(package, rsp);
   auto waitAckTimer = std::make_shared<net::steady_timer>(session->GetIoc());
@@ -205,10 +209,9 @@ void onReWrite(int seq, std::shared_ptr<ChatSession> session,
 }
 
 // 待废弃
-int OnRewriteTimer(std::shared_ptr<ChatSession> session, size_t seq,
-                   const std::string &rsp, unsigned int rspID,
-                   unsigned int member, unsigned int timewait,
-                   unsigned int maxRewrite) {
+int OnRewriteTimer(ChatSession::Ptr session, size_t seq, const std::string &rsp,
+                   unsigned int rspID, unsigned int member,
+                   unsigned int timewait, unsigned int maxRewrite) {
 
   util::retansfTimerMap[seq][member] =
       std::make_shared<net::steady_timer>(session->GetIoc());
@@ -291,7 +294,7 @@ int OnRewriteTimer(std::shared_ptr<ChatSession> session, size_t seq,
   return 0;
 }
 
-void Pong(int uid, std::shared_ptr<ChatSession> session) {
+void Pong(int uid, ChatSession::Ptr session) {
   Json::Value pong;
   int seq = static_cast<int>(util::seqGenerator.load());
   pong["seq"] = seq;
@@ -306,7 +309,7 @@ void Pong(int uid, std::shared_ptr<ChatSession> session) {
 }
 
 // bug
-void PingHandle(std::shared_ptr<ChatSession> session, unsigned int msgID,
+void PingHandle(ChatSession::Ptr session, unsigned int msgID,
                 const Json::Value &request) {
 
   auto uid = request["uid"].asInt();
@@ -318,8 +321,8 @@ void PingHandle(std::shared_ptr<ChatSession> session, unsigned int msgID,
             uid);
 }
 
-int PushText(std::shared_ptr<ChatSession> toSession, size_t seq, int from,
-             int to, const std::string &msg, int msgID) {
+int PushText(ChatSession::Ptr toSession, size_t seq, int from, int to,
+             const std::string &msg, int msgID) {
 
   toSession->Send(msg, msgID);
 
@@ -360,7 +363,7 @@ int PullText(size_t seq, int from, int to, const std::string &msg) {
 }
 
 // 待验证
-void TextSendAck(std::shared_ptr<ChatSession> session, unsigned int msgID,
+void TextSendAck(ChatSession::Ptr session, unsigned int msgID,
                  const Json::Value &msgData) {
   Json::Reader parser{};
   Json::Value req{};
@@ -377,7 +380,7 @@ void TextSendAck(std::shared_ptr<ChatSession> session, unsigned int msgID,
 }
 
 // 待废弃
-void AckHandle(std::shared_ptr<ChatSession> session, unsigned int msgID,
+void AckHandle(ChatSession::Ptr session, unsigned int msgID,
                const Json::Value &msgData) {
   Json::Reader parser{};
   Json::Value req{};
@@ -429,7 +432,7 @@ void AckHandle(std::shared_ptr<ChatSession> session, unsigned int msgID,
   // ，截止服务端收到ack，其中客户端包含ack重发次数逻辑，因此无需再发送
 }
 
-void UserSearch(std::shared_ptr<ChatSession> session, unsigned int msgID,
+void UserSearch(ChatSession::Ptr session, unsigned int msgID,
                 const Json::Value &request) {
 
   Json::Value response;
@@ -467,7 +470,7 @@ void UserSearch(std::shared_ptr<ChatSession> session, unsigned int msgID,
 }
 
 // 待验证
-void TextSend(std::shared_ptr<ChatSession> session, unsigned int msgID,
+void TextSend(ChatSession::Ptr session, unsigned int msgID,
               const Json::Value &senderReq) {
 
   Json::Value senderRsp;
@@ -489,7 +492,7 @@ void TextSend(std::shared_ptr<ChatSession> session, unsigned int msgID,
   }
 
   bool isOnline = OnlineUser::GetInstance()->isOnline(to);
-  int seq = util::SeqAllocate();
+  int seq = 0;
   if (isOnline) {
     senderRsp["status"] = "unread";
     senderRsp["error"] = ErrorCodes::Success;
@@ -497,13 +500,13 @@ void TextSend(std::shared_ptr<ChatSession> session, unsigned int msgID,
     Json::Value recvierRsp;
     recvierRsp["seq"] = seq;
     recvierRsp.append(senderReq);
-    auto reciverSession = OnlineUser::GetInstance()->GetUser(to);
+    auto reciverSession = OnlineUser::GetInstance()->GetUserSession(to);
     onReWrite(seq, reciverSession, recvierRsp.toStyledString(),
               ID_TEXT_SEND_REQ);
   } else {
   }
 }
-void UserQuit(std::shared_ptr<ChatSession> session, unsigned int msgID,
+void UserQuit(ChatSession::Ptr session, unsigned int msgID,
               const Json::Value &request) {
   Json::Value rsp;
   Defer defer([&rsp, session]() {
@@ -513,7 +516,7 @@ void UserQuit(std::shared_ptr<ChatSession> session, unsigned int msgID,
 
   auto uid = request["uid"].asInt();
 
-  auto userSession = OnlineUser::GetInstance()->GetUser(uid);
+  auto userSession = OnlineUser::GetInstance()->GetUserSession(uid);
   userSession->ClearSession();
   OnlineUser::GetInstance()->RemoveUser(uid);
 
@@ -521,8 +524,8 @@ void UserQuit(std::shared_ptr<ChatSession> session, unsigned int msgID,
   userSession->Close();
 }
 
-void ReLogin(int uid, std::shared_ptr<ChatSession> oldSession,
-             std::shared_ptr<ChatSession> newSession) {
+void ReLogin(int uid, ChatSession::Ptr oldSession,
+             ChatSession::Ptr newSession) {
   Json::Value info;
   info["uid"] = uid;
   info["status"] = "close";
@@ -530,13 +533,13 @@ void ReLogin(int uid, std::shared_ptr<ChatSession> oldSession,
   // todo...  需要可靠通知机制
   oldSession->Send(info.toStyledString(), ID_LOGIN_SQUEEZE);
   ClearChannel(uid, oldSession);
-  OnlineUser::GetInstance()->MapUser(uid, newSession);
 }
 
-void OnLogin(std::shared_ptr<ChatSession> session, unsigned int msgID,
+void OnLogin(ChatSession::Ptr session, unsigned int msgID,
              const Json::Value &request) {
   Json::Value rsp;
   long uid = request["uid"].asInt64();
+  int status = 0;
 
   Defer _([&]() {
     std::string rt = rsp.toStyledString();
@@ -544,10 +547,11 @@ void OnLogin(std::shared_ptr<ChatSession> session, unsigned int msgID,
   });
 
   // 待实现，先不做处理
-  if (false && OnlineUser::GetInstance()->isOnline(uid)) {
+  status = OnlineUser::GetInstance()->isOnline(uid);
+  if (false && status == false) {
 
     rsp["error"] = ErrorCodes::UserOnline;
-    auto oldSession = OnlineUser::GetInstance()->GetUser(uid);
+    auto oldSession = OnlineUser::GetInstance()->GetUserSession(uid);
     ReLogin(uid, oldSession, session);
 
     LOG_DEBUG(wim::businessLogger,
@@ -555,24 +559,23 @@ void OnLogin(std::shared_ptr<ChatSession> session, unsigned int msgID,
     return;
   }
 
-  auto hasUser = db::RedisDao::GetInstance()->getUserId(uid);
+  status = db::RedisDao::GetInstance()->getOnlineUserInfo(uid).empty();
   // 分布式情况，待实现
-  if (false && !hasUser.empty()) {
+  if (false && status) {
     rsp["error"] = ErrorCodes::Success;
     return;
   }
 
   // 用户信息处理
-  auto isFirstLoginObject = request["init"];
-  int status = 0;
-  if (!isFirstLoginObject.empty() && isFirstLoginObject.asBool() == true) {
+  bool isFirstLogin = request["init"].asBool();
+  db::UserInfo::Ptr userInfo;
+  if (isFirstLogin) {
     // 首次登录，需要同步用户信息
     std::string name = request["name"].asString();
     short age = request["age"].asInt();
     std::string sex = request["sex"].asString();
     std::string headImageURL = request["headImageURL"].asString();
-    db::UserInfo::Ptr userInfo(
-        new db::UserInfo(uid, name, age, sex, headImageURL));
+    userInfo.reset(new db::UserInfo(uid, name, age, sex, headImageURL));
 
     status = db::MysqlDao::GetInstance()->insertUserInfo(userInfo);
     if (status != 0) {
@@ -580,38 +583,28 @@ void OnLogin(std::shared_ptr<ChatSession> session, unsigned int msgID,
       rsp["error"] = -1;
       return;
     }
-
-    status = db::RedisDao::GetInstance()->setOnlineUserInfo(uid, userInfo);
-    if (status == false) {
-      LOG_DEBUG(wim::businessLogger, "set online user info failed, uid-{} ",
-                uid);
-      rsp["error"] = -1;
-      return;
-    }
   } else {
-    db::UserInfo::Ptr userInfo = db::MysqlDao::GetInstance()->getUserInfo(uid);
+    userInfo = db::MysqlDao::GetInstance()->getUserInfo(uid);
     if (userInfo == nullptr) {
       LOG_DEBUG(wim::businessLogger, "get user info failed, uid-{} ", uid);
       rsp["error"] = -1;
       return;
     }
-    rsp["uid"] = Json::Value::Int64(userInfo->uid);
-    rsp["name"] = userInfo->name;
-    rsp["age"] = userInfo->age;
-    rsp["sex"] = userInfo->sex;
-    rsp["headImageURL"] = userInfo->headImageURL;
-    rsp["error"] = ErrorCodes::Success;
-
-    status = db::RedisDao::GetInstance()->setOnlineUserInfo(uid, userInfo);
-    if (status == false) {
-      LOG_DEBUG(wim::businessLogger, "set online user info failed, uid-{} ",
-                uid);
-      rsp["error"] = -1;
-      return;
-    }
   }
-  // 建立<userId, session>用户网络线路映射
-  OnlineUser::GetInstance()->MapUser(uid, session);
+
+  rsp["uid"] = Json::Value::Int64(userInfo->uid);
+  rsp["name"] = userInfo->name;
+  rsp["age"] = userInfo->age;
+  rsp["sex"] = userInfo->sex;
+  rsp["headImageURL"] = userInfo->headImageURL;
+  rsp["error"] = ErrorCodes::Success;
+
+  // 建立<userInfo, session>用户网络线路映射
+  status = OnlineUser::GetInstance()->MapUser(userInfo, session);
+  if (status == false) {
+    rsp["error"] = -1;
+    return;
+  }
 
   LOG_DEBUG(wim::businessLogger, "user login success!, uid-{} ", uid);
 }

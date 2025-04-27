@@ -34,13 +34,13 @@ server:
     user: zorjen
     password: root
     schema: chatServ
-    clientCount: 2
+    clientCount: 1
     machineId: 1
   redis:
     host: 127.0.0.1
     port: 6380
     password: root
-    clientCount: 2
+    clientCount: 1
     machineId: 1
   kafka:
     broker: bootstrap.servers
