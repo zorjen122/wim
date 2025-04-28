@@ -28,12 +28,20 @@ private:
   std::function<void()> func;
 };
 #include <limits.h>
-#define PACKAGE_MAX_LENGTH (UINT_MAX)
-#define PACKAGE_TOTAL_LEN 8
-#define PACKAGE_ID_LEN 4
-#define PACKAGE_DATA_SIZE_LEN 4
-#define MAX_RECV_QUEUE_LEN 10000
-#define MAX_SEND_QUEUE_LEN 1000
+
+/* 1.4KB+的缓冲区，指单次读取的最大长度，实际上仅需大于IPv4/IPv6的最大消息单元（MTU）即可
+  Pv4 MTU：通常 1500 字节（以太网标准）
+  IPv4 最小重组缓冲区：576 字节（RFC 791）
+  IPv6 MTU：1280 字节（RFC 8200）
+*/
+
+#define PROTOCOL_DATA_MTU 1500
+#define PROTOCOL_HEADER_TOTAL 8
+#define PROTOCOL_ID_LEN 4
+#define PROTOCOL_DATA_SIZE_LEN 4
+
+#define PROTOCOL_RECV_MSS (10 * 1024 * 1024) // 10MB
+#define PROTOCOL_SEND_MSS (10 * 1024 * 1024) // 10MB
 
 #include <string>
 #include <unordered_map>
@@ -101,8 +109,7 @@ enum ServiceID {
   ID_LOGIN_SQUEEZE = 0xff01,
 
   // about service handles of the utility
-  ID_UTIL_ACK_SEQ = 0xff33,
-  ID_UTIL_ACK_RSP = 0xff34,
+  ID_ACK = 0xff33,
 };
 
 // 建立服务ID到描述的映射
@@ -120,8 +127,6 @@ static std::unordered_map<ServiceID, std::string> __serviceIdMap = {
     {ID_NOTIFY_ADD_FRIEND_REQ, "Notify Add Friend Request"},
     {ID_REPLY_ADD_FRIEND_REQ, "Auth Friend Request"},
     {ID_REPLY_ADD_FRIEND_RSP, "Auth Friend Response"},
-    {ID_UTIL_ACK_SEQ, "Util Ack Sequence"},
-    {ID_UTIL_ACK_RSP, "Util Ack Response"},
 
     // dev..
     {ID_GROUP_CREATE_REQ, "Group Create Request"},

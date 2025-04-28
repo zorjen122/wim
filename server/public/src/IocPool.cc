@@ -1,12 +1,21 @@
 ﻿#include "IocPool.h"
+#include "Logger.h"
 #include "spdlog/spdlog.h"
 
+namespace wim {
 IocPool::IocPool(std::size_t size) : iocGroup(size), worker(size) {
   for (std::size_t i = 0; i < size; ++i)
     worker[i] = std::unique_ptr<Work>(new Work(iocGroup[i]));
 
   for (std::size_t i = 0; i < iocGroup.size(); ++i)
     threadGroup.emplace_back([this, i]() { iocGroup[i].run(); });
+
+  if (iocGroup.size() >= 1)
+    LOG_INFO(wim::netLogger, "IocPool created with {} threads",
+             iocGroup.size());
+  else
+    LOG_WARN(wim::netLogger, "IocPool created is failed, size {} ",
+             iocGroup.size());
 }
 
 IocPool::~IocPool() {
@@ -32,3 +41,4 @@ void IocPool::Stop() {
   for (auto &t : threadGroup)
     t.join();
 }
+}; // namespace wim

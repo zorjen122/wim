@@ -21,8 +21,7 @@ bool OnlineNotifyAddFriend(ChatSession::Ptr user, const Json::Value &request) {
 }
 
 int OfflineAddFriend(int seq, int from, int to, const Json::Value &request) {
-  spdlog::info("[Service::OfflineAddFriend] seq-{}, from-{}, to-{}", seq, from,
-               to);
+  LOG_INFO(businessLogger, " seq-{}, from-{}, to-{}", seq, from, to);
   // bool rt = wim::db::MysqlDao::GetInstance()->SaveService(from, to, request);
   bool rt = true; // todo...
   if (rt == false) {
@@ -107,6 +106,9 @@ void NotifyAddFriend(ChatSession::Ptr session, unsigned int msgID,
     notifyRequest.set_requestmessage(request.toStyledString());
 
     // 通过MachineID路由到对应的机器，并转发
+    LOG_INFO(wim::businessLogger,
+             "forwardNotifyAddFriend(from: {}, to: {}) to machine: {}", fromUid,
+             toUid, machineId);
     notifyResponse =
         rpc::ImRpc::GetInstance()->getRpc(machineId)->forwardNotifyAddFriend(
             notifyRequest);

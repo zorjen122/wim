@@ -27,7 +27,7 @@ set(_LIB_YAML yaml-cpp)
 
 # 搜索 util 和 service 目录下的所有 .cc 文件
 file(GLOB PUBLIC_CC ${CMAKE_CURRENT_SOURCE_DIR}/../public/src/Configer.cc)
-file(GLOB LINK_CC ${CMAKE_CURRENT_SOURCE_DIR}/service/client.cc ${CMAKE_CURRENT_SOURCE_DIR}/util/base.cc ${CMAKE_SOURCE_DIR}/service/net.cc)
+file(GLOB LINK_CC ${CMAKE_CURRENT_SOURCE_DIR}/service/client.cc  ${CMAKE_SOURCE_DIR}/service/chatSession.cc)
 file(GLOB MAIN_CC ${CMAKE_CURRENT_SOURCE_DIR}/service/main.cc )
 
 
@@ -65,5 +65,5 @@ foreach(SRC_FILE ${MAIN_CC})
     )
 
     # 添加编译选项
-    target_compile_options(${EXEC_NAME} PRIVATE -Wall -g)
+    target_compile_options(${EXEC_NAME} PRIVATE -Wall -g -O0)
 endforeach()

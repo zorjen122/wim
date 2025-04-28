@@ -11,7 +11,7 @@
 #include "DbGlobal.h"
 #include "Logger.h"
 #include <condition_variable>
-#include <json/json.h>
+#include <jsoncpp/json/json.h>
 #include <mutex>
 #include <queue>
 #include <spdlog/spdlog.h>
@@ -167,10 +167,12 @@ private:
 
 class RedisDao : public Singleton<RedisDao>,
                  std::enable_shared_from_this<RedisPool> {
+  friend class TestDb;
+
 public:
   using Ptr = std::shared_ptr<RedisDao>;
   RedisDao() {
-    auto conf = Configer::getConfig("server");
+    auto conf = Configer::getNode("server");
     auto host = conf["redis"]["host"].as<std::string>();
     auto port = conf["redis"]["port"].as<int>();
     auto password = conf["redis"]["password"].as<std::string>();
@@ -180,13 +182,20 @@ public:
     redisPool.reset(new RedisPool(host, port, password, clientCount));
     machineId = machine;
 
-    if (redisPool->Empty()) {
-      dbLogger->warn("redis connection pool is empty, exit now");
+    if (!redisPool->Empty()) {
+      LOG_INFO(dbLogger,
+               "redis connection pool init success | host: {}, port: "
+               "{}, password: {}, clientCount: {}, machineId: {}",
+               host, port, password, clientCount, machine);
     } else {
-      dbLogger->info("redis connection pool init success, size: {}",
-                     redisPool->Size());
+      LOG_WARN(dbLogger,
+               "redis connection pool init failed | host: {}, port: "
+               "{}, password: {}, clientCount: {}, machineId: {}",
+               host, port, password, clientCount, machine);
     }
   }
+
+  void Close() { return redisPool->Close(); }
 
   std::string getPrefixUserId() {
     static const std::string PrefixUserId = "im:userId:";
@@ -199,7 +208,7 @@ public:
   }
 
   int64_t generateUserId() {
-    static std::string __prefixUid = "im:uesrId";
+    static std::string __prefixUid = "im:userId";
     return generateId(__prefixUid);
   }
 
@@ -217,6 +226,7 @@ public:
     Defer defer(
         [this, &redis]() { redisPool->ReturnConnection(std::move(redis)); });
     auto result = redis->get(email);
+
     return result.has_value() && result.value() == verifycode;
   }
 
@@ -235,9 +245,10 @@ public:
 
   bool setUserId(long uid);
 
-  bool setOnlineUserInfo(long uid, db::UserInfo::Ptr userInfo) {
+  // 暂用字符串MachineId标识机器
+  bool setOnlineUserInfo(db::UserInfo::Ptr userInfo, std::string machineId) {
     auto redis = redisPool->GetConnection();
-    if (!redis) {
+    if (redis == nullptr) {
       LOG_DEBUG(wim::dbLogger, "redis connection is null");
       return false;
     }
@@ -250,9 +261,11 @@ public:
     jsonData["age"] = userInfo->age;
     jsonData["sex"] = userInfo->sex;
     jsonData["headImageURL"] = userInfo->headImageURL;
-    redis->set(getPrefixOnlineUserInfo() + std::to_string(uid),
-               jsonData.toStyledString());
-    return true;
+    jsonData["machineId"] = machineId;
+    bool status =
+        redis->set(getPrefixOnlineUserInfo() + std::to_string(userInfo->uid),
+                   jsonData.toStyledString());
+    return status;
   }
 
   std::string getOnlineUserInfo(long uid) {
@@ -270,21 +283,34 @@ public:
     return source.value();
   }
 
-  UserInfo::Ptr getOnlineUserInfoObject(long uid) {
+  std::pair<UserInfo::Ptr, std::string> getOnlineUserInfoObject(long uid) {
     std::string source = getOnlineUserInfo(uid);
     if (source.empty())
-      return nullptr;
+      return {};
     Json::Reader reader;
     Json::Value jsonData;
     if (!reader.parse(source, jsonData)) {
       LOG_DEBUG(wim::dbLogger, "parse online user info json data error");
-      return nullptr;
+      return {};
     }
     UserInfo::Ptr userInfo(
         new UserInfo(jsonData["userId"].asInt64(), jsonData["name"].asString(),
                      jsonData["age"].asInt(), jsonData["sex"].asString(),
                      jsonData["headImageURL"].asString()));
-    return userInfo;
+    std::string machineId = jsonData["machineId"].asString();
+    return {userInfo, machineId};
+  }
+
+  bool delOnlineUserInfo(long uid) {
+    auto redis = redisPool->GetConnection();
+    if (!redis) {
+      LOG_DEBUG(wim::dbLogger, "redis connection is null");
+      return false;
+    }
+    Defer defer(
+        [this, &redis]() { redisPool->ReturnConnection(std::move(redis)); });
+    redis->del(getPrefixOnlineUserInfo() + std::to_string(uid));
+    return true;
   }
 
 private:

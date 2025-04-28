@@ -39,6 +39,7 @@ struct UserInfo {
 struct Friend {
   using Ptr = std::shared_ptr<Friend>;
   using FriendGroup = std::shared_ptr<std::vector<Friend::Ptr>>;
+  Friend() = default;
   Friend(size_t uidA, size_t uidB, std::string createDateTime, size_t machineId)
       : uidA(uidA), uidB(uidB), createDateTime(std::move(createDateTime)),
         machineId(machineId) {}
@@ -58,12 +59,15 @@ struct Friend {
   size_t uidA;
   size_t uidB;
   std::string createDateTime;
+
+  // 待删除字段，更改为sessionId，消息服务器Id可在哈希中获取，此举是动态的
   size_t machineId;
 };
 
 struct FriendApply {
   using Ptr = std::shared_ptr<FriendApply>;
   using FriendApplyGroup = std::shared_ptr<std::vector<FriendApply::Ptr>>;
+  FriendApply() = default;
   FriendApply(size_t fromUid, size_t toUId, short status = 0)
       : fromUid(fromUid), toUid(toUId) {}
 
@@ -73,6 +77,10 @@ struct FriendApply {
   size_t fromUid;
   size_t toUid;
   short status;
+
+  // 新增字段，待定
+  bool accept;
+  std::string replyMessage;
 };
 
 struct Message {

@@ -1,5 +1,4 @@
 #include "base.h"
-#include "json/reader.h"
 #include <boost/asio/detail/socket_ops.hpp>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/read.hpp>
@@ -8,6 +7,7 @@
 #include <boost/system/detail/error_code.hpp>
 #include <cassert>
 #include <cstring>
+#include <jsoncpp/json/reader.h>
 #include <string>
 #include <unordered_map>
 
@@ -59,19 +59,12 @@ void pushMessage(std::shared_ptr<net::ip::tcp::socket> socket,
     memcpy(servicePackage + sizeof(serviceID) + sizeof(packageSize),
            package.c_str(), package.size());
 
-    spdlog::info("serviceID {}, packageSize {}",
-                 *(unsigned int *)(servicePackage), packageSize);
-    spdlog::info("source serviceID {}",
-                 net::detail::socket_ops::network_to_host_long(
-                     *(unsigned int *)(servicePackage)));
     spdlog::info(
-        "source packageSize {}",
-        net::detail::socket_ops::network_to_host_long(
-            *(unsigned int *)(servicePackage +
-                              sizeof(
-                                  serviceID)))); // 反序列化为原始的 packageSize
-
-    // spdlog::info("[service-package] {}", servicePackage);
+        "Send Mmessage: [\nserviceId: {}(network: {}), packageSize: "
+        "{}(network: {}), \npackage: {}\n]",
+        serviceID, net::detail::socket_ops::network_to_host_long(serviceID),
+        packageSize, net::detail::socket_ops::network_to_host_long(packageSize),
+        package);
 
     if (async) {
       net::async_write(
@@ -105,13 +98,13 @@ std::string recviceMessage(std::shared_ptr<net::ip::tcp::socket> socket) {
   memcpy(&total, headBuf + sizeof(id), +sizeof(total));
   id = net::detail::socket_ops::network_to_host_long(id);
   total = net::detail::socket_ops::network_to_host_long(total);
-  spdlog::info("recvice message [id: {}, body-total: {}]", id, total);
 
   std::string bodyBuf(total + 1, '\0');
   rt = socket->receive(net::buffer(bodyBuf.data(), total));
   bodyBuf[total] = 0;
 
-  spdlog::info("recvice message [body : {}]", bodyBuf);
+  spdlog::info("recvice message [\nid: {}, body-total: {}, \n body : {}\n]", id,
+               total, bodyBuf);
 
   return bodyBuf;
 }

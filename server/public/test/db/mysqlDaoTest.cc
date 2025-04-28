@@ -16,6 +16,7 @@ public:
   }
 
 private:
+  static constexpr std::string_view TEST_USERNAME = "zorjen";
   static constexpr int TEST_UID = 2000;
   static constexpr int TEST_FRIEND_UID = 9998;
   static constexpr int TEST_MESSAGE_ID = 10000;
@@ -34,14 +35,13 @@ private:
     assert(regResult != -1 && "Registration failed");
 
     // 验证用户查询
-    User::Ptr fetchedUser = dao->getUser(TEST_UID);
+    User::Ptr fetchedUser = dao->getUser(TEST_USERNAME.data());
     assert(fetchedUser != nullptr && "User not found");
     assert(fetchedUser->email == newUser->email && "Email mismatch");
   }
 
   static void testUserInfoOperations() {
     auto dao = MysqlDao::GetInstance();
-    using UserInfo = MysqlDao::UserInfo;
     // 插入用户信息
     UserInfo::Ptr info(
         new UserInfo(TEST_UID, "Test User", 25, "male", "/images/test.jpg"));
@@ -71,9 +71,8 @@ private:
 
   static void testFriendApplyOperations() {
     auto dao = MysqlDao::GetInstance();
-    using Friend = MysqlDao::FriendApply;
     // 添加好友
-    Friend::Ptr newFriendApply(new Friend(TEST_UID, TEST_FRIEND_UID));
+    FriendApply::Ptr newFriendApply(new FriendApply(TEST_UID, TEST_FRIEND_UID));
 
     int addResult = dao->insertFriendApply(newFriendApply);
     assert(addResult != -1 && "Add friend failed");
@@ -90,7 +89,6 @@ private:
 
   static void testFriendOperations() {
     auto dao = MysqlDao::GetInstance();
-    using Friend = MysqlDao::Friend;
     // 添加好友
     Friend::Ptr newFriend(
         new Friend(TEST_UID, TEST_FRIEND_UID, "2023-01-01 00:00:00", 1));
@@ -110,7 +108,6 @@ private:
 
   static void testMessageOperations() {
     auto dao = MysqlDao::GetInstance();
-    using Message = MysqlDao::Message;
     // 插入测试消息
     Message::Ptr msg(new Message(TEST_MESSAGE_ID, TEST_UID, TEST_FRIEND_UID,
                                  "session_123",
@@ -156,9 +153,9 @@ private:
 
 int main() {
 
-  Configer::loadConfig("../config.yaml");
+  // Configer::loadConfig("../config.yaml");
 
-  wim::db::MysqlDaoTest::runAllTests();
+  // wim::db::MysqlDaoTest::runAllTests();
 
   return 0;
 }

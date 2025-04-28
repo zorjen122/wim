@@ -5,6 +5,7 @@
 #include <boost/asio.hpp>
 #include <vector>
 
+namespace wim {
 class IocPool : public Singleton<IocPool> {
   friend Singleton<IocPool>;
 
@@ -19,8 +20,9 @@ public:
   void Stop();
 
 private:
-  IocPool(std::size_t size = std::thread::hardware_concurrency());
+  IocPool(std::size_t size = 2);
   std::vector<Service> iocGroup;
   std::vector<WorkPtr> worker;
   std::vector<std::thread> threadGroup;
 };
+}; // namespace wim

@@ -40,6 +40,7 @@ Service::~Service() {
 }
 
 void Service::Init() {
+  // 已成功
   serviceGroup[ID_LOGIN_INIT_REQ] =
       std::bind(&OnLogin, std::placeholders::_1, std::placeholders::_2,
                 std::placeholders::_3);
@@ -48,11 +49,16 @@ void Service::Init() {
       std::bind(wim::NotifyAddFriend, std::placeholders::_1,
                 std::placeholders::_2, std::placeholders::_3);
 
+  // 待测试
+
+  serviceGroup[ID_PING_REQ] =
+      std::bind(&PingHandle, std::placeholders::_1, std::placeholders::_2,
+                std::placeholders::_3);
   serviceGroup[ID_TEXT_SEND_REQ] =
       std::bind(&TextSend, std::placeholders::_1, std::placeholders::_2,
                 std::placeholders::_3);
 
-  serviceGroup[ID_UTIL_ACK_SEQ] =
+  serviceGroup[ID_ACK] =
       std::bind(&AckHandle, std::placeholders::_1, std::placeholders::_2,
                 std::placeholders::_3);
 
@@ -66,10 +72,6 @@ void Service::Init() {
 
   serviceGroup[ID_GROUP_TEXT_SEND_REQ] =
       std::bind(&GroupTextSend, std::placeholders::_1, std::placeholders::_2,
-                std::placeholders::_3);
-
-  serviceGroup[ID_PING_REQ] =
-      std::bind(&PingHandle, std::placeholders::_1, std::placeholders::_2,
                 std::placeholders::_3);
 }
 
@@ -308,17 +310,9 @@ void Pong(int uid, ChatSession::Ptr session) {
   LOG_DEBUG(wim::businessLogger, "[ PONG | seq {}, uid {} ]", seq, uid);
 }
 
-// bug
 void PingHandle(ChatSession::Ptr session, unsigned int msgID,
                 const Json::Value &request) {
-
-  auto uid = request["uid"].asInt();
-  auto seq = request["seq"].asInt();
-  util::clearRetransfTimer(seq, uid);
-
-  LOG_DEBUG(wim::businessLogger,
-            "[ServiceSystem::Ping] ping handle success, seq-id{}, uid-{}", seq,
-            uid);
+  spdlog::info("ping handle");
 }
 
 int PushText(ChatSession::Ptr toSession, size_t seq, int from, int to,
@@ -388,7 +382,7 @@ void AckHandle(ChatSession::Ptr session, unsigned int msgID,
 
   Defer _([&rsp, session]() {
     auto rt = rsp.toStyledString();
-    session->Send(rt, ID_UTIL_ACK_RSP);
+    session->Send(rt, ID_ACK);
   });
 
   rsp.append(req);
@@ -480,9 +474,12 @@ void TextSend(ChatSession::Ptr session, unsigned int msgID,
     session->Send(rt, ID_TEXT_SEND_RSP);
   });
 
-  auto from = senderReq["from"].asInt();
-  auto to = senderReq["to"].asInt();
-  Json::Value text = senderReq["text"].asString();
+  auto from = senderReq["fromUid"].asInt();
+  auto to = senderReq["toUid"].asInt();
+  std::string text = senderReq["text"].asString();
+  LOG_INFO(businessLogger, "from: {}, to: {}, text: {}", from, to, text);
+  return;
+  // todo...  待实现
 
   static std::set<int> senderIdCache{};
   if (senderIdCache.find(from) == senderIdCache.end()) {
@@ -592,13 +589,6 @@ void OnLogin(ChatSession::Ptr session, unsigned int msgID,
     }
   }
 
-  rsp["uid"] = Json::Value::Int64(userInfo->uid);
-  rsp["name"] = userInfo->name;
-  rsp["age"] = userInfo->age;
-  rsp["sex"] = userInfo->sex;
-  rsp["headImageURL"] = userInfo->headImageURL;
-  rsp["error"] = ErrorCodes::Success;
-
   // 建立<userInfo, session>用户网络线路映射
   status = OnlineUser::GetInstance()->MapUser(userInfo, session);
   if (status == false) {
@@ -606,6 +596,14 @@ void OnLogin(ChatSession::Ptr session, unsigned int msgID,
     return;
   }
 
-  LOG_DEBUG(wim::businessLogger, "user login success!, uid-{} ", uid);
+  rsp["uid"] = Json::Value::Int64(userInfo->uid);
+  rsp["name"] = userInfo->name;
+  rsp["age"] = userInfo->age;
+  rsp["sex"] = userInfo->sex;
+  rsp["headImageURL"] = userInfo->headImageURL;
+  rsp["error"] = ErrorCodes::Success;
+
+  LOG_DEBUG(wim::businessLogger, "user login success!, uid: {}, response: {} ",
+            uid, rsp.toStyledString());
 }
 }; // namespace wim

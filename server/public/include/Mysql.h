@@ -5,6 +5,7 @@
 #include <condition_variable>
 #include <cstdint>
 #include <ctime>
+#include <exception>
 #include <mysql-cppconn-8/mysqlx/devapi/common.h>
 #include <mysql-cppconn-8/mysqlx/devapi/result.h>
 #include <mysql-cppconn-8/mysqlx/xdevapi.h>
@@ -43,12 +44,11 @@ class MysqlPool {
 public:
   using Ptr = std::shared_ptr<MysqlPool>;
 
-  MysqlPool(const std::string &host, unsigned int port, const std::string &user,
-            const std::string &passwd, const std::string &schema,
-            std::size_t maxSize = 2)
-      : host(host), port(port), user(user), password(passwd), schema(schema),
-        stopEnable(false) {
-    for (int i = 0; i < maxSize; ++i) {
+  MysqlPool(const std::string &host, unsigned short port,
+            const std::string &user, const std::string &password,
+            const std::string &schema, std::size_t maxSize = 2)
+      : host(host), port(port), user(user), password(password), schema(schema) {
+    for (size_t i = 0; i < maxSize; ++i) {
       try {
         mysqlx::Session *sqlSession(
             new mysqlx::Session(host, port, user, password, schema));
@@ -57,6 +57,8 @@ public:
         int64_t leaseTime =
             std::chrono::duration_cast<std::chrono::seconds>(currentTime)
                 .count();
+        sqlSession->sql("SELECT 1").execute();
+
         pool.push(std::make_unique<SqlConnection>(sqlSession, leaseTime));
 
       } catch (mysqlx::Error &e) {
@@ -92,7 +94,12 @@ public:
       if (stopEnable)
         return true;
 
-      return !pool.empty();
+      if (pool.empty()) {
+        LOG_DEBUG(wim::dbLogger, "Mysql-client pool is empty!, wait...");
+        return false;
+      } else {
+        return true;
+      }
     });
     if (stopEnable || pool.empty()) {
       return nullptr;
@@ -130,12 +137,12 @@ public:
   }
 
   ~MysqlPool() {
+    Close();
     std::unique_lock<std::mutex> lock(sqlMutex);
-
     while (!pool.empty()) {
       pool.pop();
       LOG_INFO(wim::dbLogger, "Mysql-client pool destroy! | poolSize: {}",
-               pool.size() + 1);
+               pool.size());
     }
     if (keepThread.joinable()) {
       keepThread.join();
@@ -195,40 +202,53 @@ private:
   std::string password;
   std::string schema;
 
-  std::queue<std::unique_ptr<SqlConnection>> pool;
-  std::mutex sqlMutex;
-  std::condition_variable condVar;
-  std::atomic<bool> stopEnable;
-  std::thread keepThread;
+  std::queue<std::unique_ptr<SqlConnection>> pool{};
+  std::mutex sqlMutex{};
+  std::condition_variable condVar{};
+  std::atomic<bool> stopEnable{};
+  std::thread keepThread{};
 }; // MysqlPool
 
 class MysqlDao : public Singleton<MysqlDao>,
                  public std::enable_shared_from_this<MysqlDao> {
 private:
   MysqlPool::Ptr mysqlPool;
+  friend class TestDb;
 
 public:
   using Ptr = std::shared_ptr<MysqlDao>;
   MysqlDao() {
-    auto conf = Configer::getConfig("server");
+    try {
+      auto conf = Configer::getNode("server");
 
-    auto host = conf["mysql"]["host"].as<std::string>();
-    auto port = conf["mysql"]["port"].as<unsigned short>();
-    auto user = conf["mysql"]["user"].as<std::string>();
-    auto passwd = conf["mysql"]["password"].as<std::string>();
-    auto schema = conf["mysql"]["schema"].as<std::string>();
-    auto clientCount = conf["mysql"]["clientCount"].as<int>();
-    mysqlPool.reset(
-        new MysqlPool(host, port, user, passwd, schema, clientCount));
-    if (mysqlPool->Empty()) {
-      dbLogger->warn("Mysql-client pool init error! | poolSize: {}",
-                     clientCount);
-    } else {
-      dbLogger->info("Mysql-client pool init success! | poolSize: {}",
-                     clientCount);
+      auto host = conf["mysql"]["host"].as<std::string>();
+      auto port = conf["mysql"]["port"].as<unsigned short>();
+      auto user = conf["mysql"]["user"].as<std::string>();
+      auto password = conf["mysql"]["password"].as<std::string>();
+      auto schema = conf["mysql"]["schema"].as<std::string>();
+      auto clientCount = conf["mysql"]["clientCount"].as<int>();
+      mysqlPool.reset(
+          new MysqlPool(host, port, user, password, schema, clientCount));
+
+      if (!mysqlPool->Empty()) {
+        LOG_INFO(wim::dbLogger,
+                 "Mysql-Client pool init success! | host: {}, port: {}, "
+                 "user: {}, passwd: {}, schema: {}, poolSize: {}",
+                 host, port, user, password, schema, mysqlPool->Size());
+      } else {
+        LOG_WARN(wim::dbLogger,
+                 "Mysql-Client pool init failed! | host: {}, port: {}, "
+                 "user: {}, passwd: {}, schema: {}, poolSize: {}",
+                 host, port, user, password, schema, mysqlPool->Size());
+      }
+    } catch (std::exception &e) {
+      LOG_ERROR(wim::dbLogger, "MysqlDao init error: {}", e.what());
     }
   }
-  ~MysqlDao() { mysqlPool->Close(); }
+  ~MysqlDao() {}
+
+  void Close() { mysqlPool->Close(); }
+
   User::Ptr getUser(const std::string &username) {
     auto con = mysqlPool->GetConnection();
     if (con == nullptr) {
@@ -265,7 +285,7 @@ public:
     }
   }
 
-  UserInfo::Ptr getUserInfo(int uid) {
+  UserInfo::Ptr getUserInfo(long uid) {
     auto con = mysqlPool->GetConnection();
     if (con == nullptr) {
       // log...
@@ -299,7 +319,28 @@ public:
     }
   }
 
-  Friend::FriendGroup getFriendList(int uid) {
+  bool hasUserInfo(long uid) {
+    auto con = mysqlPool->GetConnection();
+    if (con == nullptr) {
+      // log...
+      LOG_DEBUG(dbLogger, "pool number is empty!, uid: {}", uid);
+      return false;
+    }
+
+    Defer defer(
+        [&con, this]() { mysqlPool->ReturnConnection(std::move(con)); });
+
+    try {
+      std::string f = R"(SELECT uid FROM userInfo WHERE uid = ?)";
+      auto result = con->session->sql(f).bind(uid).execute();
+      return result.hasData();
+    } catch (mysqlx::Error &e) {
+      LOG_DEBUG(wim::dbLogger, "Error: {}", e.what());
+      return false;
+    }
+  }
+
+  Friend::FriendGroup getFriendList(long uid) {
     auto con = mysqlPool->GetConnection();
     if (con == nullptr) {
       // log...
@@ -472,9 +513,10 @@ public:
                         .bind(friendData->fromUid)
                         .bind(friendData->toUid)
                         .execute();
-      if (!result.hasData()) {
+      auto row = result.fetchOne();
+      if (row.isNull() == false) {
         // log...
-        LOG_DEBUG(dbLogger, "result fetchOne is null");
+        LOG_DEBUG(dbLogger, "result fetchOne is exist");
         return 1;
       }
       static const short status = 0;
@@ -491,7 +533,7 @@ public:
     }
   }
   // @return 0: 成功 1: 失败 -1: 组件异常
-  int hasFriend(int uidA, int uidB) {
+  int hasFriend(long uidA, long uidB) {
     auto con = mysqlPool->GetConnection();
     if (con == nullptr) {
       // log...
@@ -582,7 +624,7 @@ public:
       return -1;
     }
   }
-  int updateUserInfoName(int uid, const std::string &name) {
+  int updateUserInfoName(long uid, const std::string &name) {
     auto con = mysqlPool->GetConnection();
 
     if (con == nullptr) {
@@ -604,7 +646,7 @@ public:
       return -1;
     }
   }
-  int updateUserInfoAge(int uid, int age) {
+  int updateUserInfoAge(long uid, int age) {
     auto con = mysqlPool->GetConnection();
 
     if (con == nullptr) {
@@ -626,7 +668,7 @@ public:
       return -1;
     }
   }
-  int updateUserInfoSex(int uid, const std::string &sex) {
+  int updateUserInfoSex(long uid, const std::string &sex) {
     auto con = mysqlPool->GetConnection();
 
     if (con == nullptr) {
@@ -648,7 +690,7 @@ public:
       return -1;
     }
   }
-  int updateUserInfoHeadImageURL(int uid, const std::string &headImageURL) {
+  int updateUserInfoHeadImageURL(long uid, const std::string &headImageURL) {
     auto con = mysqlPool->GetConnection();
 
     if (con == nullptr) {
@@ -739,7 +781,7 @@ public:
     }
   }
 
-  Message::MessageGroup getUserMessage(int uid, int startMessageId,
+  Message::MessageGroup getUserMessage(long uid, int startMessageId,
                                        int pullCount) {
     if (startMessageId <= 0)
       return nullptr;
@@ -792,7 +834,7 @@ public:
       return nullptr;
     }
   }
-  int deleteUser(int uid) {
+  int deleteUser(long uid) {
     auto con = mysqlPool->GetConnection();
 
     if (con == nullptr) {
@@ -854,7 +896,7 @@ public:
       return -1;
     }
   }
-  int deleteFriend(int uidA, int uidB) {
+  int deleteFriend(long uidA, long uidB) {
     auto con = mysqlPool->GetConnection();
 
     if (con == nullptr) {
@@ -886,7 +928,7 @@ public:
   }
 
   // todo...
-  int deleteMessage(int uid, int startMessageId, int delCount) {
+  int deleteMessage(long uid, int startMessageId, int delCount) {
     auto con = mysqlPool->GetConnection();
 
     if (con == nullptr) {

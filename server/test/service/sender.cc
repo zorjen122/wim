@@ -2,7 +2,7 @@
 #include "spdlog/logger.h"
 #include "util.h"
 #include <boost/asio/ip/host_name.hpp>
-#include <json/json.h>
+#include <jsoncpp/json/json.h>
 #include <memory>
 #include <spdlog/spdlog.h>
 #include <string>
@@ -88,7 +88,7 @@ int TextSend(User user, std::shared_ptr<net::ip::tcp::socket> socket, int from,
   Json::Value req1;
   req1["fromUid"] = from;
   req1["toUid"] = to;
-  req1["text"] = "Hello, IM!";
+  req1["text"] = "Hello, wim!";
 
   base::pushMessage(socket, ID_PUSH_TEXT_MESSAGE, req1.toStyledString());
 

@@ -50,7 +50,7 @@ static std::unordered_map<ChatSession::Ptr, ChatSession::Ptr> sChannel;
 static void clearRetransfTimer(size_t seq, size_t member) {
   auto &timer = retansfTimerMap[seq][member];
   if (timer == nullptr) {
-    spdlog::error(
+    spdlog::info(
         "[clearRetransfTimer] timer is nullptr | seq [{}], member [{}]", seq,
         member);
     return;

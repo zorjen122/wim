@@ -3,7 +3,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 project(chat-test)
 
 file(GLOB TARGET_CC cmd/*.cc)
-file(GLOB LINK_CC)
+file(GLOB LINK_CC ../src/**/*.cc ../rpc/*.cc)
 
 
 foreach(SRC_FILE ${TARGET_CC})

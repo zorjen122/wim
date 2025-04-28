@@ -9,19 +9,24 @@ namespace wim {
 
 // 日志级别
 #define LOG_DEBUG(logger, ...)                                                 \
-  logger->debug("[{}:{}] {}", __FILE__, __LINE__, fmt::format(__VA_ARGS__))
+  logger->debug("[{}:{}({})] {}", __FILE__, __LINE__, __FUNCTION__,            \
+                fmt::format(__VA_ARGS__))
 
 #define LOG_TRACE(logger, ...)                                                 \
-  logger->trace("[{}:{}] {}", __FILE__, __LINE__, fmt::format(__VA_ARGS__))
+  logger->trace("[{}:{}({})] {}", __FILE__, __LINE__, __FUNCTION__,            \
+                fmt::format(__VA_ARGS__))
 
 #define LOG_INFO(logger, ...)                                                  \
-  logger->info("[{}:{}] {}", __FILE__, __LINE__, fmt::format(__VA_ARGS__))
+  logger->info("[{}:{}({})] {}", __FILE__, __LINE__, __FUNCTION__,             \
+               fmt::format(__VA_ARGS__))
 
 #define LOG_WARN(logger, ...)                                                  \
-  logger->warn("[{}:{}] {}", __FILE__, __LINE__, fmt::format(__VA_ARGS__))
+  logger->warn("[{}:{}({})] {}", __FILE__, __LINE__, __FUNCTION__,             \
+               fmt::format(__VA_ARGS__))
 
 #define LOG_ERROR(logger, ...)                                                 \
-  logger->error("[{}:{}] {}", __FILE__, __LINE__, fmt::format(__VA_ARGS__))
+  logger->error("[{}:{}({})] {}", __FILE__, __LINE__, __FUNCTION__,            \
+                fmt::format(__VA_ARGS__))
 
 static std::shared_ptr<spdlog::logger>
 createDebugLogger(std::string name, std::string path,
@@ -51,5 +56,11 @@ static std::shared_ptr<spdlog::logger> netLogger =
 
 static std::shared_ptr<spdlog::logger> businessLogger =
     createDebugLogger("bussiness", "logs/bussiness", spdlog::level::debug);
+
+static void setLoggerLevel(spdlog::level::level_enum level) {
+  dbLogger->set_level(level);
+  netLogger->set_level(level);
+  businessLogger->set_level(level);
+}
 
 }; // namespace wim

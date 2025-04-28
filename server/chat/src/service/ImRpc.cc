@@ -54,13 +54,13 @@ ImRpc::ImRpc() {
   for (int i = 1; i <= imTotal; i++) {
     std::string index = "s" + std::to_string(i);
     auto im = conf["im"][index];
-    auto host = im["host"].as<std::string>();
-    auto port = im["port"].as<int>();
     auto name = im["name"].as<std::string>();
+    auto host = im["host"].as<std::string>();
+    auto rpcPort = im["rpcPort"].as<int>();
     auto rpcCount = im["rpcCount"].as<int>();
-    rpcGroup[name] = ImRpcNode::Ptr(new ImRpcNode(host, port, rpcCount));
+    rpcGroup[name] = ImRpcNode::Ptr(new ImRpcNode(host, rpcPort, rpcCount));
 
-    spdlog::info("ImRpcNode({}) {}:{} {}", index, host, port, name);
+    spdlog::info("ImRpcNode[{}] {}:{} {}", index, host, rpcPort, name);
   }
 }
 ImRpcNode::Ptr ImRpc::getRpc(const std::string &machine) {

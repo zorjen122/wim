@@ -23,7 +23,7 @@ Tlv::Tlv(unsigned int maxLen, unsigned int msgID) {
 
   unsigned int tmp = ntohl(maxLen);
   id = ntohl(msgID);
-  length = tmp + PROTOCOL_HEADER_TOTAL;
+  total = tmp + PROTOCOL_HEADER_TOTAL;
 
   data = new char[tmp];
 }
@@ -32,8 +32,8 @@ Tlv::Tlv(unsigned int msgID, unsigned int maxLength, char *msg) {
 
   id = msgID;
 
-  length = maxLength + PROTOCOL_HEADER_TOTAL;
-  data = new char[length];
+  total = maxLength + PROTOCOL_HEADER_TOTAL;
+  data = new char[total];
 
   unsigned int tmpID = htonl(id);
   unsigned int tmpLen = htonl(maxLength);
@@ -43,10 +43,10 @@ Tlv::Tlv(unsigned int msgID, unsigned int maxLength, char *msg) {
   memcpy(data + PROTOCOL_ID_LEN + PROTOCOL_DATA_SIZE_LEN, msg, maxLength);
 }
 
-unsigned int Tlv::getDataSize() { return length - PROTOCOL_HEADER_TOTAL; }
-unsigned int Tlv::getTotal() { return length; }
+unsigned int Tlv::getDataSize() { return total - PROTOCOL_HEADER_TOTAL; }
+unsigned int Tlv::getTotal() { return total; }
 
-std::string Tlv::getData() { return std::string(data, length); }
+std::string Tlv::getData() { return std::string(data, total); }
 
 Tlv::~Tlv() {
   if (data) {
@@ -90,9 +90,9 @@ void ChatSession::Start() {
               expectedBodyLen, currentMsgID);
 
           // 验证长度有效性
-          if (protocolData->length > PROTOCOL_RECV_MSS) {
+          if (protocolData->getTotal() > PROTOCOL_RECV_MSS) {
             LOG_WARN(netLogger, "invalid data length is {} > PROTOCOL_RECV_MSS",
-                     protocolData->length);
+                     protocolData->getTotal());
             recvStreamBuffer.consume(PROTOCOL_HEADER_TOTAL);
             parseState = WAIT_HEADER;
             return;
@@ -104,6 +104,7 @@ void ChatSession::Start() {
     break;
   }
   case WAIT_BODY: {
+    // streambuffer将自动分段
     boost::asio::async_read(
         socket, recvStreamBuffer,
         boost::asio::transfer_exactly(protocolData->getDataSize()),
@@ -177,7 +178,7 @@ void ChatSession::Send(char *msgData, unsigned int maxSize,
   // 写入操作会发送完整的包数据
   boost::asio::async_write(
       socket,
-      boost::asio::buffer(responsePackage->data, responsePackage->length),
+      boost::asio::buffer(responsePackage->data, responsePackage->total),
       std::bind(&ChatSession::HandleWrite, this, std::placeholders::_1,
                 shared_from_this()));
 }
@@ -197,13 +198,16 @@ void ChatSession::HandleWrite(const net::error_code &ec,
     std::lock_guard<std::mutex> lock(sendMutex);
     if (ec)
       return HandleError(ec);
+    LOG_DEBUG(netLogger, "发送成功,sessionID: {}, 服务ID: {}, 总长: {}", id,
+              protocolData->id, protocolData->getTotal());
 
     sendQueue.pop();
 
     if (!sendQueue.empty()) {
-      auto &package = sendQueue.front();
+      auto &responsePackage = sendQueue.front();
       boost::asio::async_write(
-          socket, boost::asio::buffer(package->data, package->length),
+          socket,
+          boost::asio::buffer(responsePackage->data, responsePackage->total),
           std::bind(&ChatSession::HandleWrite, this, std::placeholders::_1,
                     sharedSelf));
     }

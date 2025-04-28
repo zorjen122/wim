@@ -1,3 +1,29 @@
 syntax = "proto3";
 
 package message;
+
+message Ping { int64 uid = 1; }
+
+message Pong { int64 uid = 1; }
+
+message NotifyAddFriend {
+  int64 fromUid = 1;
+  int64 toUid = 2;
+  string requestMessage = 3;
+}
+
+message NotifyAddFriendResponse { int64 toUid = 2; }
+
+message ReplyAddFriendSender {
+  int64 fromUid = 1;
+  int64 toUid = 2;
+  bool accept = 3;
+  string replyMessage = 4;
+}
+message ReplyAddFriendSenderResponse { int64 fromUid = 1; }
+
+message ReplyAddFriendRecvier {
+  int64 toUid = 2;
+  bool accept = 3;
+  string replyMessage = 4;
+}

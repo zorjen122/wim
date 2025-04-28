@@ -1,44 +1,21 @@
 #pragma once
-#include "net.h"
+#include "chatSession.h"
+// #include "net.h"
+#include "DbGlobal.h"
 #include <boost/asio/io_context.hpp>
+#include <boost/asio/steady_timer.hpp>
 #include <boost/beast/core/flat_buffer.hpp>
 #include <boost/beast/core/tcp_stream.hpp>
 #include <boost/beast/http.hpp>
-#include <json/json.h>
+#include <condition_variable>
+#include <jsoncpp/json/json.h>
+#include <memory>
+#include <queue>
 #include <string>
+#include <thread>
 
-namespace IM {
+namespace wim {
 
-struct User {
-  using ptr = std::shared_ptr<User>;
-  User(long uid, const std::string &username, const std::string &password,
-       const std::string &email)
-      : uid(uid), username(username), password(password), email(email) {}
-  long uid;
-  std::string username;
-  std::string password;
-  std::string email;
-};
-struct UserInfo {
-  using Ptr = std::shared_ptr<UserInfo>;
-
-  UserInfo(size_t uid, std::string name, short age, std::string sex,
-           std::string headImageURL)
-      : uid(std::move(uid)), name(std::move(name)), age(std::move(age)),
-        sex(std::move(sex)), headImageURL(std::move(headImageURL)) {}
-
-  size_t uid;
-  std::string name;
-  short age;
-  std::string sex;
-  std::string headImageURL;
-};
-struct Endpoint {
-  Endpoint(const std::string &ip, const std::string &port)
-      : ip(ip), port(port) {}
-  std::string ip;
-  std::string port;
-};
 Json::Value __parseJson(const std::string &source);
 
 struct Gate {
@@ -53,7 +30,7 @@ struct Gate {
   bool signOut();
   bool fogetPassword(const std::string &username);
 
-  bool initUserInfo(UserInfo::Ptr userInfo);
+  bool initUserInfo(db::UserInfo::Ptr userInfo);
 
   std::string __parseResponse();
   void __clearStatusMessage();
@@ -63,30 +40,57 @@ struct Gate {
   beast::flat_buffer buffer;
   http::request<http::string_body> request;
   http::response<http::dynamic_body> response;
-  std::map<std::string, User::ptr> users;
+  std::map<std::string, db::User::Ptr> users;
   tcp::resolver::results_type endpoint;
 
   bool onConnected;
 };
 
-struct Chat {
-  Chat(net::io_context &iocontext, Endpoint endpoint, User::ptr user,
-       UserInfo::Ptr userInfo);
+struct Message {
+  enum Type { TEXT, FILE, IMAGE };
+  Type type;
+  long id;
+  long fromUid;
+  long toUid;
+  std::string source;
+};
+#include "Const.h"
+struct Chat : public Singleton<Chat> {
 
+  using Ptr = std::shared_ptr<Chat>;
+  Chat();
+  ~Chat() { LOG_INFO(wim::businessLogger, "Chat::~Chat()"); }
+
+  void setSession(ChatSession::Ptr session) { chat = session; }
+  void setUser(db::User::Ptr user) { this->user = user; }
   bool login(bool isFirstLogin = true);
   long searchUser(const std::string &username);
-  bool addFriend(long uid, const std::string &requestMessage);
+  bool notifyAddFriend(long uid, const std::string &requestMessage);
+  bool replyAddFriend(long uid, bool accept, const std::string &replyMessage);
+  bool ping(int count = 0);
+  void arrhythmiaHandle(long uid);
 
   void sendMessage(long uid, const std::string &message);
+  void onReWrite(long id, const std::string &message, long serviceId,
+                 int count = 0);
 
-  void run();
+  void handleRun(Tlv::Ptr protocolData);
 
-  User::ptr user;
-  net::io_context &context;
-  Endpoint endpoint;
-  std::shared_ptr<tcp::socket> chat;
-  UserInfo::Ptr userInfo;
-  char buffer[4096] = {0};
+  void pingHandle(const Json::Value &response);
+
+  db::User::Ptr user{};
+  db::UserInfo::Ptr userInfo{};
+
+  std::queue<Tlv> requestQueue{};
+  ChatSession::Ptr chat{};
+  std::map<int, std::shared_ptr<net::steady_timer>> seqCacheExpireMap{};
+  std::shared_ptr<net::steady_timer> messageReadTimer{};
+  std::vector<Message> messageQueue{};
+
+  std::mutex comsumeMessageMutex{};
+
+  // info
+  std::vector<db::FriendApply::Ptr> friendApplyList{};
 };
 
 struct Client {
@@ -98,4 +102,4 @@ struct Client {
   std::shared_ptr<Gate> gate;
   std::shared_ptr<Chat> chat;
 };
-}; // namespace IM
+}; // namespace wim

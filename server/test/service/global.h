@@ -13,3 +13,12 @@
 #define __GateForgetPasswordPath__ "/post-forget-password"
 
 #define __GateArrhythmiaPath__ "/post-arrhythmia"
+
+#include <string>
+struct Endpoint {
+  Endpoint() {}
+  Endpoint(const std::string &ip, const std::string &port)
+      : ip(ip), port(port) {}
+  std::string ip;
+  std::string port;
+};

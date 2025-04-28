@@ -4,11 +4,9 @@
 #include <unordered_map>
 #include <yaml-cpp/yaml.h>
 
-namespace Configer {
-
-extern std::unordered_map<std::string, YAML::Node> configMap;
-extern bool loadConfig(const std::string &configFile);
-extern YAML::Node getConfig(const std::string &configName);
-extern bool hasConfig(const std::string &configName);
-
+class Configer {
+public:
+  static std::unordered_map<std::string, YAML::Node> configMap;
+  static bool loadConfig(const std::string &configFile);
+  static YAML::Node getNode(const std::string &filed);
 }; // namespace Configer

@@ -24,6 +24,8 @@ bool OnlineUser::MapUser(db::UserInfo::Ptr userInfo, ChatSession::Ptr session) {
   YAML::Node config = Configer::getNode("server");
   std::string selfMachineId = config["self"]["name"].as<std::string>();
 
+  std::lock_guard<std::mutex> lock(sessionMutex);
+
   bool status =
       db::RedisDao::GetInstance()->setOnlineUserInfo(userInfo, selfMachineId);
   if (status == false) {
@@ -32,16 +34,14 @@ bool OnlineUser::MapUser(db::UserInfo::Ptr userInfo, ChatSession::Ptr session) {
     return false;
   }
 
-  std::lock_guard<std::mutex> lock(sessionMutex);
   sessionMap[userInfo->uid] = session;
   return true;
 }
 
 void OnlineUser::RemoveUser(long uid) {
-  // redis原子操作
+  std::lock_guard<std::mutex> lock(sessionMutex);
   db::RedisDao::GetInstance()->delOnlineUserInfo(uid);
 
-  std::lock_guard<std::mutex> lock(sessionMutex);
   sessionMap.erase(uid);
 }
 

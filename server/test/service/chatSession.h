@@ -1,4 +1,6 @@
 #pragma once
+#include "Logger.h"
+#include "global.h"
 #include <boost/asio.hpp>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/streambuf.hpp>
@@ -9,10 +11,7 @@
 #include <cstddef>
 #include <memory>
 #include <mutex>
-#include <queue>
 #include <unistd.h>
-
-#include "Const.h"
 
 namespace beast = boost::beast;   // from <boost/beast.hpp>
 namespace http = beast::http;     // from <boost/beast/http.hpp>
@@ -24,16 +23,9 @@ using boost::system::error_code;
 
 namespace wim {
 
-class NetworkMessage;
-
-class ChatSession;
-
-class Service;
-
 class Tlv {
-  friend class NetworkMessage;
+  friend class Chat;
   friend class ChatSession;
-  friend class Service;
 
 public:
   using Ptr = std::shared_ptr<Tlv>;
@@ -42,18 +34,18 @@ public:
   Tlv(unsigned int msgID, unsigned int maxLength, char *msg);
   ~Tlv();
 
-  std::string getData();
+  std::string getDataString();
+  char *getData();
   unsigned int getTotal();
   unsigned int getDataSize();
 
 private:
   unsigned int id;
-  unsigned int total;
+  unsigned int length;
   char *data;
 };
 
-class ChatServer;
-
+class Chat;
 class ChatSession : public std::enable_shared_from_this<ChatSession> {
 private:
   friend class TestChatSession;
@@ -62,59 +54,34 @@ public:
   using Protocol = Tlv;
   using Ptr = std::shared_ptr<ChatSession>;
 
-  ChatSession(boost::asio::io_context &ioContext, ChatServer *server,
-              size_t id);
+  ChatSession(net::io_context &iocontext, Endpoint endpoint);
   ~ChatSession();
-
-  tcp::socket &GetSocket();
-  size_t GetSessionID();
-  net::io_context &GetIoc();
 
   void Start();
   void Send(char *msgData, unsigned int msgLength, unsigned int msgID);
   void Send(std::string msgData, unsigned int msgID);
   void Close();
   void ClearSession();
-  Ptr GetSharedSelf();
+  Ptr GetSharedSelf() { return shared_from_this(); }
+  net::io_context &getIoContext() { return iocontext; }
 
-private:
   enum ParseState { WAIT_HEADER, WAIT_BODY };
 
-  void HandleWrite(const net::error_code &ec, ChatSession::Ptr sharedSelf);
   void HandleError(net::error_code ec);
 
-private:
-  size_t id;
-  tcp::socket socket;
+  std::shared_ptr<tcp::socket> chat;
 
-  char recvBuffer[PROTOCOL_DATA_MTU];
   net::streambuf recvStreamBuffer;
 
-  ChatServer *chatServer;
   bool closeEnable;
 
   ParseState parseState;
 
-  std::queue<Tlv::Ptr> sendQueue;
+  Tlv::Ptr sendProtocolData;
   std::mutex sendMutex;
 
-  Tlv::Ptr protocolData;
-  net::io_context &ioContext;
+  Tlv::Ptr recvProtocolData;
+  net::io_context &iocontext;
 };
 
-class NetworkMessage {
-  friend class ChatSession;
-  friend class Service;
-
-public:
-  using Ptr = std::shared_ptr<NetworkMessage>;
-
-  NetworkMessage(ChatSession::Ptr, Tlv::Ptr);
-  std::string getData();
-
-private:
-  ChatSession::Ptr contextSession;
-  Tlv::Ptr protocolData;
-};
-
-}; // namespace wim
+} // namespace wim
