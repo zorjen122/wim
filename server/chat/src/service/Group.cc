@@ -1,7 +1,6 @@
 #include "Group.h"
 
 #include "OnlineUser.h"
-#include "Service.h"
 #include <spdlog/spdlog.h>
 namespace wim {
 void GroupCreate(ChatSession::Ptr session, unsigned int msgID,
@@ -139,33 +138,6 @@ void GroupTextSend(ChatSession::Ptr session, unsigned int msgID,
 
   auto &numbers = group.numbers;
   for (auto to : numbers) {
-
-    if (to == fromID)
-      continue;
-
-    bool isOnline = OnlineUser::GetInstance()->isOnline(to);
-    int seq = static_cast<int>(util::seqGenerator.load());
-    if (isOnline) {
-      rsp["seq"] = seq;
-      rsp["status"] = "Unread-Push";
-      rsp["error"] = ErrorCodes::Success;
-
-      auto toSession = OnlineUser::GetInstance()->GetUserSession(to);
-      util::sChannel[toSession] = session;
-
-      PushText(toSession, util::seqGenerator, fromID, to,
-               request.toStyledString(), ID_GROUP_TEXT_SEND_RSP);
-    } else {
-      rsp["seq"] = static_cast<int>(util::seqGenerator.load());
-      rsp["status"] = "Unread-Pull";
-      rsp["error"] = ErrorCodes::Success;
-
-      PullText(util::seqGenerator, fromID, to, request.toStyledString());
-    }
-
-    OnRewriteTimer(session, seq, rsp.toStyledString(), ID_GROUP_TEXT_SEND_RSP,
-                   fromID);
-    ++util::seqGenerator;
   }
 }
 }; // namespace wim

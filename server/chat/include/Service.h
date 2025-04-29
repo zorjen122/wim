@@ -17,8 +17,7 @@ class Service : public Singleton<Service> {
 
 public:
   using HandleType =
-      std::function<void(ChatSession::Ptr, unsigned int, Json::Value)>;
-  using PackageType = Json::Value;
+      std::function<void(ChatSession::Ptr, unsigned int, const Json::Value &)>;
 
   ~Service();
   void PushService(std::shared_ptr<NetworkMessage> package);
@@ -38,7 +37,6 @@ private:
 };
 
 namespace util {
-static std::atomic<size_t> seqGenerator(1);
 static std::unordered_map<
     size_t, std::unordered_map<size_t, std::shared_ptr<net::steady_timer>>>
     retansfTimerMap;
@@ -61,20 +59,32 @@ static void clearRetransfTimer(size_t seq, size_t member) {
 
 } // namespace util
 
+// 已成功
+
+void OnLogin(ChatSession::Ptr session, unsigned int msgID,
+             const Json::Value &request);
+
+// 待测试
+
+void pullFriendApplyList(ChatSession::Ptr session, unsigned int msgID,
+                         const Json::Value &request);
+void pullFriendList(ChatSession::Ptr session, unsigned int msgID,
+                    const Json::Value &request);
+void pullMessageList(ChatSession::Ptr session, unsigned int msgID,
+                     const Json::Value &request);
+
 void ClearChannel(size_t uid, ChatSession::Ptr session);
 
 void PingHandle(ChatSession::Ptr session, unsigned int msgID,
-                const Service::PackageType &msgData);
+                const Json::Value &request);
 
-void OnLogin(ChatSession::Ptr session, unsigned int msgID,
-             const Service::PackageType &msgData);
-
-void ReLogin(int uid, ChatSession::Ptr oldSession, ChatSession::Ptr newSession);
+void ReLogin(long uid, ChatSession::Ptr oldSession,
+             ChatSession::Ptr newSession);
 
 void UserQuit(ChatSession::Ptr session, unsigned int msgID,
-              const Service::PackageType &msgData);
+              const Json::Value &request);
 
-void Pong(int uid, ChatSession::Ptr session);
+void Pong(long uid, ChatSession::Ptr session);
 
 int PullText(size_t seq, int from, int to, const std::string &msg);
 
@@ -89,11 +99,11 @@ int OnRewriteTimer(ChatSession::Ptr session, size_t seq, const std::string &rsp,
                    unsigned int timewait = 5, unsigned int maxRewrite = 3);
 
 void AckHandle(ChatSession::Ptr session, unsigned int msgID,
-               const Service::PackageType &msgData);
+               const Json::Value &request);
 
 void UserSearch(ChatSession::Ptr session, unsigned int msgID,
-                const Service::PackageType &msgData);
+                const Json::Value &request);
 
 void TextSend(ChatSession::Ptr session, unsigned int msgID,
-              const Service::PackageType &msgData);
+              const Json::Value &request);
 }; // namespace wim

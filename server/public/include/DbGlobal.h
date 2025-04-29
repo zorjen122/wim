@@ -24,7 +24,7 @@ struct User {
 
 struct UserInfo {
   using Ptr = std::shared_ptr<UserInfo>;
-
+  UserInfo() = default;
   UserInfo(size_t uid, std::string name, short age, std::string sex,
            std::string headImageURL)
       : uid(std::move(uid)), name(std::move(name)), age(std::move(age)),
@@ -40,55 +40,56 @@ struct Friend {
   using Ptr = std::shared_ptr<Friend>;
   using FriendGroup = std::shared_ptr<std::vector<Friend::Ptr>>;
   Friend() = default;
-  Friend(size_t uidA, size_t uidB, std::string createDateTime, size_t machineId)
-      : uidA(uidA), uidB(uidB), createDateTime(std::move(createDateTime)),
-        machineId(machineId) {}
+  Friend(size_t uidA, size_t uidB, std::string createTime, size_t sessionId)
+      : uidA(uidA), uidB(uidB), createTime(std::move(createTime)),
+        sessionId(sessionId) {}
 
-  static std::string formatMachineId(size_t id) {
-    switch (id) {
-    case 1:
-      return "hunan";
-    case 2:
-      return "beijing";
-    case 3:
-      return "shanghai";
-    default:
-      return "";
-    }
-  }
   size_t uidA;
   size_t uidB;
-  std::string createDateTime;
+  std::string createTime;
 
-  // 待删除字段，更改为sessionId，消息服务器Id可在哈希中获取，此举是动态的
-  size_t machineId;
+  // 更改为sessionId，消息服务器Id可在哈希中获取，此举是动态的
+  size_t sessionId;
 };
 
 struct FriendApply {
   using Ptr = std::shared_ptr<FriendApply>;
-  using FriendApplyGroup = std::shared_ptr<std::vector<FriendApply::Ptr>>;
+  using FriendApplyGroup = std::shared_ptr<std::vector<Ptr>>;
   FriendApply() = default;
-  FriendApply(size_t fromUid, size_t toUId, short status = 0)
+  FriendApply(size_t fromUid, size_t toUId, short status = 0,
+              const std::string &content = "",
+              const std::string &createTime = "")
       : fromUid(fromUid), toUid(toUId) {}
 
   std::string formatStatus(short status) {
-    return status == 0 ? "wait" : "done";
+    switch (status) {
+    case 0:
+      return "wait";
+    case 1:
+      return "agree";
+    case 2:
+      return "refuse";
+    default:
+      return "unknown";
+    }
   }
   size_t fromUid;
   size_t toUid;
   short status;
 
-  // 新增字段，待定
-  bool accept;
-  std::string replyMessage;
+  // 用于发起申请和回应时附带的消息内容
+  std::string content;
+  std::string createTime;
 };
 
 struct Message {
   using Ptr = std::shared_ptr<Message>;
   using MessageGroup = std::shared_ptr<std::vector<Message::Ptr>>;
-  Message(int messageId, int fromUid, int toUid, std::string sessionKey,
+
+  Message() = default;
+  Message(long messageId, long fromUid, long toUid, std::string sessionKey,
           short type, std::string content, short status,
-          std::string sendDateTime, std::string readDateTime = "")
+          std::string sendDateTime = "", std::string readDateTime = "")
       : messageId(messageId), fromUid(fromUid), toUid(toUid), type(type),
         content(std::move(content)), status(status),
         sendDateTime(std::move(sendDateTime)),
@@ -124,9 +125,9 @@ struct Message {
       return "";
     }
   }
-  int messageId;
-  int fromUid;
-  int toUid;
+  long messageId;
+  long fromUid;
+  long toUid;
   std::string sessionKey;
   short type;
   std::string content;

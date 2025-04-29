@@ -6,7 +6,6 @@
 #include "Mysql.h"
 #include "OnlineUser.h"
 #include "Redis.h"
-#include "Service.h"
 
 #include <jsoncpp/json/json.h>
 #include <jsoncpp/json/reader.h>
@@ -20,8 +19,7 @@ bool OnlineNotifyAddFriend(ChatSession::Ptr user, const Json::Value &request) {
   return true;
 }
 
-int OfflineAddFriend(int seq, int from, int to, const Json::Value &request) {
-  LOG_INFO(businessLogger, " seq-{}, from-{}, to-{}", seq, from, to);
+int OfflineAddFriend(int from, int to, const Json::Value &request) {
   // bool rt = wim::db::MysqlDao::GetInstance()->SaveService(from, to, request);
   bool rt = true; // todo...
   if (rt == false) {
@@ -121,7 +119,7 @@ void NotifyAddFriend(ChatSession::Ptr session, unsigned int msgID,
   }
 }
 
-int OnlineRemoveFriend(int seq, int from, int to, ChatSession::Ptr toSession) {
+int OnlineRemoveFriend(int from, int to, ChatSession::Ptr toSession) {
   if (toSession == nullptr) {
     spdlog::error("[Service::OnlineRemoveFriend] toSession is nullptr");
     return -1;
@@ -133,21 +131,16 @@ int OnlineRemoveFriend(int seq, int from, int to, ChatSession::Ptr toSession) {
 
   if (isRemoved) {
     Json::Value notify{};
-    notify["seq"] = seq;
     notify["from"] = from;
     notify["to"] = to;
     toSession->Send(notify.toStyledString(), ID_REMOVE_FRIEND_REQ);
-    OnRewriteTimer(toSession, seq, notify.toStyledString(),
-                   ID_REMOVE_FRIEND_REQ, to);
   }
 
   spdlog::error("[Service::OnlineRemoveFriend] mysql remove friend failed");
   return -1;
 }
 
-int OfflineRemoveFriend(int seq, int from, int to, const Json::Value &request) {
-  spdlog::info("[Service::OfflineRemoveFriend] seq-{}, from-{}, to-{}", seq,
-               from, to);
+int OfflineRemoveFriend(int from, int to, const Json::Value &request) {
   // int rt = wim::db::MysqlDao::GetInstance()->SaveService(from, to, request);
   bool rt = true; // todo...
   if (rt == false) {
@@ -190,20 +183,16 @@ void RemoveFriend(ChatSession::Ptr session, unsigned int msgID,
   rsp["status"] = "wait";
   if (isOnline) {
     auto toSession = OnlineUser::GetInstance()->GetUserSession(to);
-    int rt = OnlineRemoveFriend(util::seqGenerator, from, to, toSession);
+    int rt = OnlineRemoveFriend(from, to, toSession);
     if (rt == -1) {
       rsp["error"] = -1;
       return;
     }
   } else {
-    int rt = OfflineRemoveFriend(util::seqGenerator, from, to, request);
+    int rt = OfflineRemoveFriend(from, to, request);
     if (rt == -1) {
       rsp["error"] = -1;
     }
   }
-
-  OnRewriteTimer(session, util::seqGenerator, rsp.toStyledString(),
-                 ID_NOTIFY_ADD_FRIEND_RSP, from);
-  ++util::seqGenerator;
 }
 }; // namespace wim

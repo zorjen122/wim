@@ -275,10 +275,10 @@ public:
       std::string username = row[2].get<std::string>();
       std::string password = row[3].get<std::string>();
       std::string email = row[4].get<std::string>();
-      std::string createDateTime = row[5].get<std::string>();
+      std::string createTime = row[5].get<std::string>();
       return std::make_shared<User>(std::move(id), std::move(uid),
                                     std::move(username), std::move(password),
-                                    std::move(email), createDateTime);
+                                    std::move(email), createTime);
     } catch (mysqlx::Error &e) {
       LOG_WARN(dbLogger, "Error: {}", e.what());
       return nullptr;
@@ -364,9 +364,9 @@ public:
       for (const auto &row : result.fetchAll()) {
         size_t uidA = row[0].get<size_t>();
         size_t uidB = row[1].get<size_t>();
-        std::string createDateTime = row[2].get<std::string>();
-        size_t machineId = row[3].get<size_t>();
-        Friend::Ptr friendA(new Friend(uidA, uidB, createDateTime, machineId));
+        size_t sessionId = row[2].get<size_t>();
+        std::string createTime = row[3].get<std::string>();
+        Friend::Ptr friendA(new Friend(uidA, uidB, createTime, sessionId));
         friendGroup->push_back(friendA);
       }
 
@@ -442,13 +442,13 @@ public:
 
       std::string insertUser = R"(INSERT INTO users VALUES (NULL,?,?,?,?,?))";
 
-      auto createDateTime = getCurrentDateTime();
+      auto createTime = getCurrentDateTime();
       result = con->session->sql(insertUser)
                    .bind(user->uid)
                    .bind(user->username)
                    .bind(user->password)
                    .bind(user->email)
-                   .bind(createDateTime)
+                   .bind(createTime)
                    .execute();
       return 0;
     } catch (mysqlx::Error &e) {
@@ -520,11 +520,13 @@ public:
         return 1;
       }
       static const short status = 0;
-      std::string f = R"(INSERT INTO friendApplys VALUES (?, ?, ?))";
+      std::string f = R"(INSERT INTO friendApplys VALUES (?, ?, ?, ?, ?)";
       result = con->session->sql(f)
                    .bind(friendData->fromUid)
                    .bind(friendData->toUid)
                    .bind(status)
+                   .bind(friendData->content)
+                   .bind(friendData->createTime)
                    .execute();
       return 0;
     } catch (mysqlx::Error &e) {
@@ -581,8 +583,8 @@ public:
       auto result = con->session->sql(f)
                         .bind(friendData->uidA)
                         .bind(friendData->uidB)
+                        .bind(friendData->sessionId)
                         .bind(dateTime)
-                        .bind(friendData->machineId)
                         .execute();
       return 0;
     } catch (mysqlx::Error &e) {
@@ -712,7 +714,7 @@ public:
       return -1;
     }
   }
-  int updateMessage(int messageId, short status) {
+  int updateMessage(long messageId, short status) {
     auto con = mysqlPool->GetConnection();
 
     if (con == nullptr) {
@@ -742,7 +744,7 @@ public:
       return -1;
     }
   }
-  FriendApply::FriendApplyGroup getFriendApplyList(int from) {
+  FriendApply::FriendApplyGroup getFriendApplyList(long from) {
     auto con = mysqlPool->GetConnection();
 
     if (con == nullptr) {
@@ -771,7 +773,10 @@ public:
         size_t fromUid = row[0].get<size_t>();
         size_t toUid = row[1].get<size_t>();
         short status = row[2].get<int>();
-        friendApply.reset(new FriendApply(fromUid, toUid, status));
+        std::string content = row[3].get<std::string>();
+        std::string createTime = row[4].get<std::string>();
+        friendApply.reset(
+            new FriendApply(fromUid, toUid, status, content, createTime));
         friendApplyGroup->push_back(friendApply);
       }
       return friendApplyGroup;
@@ -781,7 +786,7 @@ public:
     }
   }
 
-  Message::MessageGroup getUserMessage(long uid, int startMessageId,
+  Message::MessageGroup getUserMessage(long from, long to, int startMessageId,
                                        int pullCount) {
     if (startMessageId <= 0)
       return nullptr;
@@ -798,9 +803,10 @@ public:
 
     try {
       std::string f =
-          R"(SELECT * FROM messages WHERE receiverId = ? AND messageId >= ? ORDER BY messageId DESC LIMIT ?)";
+          R"(SELECT * FROM messages WHERE senderId = ? AND receiverId = ? AND messageId >= ? ORDER BY messageId DESC LIMIT ?)";
       auto result = con->session->sql(f)
-                        .bind(uid)
+                        .bind(from)
+                        .bind(to)
                         .bind(startMessageId)
                         .bind(pullCount)
                         .execute();
@@ -865,7 +871,7 @@ public:
       return -1;
     }
   }
-  int deleteFriendApply(int fromUid, int toUid) {
+  int deleteFriendApply(long fromUid, long toUid) {
     auto con = mysqlPool->GetConnection();
 
     if (con == nullptr) {

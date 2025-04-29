@@ -4,6 +4,7 @@
 #include "Configer.h"
 #include "Const.h"
 
+#include "DbGlobal.h"
 #include "KafkaOperator.h"
 #include "Logger.h"
 #include "OnlineUser.h"
@@ -22,6 +23,7 @@
 #include <cstdio>
 #include <fcntl.h>
 #include <jsoncpp/json/json.h>
+#include <jsoncpp/json/value.h>
 #include <memory>
 #include <spdlog/spdlog.h>
 #include <string>
@@ -50,9 +52,21 @@ void Service::Init() {
                 std::placeholders::_2, std::placeholders::_3);
 
   // 待测试
-
   serviceGroup[ID_PING_REQ] =
       std::bind(&PingHandle, std::placeholders::_1, std::placeholders::_2,
+                std::placeholders::_3);
+
+  serviceGroup[ID_PULL_FRIEND_LIST_REQ] =
+      std::bind(&pullFriendList, std::placeholders::_1, std::placeholders::_2,
+                std::placeholders::_3);
+
+  serviceGroup[ID_PULL_FRIEND_APPLY_LIST_REQ] =
+      std::bind(&pullFriendApplyList, std::placeholders::_1,
+                std::placeholders::_2, std::placeholders::_3);
+
+  serviceGroup[ID_PULL_MESSAGE_LIST_REQ] =
+      std::bind(&pullMessageList, std::placeholders::_1, std::placeholders::_2,
+
                 std::placeholders::_3);
   serviceGroup[ID_TEXT_SEND_REQ] =
       std::bind(&TextSend, std::placeholders::_1, std::placeholders::_2,
@@ -178,149 +192,70 @@ void ClearChannel(size_t uid, ChatSession::Ptr session) {
             "[Service::ClearChannel] clear channel success, uid-{}", uid);
 }
 
-void Pong(int uid, ChatSession::Ptr session);
+void Pong(long uid, ChatSession::Ptr session);
 
-// 待验证
-static std::map<int, std::shared_ptr<net::steady_timer>> waitAckTimerMap;
+static std::map<long, std::shared_ptr<net::steady_timer>> waitAckTimerMap{};
 
-void onReWrite(int seq, ChatSession::Ptr session, const std::string &package,
+// bug：ChatSession传输层被动关闭时，该定时器无法清理，心跳功能归属地待定
+void onReWrite(long seq, ChatSession::Ptr session, const std::string &package,
                int rsp, int callcount = 0) {
 
   session->Send(package, rsp);
+  // 暂行，此负载到session上下文
   auto waitAckTimer = std::make_shared<net::steady_timer>(session->GetIoc());
   waitAckTimerMap[seq] = waitAckTimer;
-  waitAckTimer->expires_after(std::chrono::seconds(10));
+  waitAckTimer->expires_after(std::chrono::seconds(5));
 
-  waitAckTimer->async_wait(
-      [=, &waitAckTimer](const boost::system::error_code &ec) {
-        if (ec == boost::asio::error::operation_aborted) {
-          LOG_DEBUG(wim::businessLogger, "timer cancel");
-          waitAckTimerMap.erase(seq);
-          return;
-        } else if (ec == boost::asio::error::timed_out) {
-          static const int max_timeout_count = 3;
-          if (callcount > max_timeout_count) {
-            session->Close();
-            return;
-          }
-          waitAckTimerMap.erase(seq);
-          waitAckTimer.reset();
-          onReWrite(seq, session, package, rsp, callcount + 1);
-        }
-      });
-}
-
-// 待废弃
-int OnRewriteTimer(ChatSession::Ptr session, size_t seq, const std::string &rsp,
-                   unsigned int rspID, unsigned int member,
-                   unsigned int timewait, unsigned int maxRewrite) {
-
-  util::retansfTimerMap[seq][member] =
-      std::make_shared<net::steady_timer>(session->GetIoc());
-  util::retansfCountMap[seq][member] = 0;
-  auto &timer = util::retansfTimerMap[seq][member];
-
-  auto lam = std::make_shared<std::function<void()>>();
-  *lam = [=]() {
-    if (timer == nullptr) {
-      spdlog::error("[OnRewriteTimer] timer is nullptr");
+  waitAckTimer->async_wait([seq, session, package, rsp,
+                            callcount](const boost::system::error_code &ec) {
+    if (ec == boost::asio::error::operation_aborted) {
+      LOG_DEBUG(wim::businessLogger, "timer cancel");
+      waitAckTimerMap.erase(seq);
       return;
-    }
-    timer->expires_from_now(std::chrono::seconds(timewait));
-
-    timer->async_wait([=](const net::error_code &ec) {
-      if (ec == net::error::operation_aborted) {
-        LOG_DEBUG(wim::businessLogger,
-                  "[OnRewriteTimer] timer by cancelled | seq {}, member {}",
-                  seq, member);
-
-        switch (rspID) {
-        case ID_PING_REQ:
-        case ID_PING_RSP: {
-          // 暂行：目前因为全局seq分配无锁须顺行处理
-          Pong(member, session);
-          break;
-        }
-        }
-
-        util::retansfTimerMap[seq].erase(member);
-        util::retansfCountMap[seq].erase(member);
-
+    } else {
+      static const int max_timeout_count = 3;
+      if (callcount + 1 >= max_timeout_count) {
+        // 让接入层清理连接
+        session->ClearSession();
+        waitAckTimerMap.erase(seq);
+        LOG_INFO(businessLogger, "repetitive timeout, seq-id [{}]", seq);
         return;
-      } else if (ec.value() == 0) {
-
-        // timer timeout, retransf package
-        if (util::retansfCountMap[seq][member] == maxRewrite) {
-          LOG_DEBUG(wim::businessLogger,
-                    "[OnRewriteTimer] retransf count exceed 3 | seq-id "
-                    "[{}],member [{}]",
-                    seq, member);
-
-          switch (rspID) {
-          case ID_PING_REQ:
-          case ID_PING_RSP: {
-            ClearChannel(member, session);
-            break;
-          }
-          }
-
-          util::retansfTimerMap[seq].erase(member);
-          util::retansfCountMap[seq].erase(member);
-          return;
-        }
-
-        LOG_DEBUG(wim::businessLogger,
-                  "[OnRewriteTimer] timeout, on rewrite package | "
-                  "seq-id [{}], count [{}]",
-                  seq, util::retansfCountMap[seq][member] + 1);
-
-        session->Send(rsp, rspID);
-        util::retansfCountMap[seq][member]++;
-        (*lam)();
-      } else {
-        LOG_DEBUG(wim::businessLogger,
-                  "[OnRewriteTimer] other timer click cased,  | ec: {}",
-                  ec.message());
-
-        util::retansfTimerMap[seq].erase(member);
-        util::retansfCountMap[seq].erase(member);
       }
-    });
-  };
-
-  (*lam)();
-
-  LOG_DEBUG(wim::businessLogger,
-            "[OnRewriteTimer] start rewrite timer, seq-id{}, member-{}", seq,
-            member);
-  return 0;
+      waitAckTimerMap.erase(seq);
+      onReWrite(seq, session, package, rsp, callcount + 1);
+    }
+  });
 }
 
-void Pong(int uid, ChatSession::Ptr session) {
+void Pong(long uid, ChatSession::Ptr session) {
   Json::Value pong;
-  int seq = static_cast<int>(util::seqGenerator.load());
-  pong["seq"] = seq;
-  pong["uid"] = uid;
+  pong["uid"] = Json::Value::Int64(uid);
   pong["error"] = ErrorCodes::Success;
 
   session->Send(pong.toStyledString(), ID_PING_RSP);
-  OnRewriteTimer(session, seq, pong.toStyledString(), ID_PING_RSP, uid);
-  util::seqGenerator++;
 
-  LOG_DEBUG(wim::businessLogger, "[ PONG | seq {}, uid {} ]", seq, uid);
+  // 使用用户Id作为序列号，因心跳仅监视状态
+  onReWrite(uid, session, pong.toStyledString(), ID_PING_RSP);
+
+  LOG_INFO(wim::businessLogger, "Pong, uid: {}", uid);
 }
 
 void PingHandle(ChatSession::Ptr session, unsigned int msgID,
                 const Json::Value &request) {
-  spdlog::info("ping handle");
+  Json::Value rsp;
+  long uid = request["uid"].asInt64();
+
+  if (waitAckTimerMap.find(uid) != waitAckTimerMap.end())
+    waitAckTimerMap[uid]->cancel();
+
+  Pong(uid, session);
 }
 
 int PushText(ChatSession::Ptr toSession, size_t seq, int from, int to,
              const std::string &msg, int msgID) {
 
   toSession->Send(msg, msgID);
-
-  return OnRewriteTimer(toSession, seq, msg, msgID, to);
+  return 0;
 }
 
 bool SaveService(size_t seq, int from, int to, std::string msg) {
@@ -352,7 +287,6 @@ bool SaveServiceDB(size_t seq, int from, int to, const std::string &msg) {
 
 int PullText(size_t seq, int from, int to, const std::string &msg) {
 
-  return SaveService(util::seqGenerator, from, to, msg);
   // return SaveServiceDB(util::seqGenerator, from, to, msg);
 }
 
@@ -435,14 +369,15 @@ void UserSearch(ChatSession::Ptr session, unsigned int msgID,
     std::string rt = response.toStyledString();
     session->Send(rt, ID_SEARCH_USER_RSP);
   });
-  int uid = request["uid"].asInt();
+
+  long uid = request["uid"].asInt64();
   // todo... hasUser(uid) function
   // bool hasUser = wim::db::MysqlDao::GetInstance()->UserSerach(uid);
   // todo... get user [info] from redis or stack/heap
   bool isOnline = OnlineUser::GetInstance()->isOnline(uid);
   if (isOnline) {
     response["error"] = ErrorCodes::Success;
-    response["uid"] = uid;
+    response["uid"] = Json::Value::Int64(uid);
     LOG_DEBUG(wim::businessLogger, "[ServiceSystem::SearchUser user-{} online",
               uid);
   }
@@ -456,11 +391,8 @@ void UserSearch(ChatSession::Ptr session, unsigned int msgID,
   }
 
   response["error"] = ErrorCodes::Success;
-  response["uid"] = uid;
+  response["uid"] = Json::Value::Int64(uid);
   LOG_DEBUG(wim::businessLogger, "[ServiceSystem::SearchUser] users-{}", uid);
-  OnRewriteTimer(session, util::seqGenerator, response.toStyledString(),
-                 ID_SEARCH_USER_RSP, 0);
-  ++util::seqGenerator;
 }
 
 // 待验证
@@ -508,27 +440,26 @@ void UserQuit(ChatSession::Ptr session, unsigned int msgID,
   Json::Value rsp;
   Defer defer([&rsp, session]() {
     std::string rt = rsp.toStyledString();
-    session->Send(rt, ID_USER_QUIT_WAIT_RSP);
+    session->Send(rt, ID_USER_QUIT_RSP);
   });
 
-  auto uid = request["uid"].asInt();
+  auto uid = request["uid"].asInt64();
 
   auto userSession = OnlineUser::GetInstance()->GetUserSession(uid);
-  userSession->ClearSession();
-  OnlineUser::GetInstance()->RemoveUser(uid);
 
-  // bug-maybe: 需要确保完整发送后，再关闭连接，否则会导致客户端收不到消息
-  userSession->Close();
+  // 清理在线资源，网络层资源在对方close关闭时自行清理
+  OnlineUser::GetInstance()->RemoveUser(uid);
+  LOG_INFO(businessLogger, "user quit, uid: {}", uid);
 }
 
-void ReLogin(int uid, ChatSession::Ptr oldSession,
+void ReLogin(long uid, ChatSession::Ptr oldSession,
              ChatSession::Ptr newSession) {
   Json::Value info;
-  info["uid"] = uid;
+  info["uid"] = Json::Value::Int64(uid);
   info["status"] = "close";
 
   // todo...  需要可靠通知机制
-  oldSession->Send(info.toStyledString(), ID_LOGIN_SQUEEZE);
+  oldSession->Send(info.toStyledString(), -1);
   ClearChannel(uid, oldSession);
 }
 
@@ -605,5 +536,84 @@ void OnLogin(ChatSession::Ptr session, unsigned int msgID,
 
   LOG_DEBUG(wim::businessLogger, "user login success!, uid: {}, response: {} ",
             uid, rsp.toStyledString());
+}
+
+void pullFriendApplyList(ChatSession::Ptr session, unsigned int msgID,
+                         const Json::Value &request) {
+  Json::Value rsp;
+  Defer defer([&rsp, session]() {
+    std::string ret = rsp.toStyledString();
+    session->Send(ret, ID_PULL_FRIEND_APPLY_LIST_RSP);
+  });
+
+  long uid = request["uid"].asInt64();
+  db::FriendApply::FriendApplyGroup applyList =
+      db::MysqlDao::GetInstance()->getFriendApplyList(uid);
+  for (auto applyObject : *applyList) {
+    Json::Value root;
+    root["fromUid"] = Json::Value::Int64(applyObject->fromUid);
+    root["toUid"] = Json::Value::Int64(applyObject->toUid);
+    root["status"] = applyObject->status;
+    root["content"] = applyObject->content;
+    root["applyDateTime"] = applyObject->createTime;
+    rsp["applyList"].append(root);
+  }
+  rsp["error"] = ErrorCodes::Success;
+}
+void pullFriendList(ChatSession::Ptr session, unsigned int msgID,
+                    const Json::Value &request) {
+  Json::Value rsp;
+  Defer defer([&rsp, session]() {
+    std::string ret = rsp.toStyledString();
+    session->Send(ret, ID_PULL_FRIEND_LIST_RSP);
+  });
+
+  long uid = request["uid"].asInt64();
+  db::Friend::FriendGroup friendList =
+      db::MysqlDao::GetInstance()->getFriendList(uid);
+
+  for (auto friendObject : *friendList) {
+    long friendUid = friendObject->uidB;
+    db::UserInfo::Ptr friendInfo =
+        db::MysqlDao::GetInstance()->getUserInfo(friendUid);
+    if (friendInfo != nullptr) {
+      Json::Value root;
+      root["uid"] = Json::Value::Int64(friendUid);
+      root["name"] = friendInfo->name;
+      root["age"] = friendInfo->age;
+      root["sex"] = friendInfo->sex;
+      root["headImageURL"] = friendInfo->headImageURL;
+      rsp["friendList"].append(root);
+    }
+  }
+  rsp["error"] = ErrorCodes::Success;
+}
+void pullMessageList(ChatSession::Ptr session, unsigned int msgID,
+                     const Json::Value &request) {
+  Json::Value rsp;
+  Defer defer([&rsp, session]() {
+    std::string ret = rsp.toStyledString();
+    session->Send(ret, ID_PULL_MESSAGE_LIST_RSP);
+  });
+
+  long from = request["fromUid"].asInt64();
+  long to = request["toId"].asInt64();
+  long lastMsgId = request["lasgMsgId"].asInt64();
+  int limit = request["limit"].asInt();
+  auto messageList =
+      db::MysqlDao::GetInstance()->getUserMessage(from, to, lastMsgId, limit);
+  rsp["toId"] = Json::Value::Int64(to);
+  for (auto message : *messageList) {
+    Json::Value tmp;
+    tmp["messageId"] = Json::Value::Int64(message->messageId);
+    tmp["type"] = message->type;
+    tmp["content"] = message->content;
+    tmp["status"] = message->status;
+    tmp["sendDateTime"] = message->sendDateTime;
+    tmp["readDateTime"] = message->readDateTime;
+
+    rsp["messageList"].append(rsp);
+  }
+  rsp["error"] = ErrorCodes::Success;
 }
 }; // namespace wim

@@ -10,10 +10,10 @@ namespace wim {
 
 bool OnlineNotifyAddFriend(ChatSession::Ptr user, const Json::Value &request);
 
-int OfflineAddFriend(int seq, int from, int to, const std::string &msgData);
+int OfflineAddFriend(long from, long to, const std::string &msgData);
 
-int OnlineRemoveFriend(int seq, int from, int to, ChatSession::Ptr toSession);
-int OfflineRemoveFriend(int seq, int from, int to, const std::string &msgData);
+int OnlineRemoveFriend(long from, long to, ChatSession::Ptr toSession);
+int OfflineRemoveFriend(long from, long to, const std::string &msgData);
 
 void SerachUser(ChatSession::Ptr session, unsigned int msgID,
                 const Json::Value &msgData);

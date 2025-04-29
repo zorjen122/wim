@@ -67,97 +67,60 @@ enum ErrorCodes {
 };
 
 enum ServiceID {
-  ID_ONLINE_PULL_REQ = 1001, // 在线拉取
-  ID_ONLINE_PULL_RSP = 1002,
 
-  ID_PING_REQ = 1003, // 心跳
-  ID_PING_RSP = 1004,
+  /* 拉取 */
+  ID_PULL_FRIEND_LIST_REQ = 1001, // 拉取好友列表
+  ID_PULL_FRIEND_LIST_RSP,
 
-  ID_LOGIN_INIT_REQ = 1005, // 登录
-  ID_LOGIN_INIT_RSP = 1006,
+  ID_PULL_FRIEND_APPLY_LIST_REQ, // 拉取好友申请列表
+  ID_PULL_FRIEND_APPLY_LIST_RSP,
 
-  ID_SEARCH_USER_REQ = 1007, // 搜索
-  ID_SEARCH_USER_RSP = 1008,
+  ID_PULL_MESSAGE_LIST_REQ, // 拉取消息列表
+  ID_PULL_MESSAGE_LIST_RSP,
 
-  ID_NOTIFY_ADD_FRIEND_REQ = 1009,
-  ID_NOTIFY_ADD_FRIEND_RSP = 1010,
+  /* 状态 */
+  ID_PING_REQ, // 心跳
+  ID_PING_RSP,
 
-  ID_REPLY_ADD_FRIEND_REQ = 1013,
-  ID_REPLY_ADD_FRIEND_RSP = 1014,
+  ID_LOGIN_INIT_REQ, // 登录
+  ID_LOGIN_INIT_RSP,
 
-  ID_TEXT_SEND_REQ = 1020, // 发送消息
-  ID_TEXT_SEND_RSP = 1021,
+  ID_USER_QUIT_REQ, // 登出
+  ID_USER_QUIT_RSP,
 
-  ID_GROUP_CREATE_REQ = 1023,
-  ID_GROUP_CREATE_RSP = 1024,
+  /* 好友 */
+  ID_SEARCH_USER_REQ, // 查找用户
+  ID_SEARCH_USER_RSP,
 
-  ID_GROUP_JOIN_REQ = 1025,
-  ID_GROUP_JOIN_RSP = 1026,
+  ID_NOTIFY_ADD_FRIEND_REQ, // 发起好友请求
+  ID_NOTIFY_ADD_FRIEND_RSP,
 
-  ID_GROUP_TEXT_SEND_REQ = 1027,
-  ID_GROUP_TEXT_SEND_RSP = 1028,
+  ID_REPLY_ADD_FRIEND_REQ, // 回应好友请求
+  ID_REPLY_ADD_FRIEND_RSP,
 
-  ID_REMOVE_FRIEND_REQ = 1030,
-  ID_REMOVE_FRIEND_RSP = 1031,
+  ID_REMOVE_FRIEND_REQ, // 删除好友
+  ID_REMOVE_FRIEND_RSP,
 
-  ID_USER_QUIT_WAIT_REQ = 1032,
-  ID_USER_QUIT_WAIT_RSP = 1033,
+  /* 消息 */
+  ID_TEXT_SEND_REQ, // 发送文本消息
+  ID_TEXT_SEND_RSP,
 
-  ID_USER_QUIT_GROUP_REQ = 1034,
-  ID_USER_QUIT_GROUP_RSP = 1035,
+  ID_ACK, // 确认消息
 
-  ID_LOGIN_SQUEEZE = 0xff01,
+  /* 群组 */
+  ID_GROUP_CREATE_REQ, // 创建群组
+  ID_GROUP_CREATE_RSP,
 
-  // about service handles of the utility
-  ID_ACK = 0xff33,
+  ID_GROUP_JOIN_REQ, // 加入群组
+  ID_GROUP_JOIN_RSP,
+
+  ID_USER_QUIT_GROUP_REQ, // 退出群组
+  ID_USER_QUIT_GROUP_RSP,
+
+  ID_GROUP_TEXT_SEND_REQ, // 发送群组消息
+  ID_GROUP_TEXT_SEND_RSP,
+
 };
-
-// 建立服务ID到描述的映射
-static std::unordered_map<ServiceID, std::string> __serviceIdMap = {
-    {ID_ONLINE_PULL_REQ, "Online Pull Request"},
-    {ID_ONLINE_PULL_RSP, "Online Pull Response"},
-    {ID_PING_REQ, "Ping Request"},
-    {ID_PING_RSP, "Pong Response"},
-    {ID_LOGIN_INIT_REQ, "Chat Login Init"},
-    {ID_LOGIN_INIT_RSP, "Chat Login Init Response"},
-    {ID_SEARCH_USER_REQ, "Search User Request"},
-    {ID_SEARCH_USER_RSP, "Search User Response"},
-    {ID_NOTIFY_ADD_FRIEND_REQ, "Add Friend Request"},
-    {ID_NOTIFY_ADD_FRIEND_RSP, "Add Friend Response"},
-    {ID_NOTIFY_ADD_FRIEND_REQ, "Notify Add Friend Request"},
-    {ID_REPLY_ADD_FRIEND_REQ, "Auth Friend Request"},
-    {ID_REPLY_ADD_FRIEND_RSP, "Auth Friend Response"},
-
-    // dev..
-    {ID_GROUP_CREATE_REQ, "Group Create Request"},
-    {ID_GROUP_CREATE_RSP, "Group Create Response"},
-    {ID_GROUP_JOIN_REQ, "Group Join Request"},
-    {ID_GROUP_JOIN_RSP, "Group Join Response"},
-    {ID_TEXT_SEND_REQ, "Text Send Request"},
-    {ID_TEXT_SEND_RSP, "Text Send Response"},
-    {ID_GROUP_TEXT_SEND_REQ, "Group Text Send Request"},
-    {ID_GROUP_TEXT_SEND_RSP, "Group Text Send Response"},
-
-    {ID_REMOVE_FRIEND_REQ, "Remove Friend Request"},
-    {ID_REMOVE_FRIEND_RSP, "Remove Friend Response"},
-    {ID_USER_QUIT_WAIT_REQ, "User Quit Wait Request"},
-    {ID_USER_QUIT_WAIT_RSP, "User Quit Wait Response"},
-    {ID_USER_QUIT_GROUP_REQ, "User Quit Group Request"},
-    {ID_USER_QUIT_GROUP_RSP, "User Quit Group Response"},
-    {ID_LOGIN_SQUEEZE, "Login Squeeze"},
-};
-
-// 查询服务ID是否存在
-inline bool __IsSupportServiceID(ServiceID id) {
-  return __serviceIdMap.find(id) != __serviceIdMap.end();
-}
-
-inline std::string __MapSerivceIdToString(ServiceID id) {
-  if (__IsSupportServiceID(id)) {
-    return __serviceIdMap[id];
-  }
-  return "Unknown Service ID";
-}
 
 // redis key 前缀
 #define PREFIX_REDIS_UIP "uip_"

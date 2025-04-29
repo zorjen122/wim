@@ -53,6 +53,7 @@ Tlv::~Tlv() {
     delete[] data;
     data = nullptr;
   }
+  LOG_INFO(netLogger, "TLV::~TLV");
 }
 
 NetworkMessage::NetworkMessage(ChatSession::Ptr contextSession,
@@ -68,7 +69,7 @@ ChatSession::ChatSession(boost::asio::io_context &ioContext, ChatServer *server,
   spdlog::info("ChatSession construct, sessionID is {}", sessionID);
 }
 
-ChatSession::~ChatSession() { spdlog::info("~ChatSession destruct"); }
+ChatSession::~ChatSession() { spdlog::info("ChatSession::~ChatSession"); }
 
 void ChatSession::Start() {
   switch (parseState) {
