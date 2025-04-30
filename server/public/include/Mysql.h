@@ -519,15 +519,44 @@ public:
         LOG_DEBUG(dbLogger, "result fetchOne is exist");
         return 1;
       }
-      static const short status = 0;
       std::string f = R"(INSERT INTO friendApplys VALUES (?, ?, ?, ?, ?)";
       result = con->session->sql(f)
                    .bind(friendData->fromUid)
                    .bind(friendData->toUid)
-                   .bind(status)
                    .bind(friendData->content)
+                   .bind(friendData->status)
                    .bind(friendData->createTime)
                    .execute();
+      return 0;
+    } catch (mysqlx::Error &e) {
+      LOG_INFO(dbLogger, "Error: {}", e.what());
+      return -1;
+    }
+  }
+  int updateFriendApplyStatus(FriendApply::Ptr friendData) {
+    auto con = mysqlPool->GetConnection();
+    if (con == nullptr) {
+      // log...
+      LOG_DEBUG(dbLogger, "pool number is empty!");
+      return 1;
+    }
+
+    Defer defer(
+        [&con, this]() { mysqlPool->ReturnConnection(std::move(con)); });
+
+    try {
+
+      // update: status, content, createTime
+      std::string f =
+          R"(UPDATE friendApplys SET status = ?, content = ?, createTime = ? WHERE fromUid = ? AND toUid = ?)";
+      auto result = con->session->sql(f)
+                        .bind(friendData->status)
+                        .bind(friendData->content)
+                        .bind(friendData->createTime)
+                        .bind(friendData->fromUid)
+                        .bind(friendData->toUid)
+                        .execute();
+
       return 0;
     } catch (mysqlx::Error &e) {
       LOG_INFO(dbLogger, "Error: {}", e.what());

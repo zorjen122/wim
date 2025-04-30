@@ -48,22 +48,23 @@ private:
 
 enum ErrorCodes {
   Success = 0,
-  JsonParser = 1001,
-  RPCFailed = 1002,
-  VarifyExpired = 1003,
-  VarifyCodeErr = 1004,
-  UserExist = 1005,
-  PasswdErr = 1006,
-  EmailNotMatch = 1007,
-  PasswdUpFailed = 1008,
-  PasswdInvalid = 1009,
-  TokenInvalid = 1010,
-  UidInvalid = 1011,
-  UserNotOnline = 1012,
-  UserNotFriend = 1013,
-  UserOnline = 1014,
-  UserOffline = 1015,
-  NotFound
+  JsonParser = 1000,
+  RPCFailed,
+  VarifyExpired,
+  VarifyCodeErr,
+  UserExist,
+  PasswdErr,
+  EmailNotMatch,
+  PasswdUpFailed,
+  PasswdInvalid,
+  TokenInvalid,
+  UidInvalid,
+  UserNotOnline,
+  UserNotFriend,
+  UserOnline,
+  UserOffline,
+  NotFound,
+  RepeatMessage
 };
 
 enum ServiceID {
@@ -122,6 +123,8 @@ enum ServiceID {
 
 };
 
+inline int __getServiceResponseId(ServiceID id) { return id + 1; }
+
 // redis key 前缀
 #define PREFIX_REDIS_UIP "uip_"
 #define PREFIX_REDIS_USER_TOKEN "utoken_"
@@ -130,7 +133,7 @@ enum ServiceID {
 #define PREFIX_REDIS_USER_ACTIVE_COUNT "logincount"
 #define PREFIX_REDIS_NAME_INFO "nameinfo_"
 
-static std::string getCurrentDateTime() {
+inline std::string getCurrentDateTime() {
   auto now = std::chrono::system_clock::now();
   std::time_t now_c = std::chrono::system_clock::to_time_t(now);
 

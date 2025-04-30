@@ -53,7 +53,6 @@ Tlv::~Tlv() {
     delete[] data;
     data = nullptr;
   }
-  LOG_INFO(netLogger, "TLV::~TLV");
 }
 
 NetworkMessage::NetworkMessage(ChatSession::Ptr contextSession,
@@ -69,7 +68,9 @@ ChatSession::ChatSession(boost::asio::io_context &ioContext, ChatServer *server,
   spdlog::info("ChatSession construct, sessionID is {}", sessionID);
 }
 
-ChatSession::~ChatSession() { spdlog::info("ChatSession::~ChatSession"); }
+ChatSession::~ChatSession() {
+  spdlog::info("ChatSession::~ChatSession, sessionID: {}", id);
+}
 
 void ChatSession::Start() {
   switch (parseState) {
@@ -144,14 +145,14 @@ void ChatSession::HandleError(net::error_code ec) {
     connection_reset：表示对方异常断开连接
   */
   if (ec == net::error::eof) {
-    LOG_DEBUG(netLogger, "end of file, socket close | oper-sessionID: {}", id);
+    LOG_INFO(netLogger, "end of file, socket close | oper-sessionID: {}", id);
 
   } else if (ec == net::error::connection_reset) {
-    LOG_DEBUG(netLogger, "connection reset, socket close | oper-sessionID: {}",
-              id);
+    LOG_INFO(netLogger, "connection reset, socket close | oper-sessionID: {}",
+             id);
   } else {
-    LOG_DEBUG(netLogger, "handle error, error is {} | oper-sessionID: {}",
-              ec.message(), id);
+    LOG_INFO(netLogger, "handle error, error is {} | oper-sessionID: {}",
+             ec.message(), id);
   }
 
   Close();
@@ -225,5 +226,10 @@ net::io_context &ChatSession::GetIoc() { return ioContext; }
 
 size_t ChatSession::GetSessionID() { return id; }
 
-void ChatSession::ClearSession() { chatServer->ClearSession(id); }
+void ChatSession::ClearSession() {
+  if (IsConnected())
+    chatServer->ClearSession(id);
+}
+
+bool ChatSession::IsConnected() { return !closeEnable; }
 }; // namespace wim

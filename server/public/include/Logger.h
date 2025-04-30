@@ -28,7 +28,7 @@ namespace wim {
   logger->error("[{}:{}({})] {}", __FILE__, __LINE__, __FUNCTION__,            \
                 fmt::format(__VA_ARGS__))
 
-static std::shared_ptr<spdlog::logger>
+inline std::shared_ptr<spdlog::logger>
 createDebugLogger(std::string name, std::string path,
                   spdlog::level::level_enum level = spdlog::level::debug) {
   // 控制台输出（带颜色）
@@ -48,19 +48,31 @@ createDebugLogger(std::string name, std::string path,
   return logger;
 }
 
-static std::shared_ptr<spdlog::logger> dbLogger =
+inline std::shared_ptr<spdlog::logger> dbLogger =
     createDebugLogger("db", "logs/db", spdlog::level::debug);
 
-static std::shared_ptr<spdlog::logger> netLogger =
+inline std::shared_ptr<spdlog::logger> netLogger =
     createDebugLogger("net", "logs/net", spdlog::level::debug);
 
-static std::shared_ptr<spdlog::logger> businessLogger =
+inline std::shared_ptr<spdlog::logger> businessLogger =
     createDebugLogger("bussiness", "logs/bussiness", spdlog::level::debug);
 
-static void setLoggerLevel(spdlog::level::level_enum level) {
+inline void setLoggerLevel(spdlog::level::level_enum level) {
   dbLogger->set_level(level);
   netLogger->set_level(level);
   businessLogger->set_level(level);
+}
+
+inline std::string getLogLevelStr() {
+  std::string ret{};
+  ret += "存储日志级别：";
+  ret += spdlog::level::to_string_view(dbLogger->level()).data();
+  ret += "\n网络日志级别：";
+  ret += spdlog::level::to_string_view(netLogger->level()).data();
+  ret += "\n业务日志级别：";
+  ret += spdlog::level::to_string_view(businessLogger->level()).data();
+  ret += "\n";
+  return ret;
 }
 
 }; // namespace wim

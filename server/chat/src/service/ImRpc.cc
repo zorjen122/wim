@@ -54,7 +54,7 @@ ImRpc::ImRpc() {
   for (int i = 1; i <= imTotal; i++) {
     std::string index = "s" + std::to_string(i);
     auto im = conf["im"][index];
-    auto name = im["name"].as<std::string>();
+    Machinekey name = static_cast<Machinekey>(im["name"].as<std::string>());
     auto host = im["host"].as<std::string>();
     auto rpcPort = im["rpcPort"].as<int>();
     auto rpcCount = im["rpcCount"].as<int>();
@@ -63,12 +63,28 @@ ImRpc::ImRpc() {
     spdlog::info("ImRpcNode[{}] {}:{} {}", index, host, rpcPort, name);
   }
 }
-ImRpcNode::Ptr ImRpc::getRpc(const std::string &machine) {
+ImRpcNode::Ptr ImRpc::getRpc(const Machinekey &machine) {
   auto it = rpcGroup.find(machine);
   if (it == rpcGroup.end()) {
     return nullptr;
   }
   return it->second;
+}
+
+ImRpc::Machinekey ImRpc::getMachineKey(long hashValue) {
+  hashValue = hashValue % rpcGroup.size();
+  auto it = rpcGroup.begin();
+  std::advance(it, hashValue);
+
+  Machinekey key = it->first;
+  LOG_DEBUG(netLogger, "getMachineKey: hash {} -> {}", hashValue, key);
+  return key;
+}
+
+ImRpcNode::Ptr ImRpc::getRpc(long hashValue) {
+  Machinekey key = getMachineKey(hashValue);
+
+  return getRpc(key);
 }
 
 }; // namespace wim::rpc

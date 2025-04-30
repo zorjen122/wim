@@ -3,6 +3,7 @@
 #include "ChatSession.h"
 #include "IocPool.h"
 #include "Logger.h"
+#include "OnlineUser.h"
 #include <mutex>
 #include <spdlog/spdlog.h>
 namespace wim {
@@ -32,9 +33,9 @@ void ChatServer::HandleAccept(ChatSession::Ptr session,
     std::lock_guard<std::mutex> lock(Mutex);
     sessionGroup[sessionID] = session;
   } else {
-    spdlog::error(
-        "[ChatServer::HandleAccept] session accept failed, error is {}",
-        error.message());
+    LOG_ERROR(netLogger,
+              "[ChatServer::HandleAccept] session accept failed, error is {}",
+              error.message());
   }
 
   ChatServer::Start();
@@ -42,8 +43,8 @@ void ChatServer::HandleAccept(ChatSession::Ptr session,
 
 void ChatServer::ClearSession(size_t id) {
   if (sessionGroup.find(id) == sessionGroup.end()) {
-    spdlog::error("[ChatServer::ClearSession] session not found, key is {}",
-                  id);
+    LOG_ERROR(netLogger,
+              "[ChatServer::ClearSession] session not found, key is {}", id);
     return;
   }
   sessionGroup.erase(id);

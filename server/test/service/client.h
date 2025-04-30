@@ -64,19 +64,31 @@ struct Chat : public Singleton<Chat> {
   void setSession(ChatSession::Ptr session) { chat = session; }
   void setUser(db::User::Ptr user) { this->user = user; }
   bool login(bool isFirstLogin = true);
-  long searchUser(const std::string &username);
+
+  bool searchUser(const std::string &username);
+  void serachUserHandle(const Json::Value &response);
+
   bool notifyAddFriend(long uid, const std::string &requestMessage);
   bool replyAddFriend(long uid, bool accept, const std::string &replyMessage);
-  bool ping(int count = 0);
+
+  bool ping();
+  bool OnheartBeat(int count = 0);
+  void pingHandle(const Json::Value &response);
   void arrhythmiaHandle(long uid);
 
-  void sendMessage(long uid, const std::string &message);
+  bool pullFriendList();
+  bool pullFriendApplyList();
+  bool pullMessageList(long id);
+
+  bool pullFriendListHandle(const Json::Value &response);
+  bool pullFriendApplyListHandle(const Json::Value &response);
+  bool pullMessageListHandle(const Json::Value &response);
+
+  void sendTextMessage(long uid, const std::string &message);
   void onReWrite(long id, const std::string &message, long serviceId,
                  int count = 0);
 
   void handleRun(Tlv::Ptr protocolData);
-
-  void pingHandle(const Json::Value &response);
 
   db::User::Ptr user{};
   db::UserInfo::Ptr userInfo{};
@@ -90,7 +102,10 @@ struct Chat : public Singleton<Chat> {
   std::mutex comsumeMessageMutex{};
 
   // info
-  std::vector<db::FriendApply::Ptr> friendApplyList{};
+  std::map<long, db::FriendApply::Ptr> friendApplyMap{};
+  std::map<long, db::UserInfo::Ptr> friendMap{};
+
+  std::map<long, db::Message::MessageGroup> messageListMap{};
 };
 
 struct Client {

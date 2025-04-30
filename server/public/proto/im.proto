@@ -17,28 +17,26 @@ message NotifyAddFriendRequest {
 message NotifyAddFriendResponse {
   int64 fromUid = 1;
   int64 toUid = 2;
-  string status = 4;
+  string status = 3;
 }
 
 message ReplyAddFriendRequest {
   int64 fromUid = 1;
   int64 toUid = 2;
-  string replyMessage = 3;
-  string status = 4;
+  bool accept = 3;
+  string replyMessage = 4;
 }
 
 message ReplyAddFriendResponse { string status = 1; }
 
 message TextSendMessageRequest {
   int64 fromUid = 1;
-  int64 toUid = 2;
-  string message = 3;
+  int64 toUid = 2; 
+  string text = 3;
 }
 
 message TextSendMessageResponse {
-  int64 fromUid = 1;
-  int64 toUid = 2;
-  string status = 3;
+  string status = 1;
 }
 
 service ImService {

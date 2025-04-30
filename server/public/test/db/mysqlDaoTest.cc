@@ -120,7 +120,8 @@ private:
     assert(msgResult != -1 && "Message insert failed");
 
     // 查询消息
-    auto messages = dao->getUserMessage(TEST_FRIEND_UID, TEST_MESSAGE_ID, 10);
+    auto messages =
+        dao->getUserMessage(TEST_UID, TEST_FRIEND_UID, TEST_MESSAGE_ID, 10);
     assert(messages != nullptr && "No messages found");
     assert(!messages->empty() && "Message not retrieved");
 

@@ -160,8 +160,8 @@ bool Gate::signUp(const std::string &username, const std::string &password,
 
   return true;
 }
-bool Gate::signOut() {}
-bool Gate::fogetPassword(const std::string &username) {}
+bool Gate::signOut() { return true; }
+bool Gate::fogetPassword(const std::string &username) { return true; }
 
 std::string Gate::__parseResponse() {
   auto bodyBuffer = response.body().data();
@@ -204,21 +204,25 @@ bool Chat::login(bool isFirstLogin) {
   return true;
 }
 
-bool Chat::ping(int count) {
+bool Chat::ping() {
   Json::Value ping;
   ping["uid"] = Json::Value::Int64(user->uid);
 
   std::string pingBuffer = ping.toStyledString();
-  LOG_INFO(businessLogger, "request json: {}", pingBuffer);
+  // LOG_INFO(businessLogger, "request json: {}", pingBuffer);
   chat->Send(pingBuffer, ID_PING_REQ);
+  return true;
+}
+
+bool Chat::OnheartBeat(int count) {
 
   waitPongTimer.reset(new net::steady_timer(chat->getIoContext()));
-  waitPongTimer->expires_after(std::chrono::seconds(5));
+  waitPongTimer->expires_after(std::chrono::seconds(2));
   waitPongTimer->async_wait([count, this](boost::system::error_code ec) {
     if (ec == boost::asio::error::operation_aborted) {
-      spdlog::info("onRePongWrite timer canceled | uid-{}", user->uid);
+      // spdlog::info("onRePongWrite timer canceled | uid-{}", user->uid);
       return;
-    } else if (ec == boost::asio::error::timed_out) {
+    } else {
       // 暂行方案，可进一步考虑租约机制，未超时采用n秒租约以免于频繁Ping，若超时一次后则采用默认心跳
       static const int max_retry_count = 3;
       if (count + 1 > max_retry_count) {
@@ -227,7 +231,7 @@ bool Chat::ping(int count) {
       }
 
       LOG_INFO(businessLogger, "ping timeout, retry count: {}", count);
-      this->ping(count + 1);
+      this->OnheartBeat(count + 1);
       return;
     }
   });
@@ -240,6 +244,7 @@ void Chat::pingHandle(const Json::Value &response) {
   }
 
   waitPongTimer->cancel();
+  OnheartBeat(0);
 }
 void Chat::arrhythmiaHandle(long uid) {
   spdlog::info("arrhythmiaHandle: uid-{}", uid);
@@ -260,11 +265,30 @@ void Chat::handleRun(Tlv::Ptr protocolData) {
     pingHandle(response);
     break;
   }
+  case ID_SEARCH_USER_RSP: {
+    serachUserHandle(response);
+    break;
+  }
+  case ID_PULL_FRIEND_LIST_RSP: {
+    pullFriendListHandle(response);
+    break;
+  }
+  case ID_PULL_FRIEND_APPLY_LIST_RSP: {
+    pullFriendApplyListHandle(response);
+    break;
+  }
+  case ID_PULL_MESSAGE_LIST_RSP: {
+    pullMessageListHandle(response);
+    break;
+  }
   // 通知请求者添加的好友请求被响应
   case ID_REPLY_ADD_FRIEND_REQ: {
     auto fromUid = response["fromUid"].asInt64();
     auto accept = response["accept"].asBool();
-    auto replyMessage = response["replyMessage"].asString();
+    auto replyMessage = response["content"].asString();
+
+    friendApplyMap[fromUid]->status = accept;
+    friendApplyMap[fromUid]->content = replyMessage;
 
     spdlog::info("reply add friend response, uid:{}, accept:{}, message:{}",
                  fromUid, accept, replyMessage);
@@ -277,10 +301,11 @@ void Chat::handleRun(Tlv::Ptr protocolData) {
   }
   case ID_NOTIFY_ADD_FRIEND_RSP: {
     db::FriendApply::Ptr apply(new db::FriendApply());
-    apply->fromUid = response["fromUid"].asInt64();
-    apply->replyMessage = response["requestMessage"].asString();
+    apply->fromUid = user->uid;
+    apply->toUid = response["toUid"].asInt64();
+    apply->content = response["content"].asString();
 
-    friendApplyList.push_back(apply);
+    friendApplyMap[apply->toUid] = apply;
 
     LOG_INFO(wim::businessLogger, "add friend success, response {}",
              response.toStyledString());
@@ -369,10 +394,10 @@ void Chat::handleRun(Tlv::Ptr protocolData) {
     break;
   }
   case ID_TEXT_SEND_RSP: {
-    int seq = response["seq"].asInt();
+    long seq = response["seq"].asInt64();
     auto timer = waitAckTimerMap[seq];
-    if (!timer) {
-      spdlog::warn("seq -> timer not found, seq:{}", seq);
+    if (timer == nullptr) {
+      LOG_WARN(businessLogger, "seq: {} -> timer not found", seq);
       return;
     }
     spdlog::info("ACK: {}", response.toStyledString());
@@ -384,36 +409,112 @@ void Chat::handleRun(Tlv::Ptr protocolData) {
                  response.toStyledString());
     db::FriendApply::Ptr apply(new db::FriendApply());
     apply->fromUid = response["fromUid"].asInt64();
-    apply->replyMessage = response["requestMessage"].asString();
-
-    friendApplyList.push_back(apply);
+    apply->content = response["content"].asString();
+    apply->toUid = user->uid;
+    apply->status = 0;
+    friendApplyMap[apply->fromUid] = apply;
     break;
   }
   default:
     spdlog::error("没有这样的服务响应ID");
   }
 }
-long Chat::searchUser(const std::string &username) {
+
+void Chat::serachUserHandle(const Json::Value &response) {
+
+  long uid = response["uid"].asInt64();
+  std::string name = response["name"].asString();
+  short age = response["age"].asInt();
+  short sex = response["sex"].asInt();
+  std::string headImageURL = response["headImageURL"].asString();
+
+  LOG_INFO(wim::businessLogger,
+           "search user: uid {}, name {}, age {}, sex {}, headImageURL {}", uid,
+           name, age, sex, headImageURL);
+}
+
+bool Chat::searchUser(const std::string &username) {
   Json::Value searchReq;
   searchReq["username"] = username;
-  // Send(searchReq.toStyledString(), ID_SEARCH_USER_REQ);
-  // Json::Value searchRsp = __parseJson(source);
+  chat->Send(searchReq.toStyledString(), ID_SEARCH_USER_REQ);
 
-  // auto errcode = searchReq["error"].asInt();
-  // if (errcode == -1) {
-  //   return false;
-  // }
-  // long uid = searchRsp["uid"].asInt64();
-  // std::string name = searchRsp["name"].asString();
-  // short age = searchRsp["age"].asInt();
-  // short sex = searchRsp["sex"].asInt();
-  // std::string headImageURL = searchRsp["headImageURL"].asString();
+  LOG_INFO(wim::businessLogger, "search user: {}", username);
+  return true;
+}
 
-  // LOG_INFO(wim::businessLogger,
-  //          "userInfo: uid {}, name {}, age {}, sex {}, headImageURL {}",
-  //          name, age, sex, headImageURL);
+bool Chat::pullFriendList() {
+  Json::Value request;
+  request["uid"] = Json::Value::Int64(user->uid);
+  chat->Send(request.toStyledString(), ID_PULL_FRIEND_LIST_REQ);
+  return true;
+}
+bool Chat::pullFriendApplyList() {
+  Json::Value request;
+  request["uid"] = Json::Value::Int64(user->uid);
+  chat->Send(request.toStyledString(), ID_PULL_FRIEND_APPLY_LIST_REQ);
+  return true;
+}
+bool Chat::pullMessageList(long uid) {
+  Json::Value request;
+  request["fromUid"] = Json::Value::Int64(user->id);
+  request["toId"] = Json::Value::Int64(uid);
+  request["lasgMsgId"] = Json::Value::Int64(0);
+  request["limit"] = Json::Value::Int(10);
+  chat->Send(request.toStyledString(), ID_PULL_MESSAGE_LIST_REQ);
 
-  // return uid;
+  return true;
+}
+
+bool Chat::pullFriendListHandle(const Json::Value &response) {
+  Json::Value tmp = response["friendList"];
+  for (auto &item : tmp) {
+    db::UserInfo::Ptr info(new db::UserInfo());
+    info->uid = item["uid"].asInt64();
+    info->name = item["name"].asString();
+    info->age = item["age"].asInt();
+    info->sex = item["sex"].asInt();
+    info->headImageURL = item["headImageURL"].asString();
+    friendMap[info->uid] = info;
+  }
+
+  LOG_INFO(wim::businessLogger, "from: {}, friendList size: {}", user->uid,
+           friendMap.size());
+
+  return !friendMap.empty();
+}
+
+bool Chat::pullFriendApplyListHandle(const Json::Value &response) {
+  Json::Value tmp = response["applyList"];
+  for (auto &item : tmp) {
+    db::FriendApply::Ptr apply(new db::FriendApply());
+    apply->fromUid = item["fromUid"].asInt64();
+    apply->toUid = item["toUid"].asInt64();
+    apply->status = item["status"].asInt();
+    apply->content = item["content"].asString();
+    apply->createTime = item["createTime"].asString();
+    friendApplyMap[apply->toUid] = apply;
+  }
+  LOG_INFO(wim::businessLogger, "from: {}, applyList size: {}", user->uid,
+           friendApplyMap.size());
+  return !friendApplyMap.empty();
+}
+bool Chat::pullMessageListHandle(const Json::Value &response) {
+  Json::Value tmp = response["messageList"];
+  long toId = response["toId"].asInt64();
+  db::Message::MessageGroup messageList(new std::vector<db::Message::Ptr>());
+  for (auto &item : tmp) {
+    db::Message::Ptr message(new db::Message());
+    message->messageId = item["messageId"].asInt64();
+    message->type = item["type"].asInt();
+    message->content = item["content"].asString();
+    message->status = item["status"].asInt();
+    message->sendDateTime = item["sendDateTime"].asString();
+    message->readDateTime = item["readDateTime"].asString();
+  }
+  messageListMap[toId] = messageList;
+  LOG_INFO(wim::businessLogger, "from: {}, to: {}, messageList size: {}",
+           user->uid, toId, messageList->size());
+  return true;
 }
 
 bool Chat::notifyAddFriend(long uid, const std::string &requestMessage) {
@@ -451,11 +552,11 @@ void Chat::onReWrite(long id, const std::string &message, long serviceId,
   waitAckTimerMap[id]->async_wait([this, id, message, serviceId,
                                    count](const boost::system::error_code &ec) {
     if (ec == boost::asio::error::operation_aborted) {
-      spdlog::info("seq:{} timer canceled", id);
-    } else if (ec == boost::asio::error::timed_out) {
-      spdlog::info("seq:{} timer expired", id);
+      LOG_INFO(wim::businessLogger, "seq:{} timer canceled", id);
+    } else {
+      LOG_INFO(wim::businessLogger, "seq:{} timer expired", id);
       if (count + 1 >= 3) {
-        spdlog::info("重发次数达到最大次数，故障转移中.....");
+        LOG_INFO(wim::businessLogger, "重发次数达到最大次数，故障转移中.....");
         arrhythmiaHandle(user->uid);
         return;
       }
@@ -463,7 +564,7 @@ void Chat::onReWrite(long id, const std::string &message, long serviceId,
     }
   });
 }
-void Chat::sendMessage(long uid, const std::string &message) {
+void Chat::sendTextMessage(long uid, const std::string &message) {
   Json::Value textMsg;
 
   // 该id仅是客户端的序列号，其作用是在之后接收到服务器ACK能找到并取消重传定时器
@@ -472,6 +573,7 @@ void Chat::sendMessage(long uid, const std::string &message) {
   textMsg["fromUid"] = Json::Value::Int64(user->uid);
   textMsg["toUid"] = Json::Value::Int64(uid);
   textMsg["text"] = message;
+  textMsg["sessionKey"] = 0;
   LOG_INFO(businessLogger, "request json: {}", textMsg.toStyledString());
 
   onReWrite(seq, textMsg.toStyledString(), ID_TEXT_SEND_REQ);

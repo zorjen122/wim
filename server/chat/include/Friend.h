@@ -1,26 +1,24 @@
 #pragma once
-#include "Channel.h"
 #include "ChatSession.h"
 
 #include <jsoncpp/json/value.h>
-#include <memory>
 #include <string>
 
 namespace wim {
 
-bool OnlineNotifyAddFriend(ChatSession::Ptr user, const Json::Value &request);
+Json::Value NotifyAddFriend(ChatSession::Ptr session, unsigned int msgID,
+                            Json::Value &request);
+int OnlineNotifyAddFriend(ChatSession::Ptr user, Json::Value &request);
+int OfflineNotifyAddFriend(Json::Value &request);
 
-int OfflineAddFriend(long from, long to, const std::string &msgData);
+Json::Value ReplyAddFriend(ChatSession::Ptr session, unsigned int msgID,
+                           Json::Value &request);
+int OnlineReplyAddFriend(ChatSession::Ptr user, Json::Value &request);
+int OfflineReplyAddFriend(Json::Value &request);
 
 int OnlineRemoveFriend(long from, long to, ChatSession::Ptr toSession);
 int OfflineRemoveFriend(long from, long to, const std::string &msgData);
 
-void SerachUser(ChatSession::Ptr session, unsigned int msgID,
-                const Json::Value &msgData);
-
-void NotifyAddFriend(ChatSession::Ptr session, unsigned int msgID,
-                     const Json::Value &msgData);
-
 void RemoveFriend(ChatSession::Ptr session, unsigned int msgID,
-                  const Json::Value &msgData);
+                  Json::Value &request);
 }; // namespace wim

@@ -77,6 +77,8 @@ public:
   void ClearSession();
   Ptr GetSharedSelf();
 
+  bool IsConnected();
+
 private:
   enum ParseState { WAIT_HEADER, WAIT_BODY };
 

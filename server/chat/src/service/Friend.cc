@@ -1,4 +1,5 @@
 #include "Friend.h"
+#include "DbGlobal.h"
 #include "ImRpc.h"
 
 #include "Const.h"
@@ -11,89 +12,59 @@
 #include <jsoncpp/json/reader.h>
 #include <jsoncpp/json/value.h>
 #include <spdlog/spdlog.h>
+#include <string>
 namespace wim {
 
-bool OnlineNotifyAddFriend(ChatSession::Ptr user, const Json::Value &request) {
-  user->Send(request.toStyledString(), ID_NOTIFY_ADD_FRIEND_REQ);
+int OnlineNotifyAddFriend(ChatSession::Ptr user, Json::Value &request) {
   // on rewrite...
-  return true;
+  user->Send(request.toStyledString(), ID_NOTIFY_ADD_FRIEND_REQ);
+
+  // 暂行，保险方案
+  return OfflineNotifyAddFriend(request);
 }
 
-int OfflineAddFriend(int from, int to, const Json::Value &request) {
-  // bool rt = wim::db::MysqlDao::GetInstance()->SaveService(from, to, request);
-  bool rt = true; // todo...
-  if (rt == false) {
-    spdlog::error("OffineAddFriend save service to mysql failed");
-    return -1;
-  }
+int OfflineNotifyAddFriend(Json::Value &request) {
+  long from = request["fromUid"].asInt64();
+  long to = request["toUid"].asInt64();
+  std::string requestMessage = request["requestMessage"].asString();
+  db::FriendApply::Ptr friendApply(new db::FriendApply(
+      from, to, db::FriendApply::Status::Wait, requestMessage));
 
-  return 0;
+  int ret = db::MysqlDao::GetInstance()->insertFriendApply(friendApply);
+  return ret;
 }
 
-void SerachUser(ChatSession::Ptr session, unsigned int msgID,
-                const Json::Value &request) {
+Json::Value NotifyAddFriend(ChatSession::Ptr session, unsigned int msgID,
+                            Json::Value &request) {
   Json::Value rsp;
-  Defer defer([&] {
-    auto rt = rsp.toStyledString();
-    session->Send(rt, ID_SEARCH_USER_RSP);
-  });
-  auto username = request["username"].asString();
-  auto user = db::MysqlDao::GetInstance()->getUser(username);
-  if (user == nullptr) {
-    rsp["error"] = -1;
-    return;
-  }
-  auto userInfo = db::MysqlDao::GetInstance()->getUserInfo(user->uid);
-  if (userInfo == nullptr) {
-    rsp["error"] = -1;
-    return;
-  }
-  rsp["uid"] = Json::Value::Int64(userInfo->uid);
-  rsp["username"] = user->username;
-  rsp["age"] = userInfo->age;
-  rsp["headImageURL"] = userInfo->headImageURL;
-  rsp["error"] = 0;
-}
-void NotifyAddFriend(ChatSession::Ptr session, unsigned int msgID,
-                     const Json::Value &request) {
-  int status = 0;
-  Json::Value rsp;
-  Defer defer([&] {
-    auto rt = rsp.toStyledString();
-    session->Send(rt, ID_NOTIFY_ADD_FRIEND_RSP);
-  });
 
   long fromUid = request["fromUid"].asInt64();
   long toUid = request["toUid"].asInt64();
-  LOG_DEBUG(wim::businessLogger, "NotifyAddFriend: fromUid {}, toUid {}",
-            fromUid, toUid);
 
   auto toSession = OnlineUser::GetInstance()->GetUserSession(toUid);
-  if (toSession != nullptr) {
+  bool isMachineOnline = OnlineUser::GetInstance()->isOnline(toUid);
+  if (isMachineOnline) {
     // 本地在线推送
-    LOG_DEBUG(wim::businessLogger, "OnlineAddFriend...");
-
-    status = OnlineNotifyAddFriend(toSession, request);
-    if (status != 0) {
-      LOG_DEBUG(wim::businessLogger,
-                "OnlineAddFriend failed, uid-{}, status-{}", toUid, status);
+    int rt = OnlineNotifyAddFriend(toSession, request);
+    if (rt == -1) {
+      rsp["error"] = -1;
+      rsp["message"] = "通知发送失败";
+      return rsp;
     }
+
     LOG_DEBUG(wim::businessLogger, "OnlineAddFriend success, to-{}", toUid);
     rsp["error"] = 0;
     rsp["status"] = "wait";
-  } else {
-    // 全局查找在线用户，所有设备中的在线用户都存放在redis中
-    auto source = db::RedisDao::GetInstance()->getOnlineUserInfo(toUid);
+    return rsp;
+  }
+
+  // 全局查找在线用户，所有设备中的在线用户都存放在redis中
+  Json::Value userOnlineInfo =
+      db::RedisDao::GetInstance()->getOnlineUserInfoObject(toUid);
+  bool isOtherMachineOnline = !userOnlineInfo.empty();
+  if (isOtherMachineOnline) {
     LOG_DEBUG(wim::businessLogger, "OfflineAddFriend toUId userinfo-{}",
-              source);
-    Json::Reader parser;
-    Json::Value userOnlineInfo;
-    status = parser.parse(source, userOnlineInfo);
-    if (status == false) {
-      rsp["error"] = ErrorCodes::JsonParser;
-      LOG_WARN(wim::businessLogger, "parse userOnlineInfo error!");
-      return;
-    }
+              userOnlineInfo.toStyledString());
 
     // rpc转发
     auto machineId = userOnlineInfo["machineId"].asString();
@@ -116,83 +87,139 @@ void NotifyAddFriend(ChatSession::Ptr session, unsigned int msgID,
     } else {
       rsp["error"] = -1;
     }
+    return rsp;
+  } else {
+    int ret = OfflineNotifyAddFriend(request);
+    if (ret != 0) {
+      LOG_INFO(businessLogger,
+               "OfflineAddFriend save service failed, from-{}, to-{}", fromUid,
+               toUid);
+      rsp["error"] = -1;
+    } else {
+      rsp["status"] = "wait";
+    }
+    return rsp;
   }
 }
 
-int OnlineRemoveFriend(int from, int to, ChatSession::Ptr toSession) {
-  if (toSession == nullptr) {
-    spdlog::error("[Service::OnlineRemoveFriend] toSession is nullptr");
-    return -1;
-  }
-
-  // todo... remove friend in mysql
-  // bool isRemoved = wim::db::MysqlDao::GetInstance()->RemovePair(from, to);
-  bool isRemoved = true;
-
-  if (isRemoved) {
-    Json::Value notify{};
-    notify["from"] = from;
-    notify["to"] = to;
-    toSession->Send(notify.toStyledString(), ID_REMOVE_FRIEND_REQ);
-  }
-
-  spdlog::error("[Service::OnlineRemoveFriend] mysql remove friend failed");
-  return -1;
-}
-
-int OfflineRemoveFriend(int from, int to, const Json::Value &request) {
-  // int rt = wim::db::MysqlDao::GetInstance()->SaveService(from, to, request);
-  bool rt = true; // todo...
-  if (rt == false) {
-    spdlog::error("[Service::OffineAddFriend] save service to mysql failed");
-    return -1;
-  }
-
-  return 0;
-}
-
-void RemoveFriend(ChatSession::Ptr session, unsigned int msgID,
-                  const Json::Value &request) {
-  Json::Reader parser;
-  Json::Value req;
+Json::Value ReplyAddFriend(ChatSession::Ptr session, unsigned int msgID,
+                           Json::Value &request) {
   Json::Value rsp;
 
-  Defer _([&rsp, session]() {
-    std::string rt = rsp.toStyledString();
-    session->Send(rt, ID_NOTIFY_ADD_FRIEND_RSP);
-  });
+  long fromUid = request["fromUid"].asInt64();
+  long toUid = request["toUid"].asInt64();
+  bool accept = request["accept"].asBool();
+  std::string replyMessage = request["replyMessage"].asString();
 
-  int from = req["from"].asInt();
-  int to = req["to"].asInt();
+  bool isMachineOnline = OnlineUser::GetInstance()->isOnline(toUid);
+  if (isMachineOnline) {
+    auto toSession = OnlineUser::GetInstance()->GetUserSession(toUid);
+    int rt = OnlineReplyAddFriend(toSession, request);
 
-  // todo... hasFriend function in mysql
-  // bool hasFriend = wim::db::MysqlDao::GetInstance()->PairSearch(from, to);
-  bool hasFriend = true;
-  if (!hasFriend) {
-    rsp["uid"] = to;
-    rsp["error"] = ErrorCodes::UserNotFriend;
-    rsp["status"] = "x";
-    spdlog::error("[Service::RemoveFriend] no this a user, user-{}", to);
-    return;
+    if (rt == -1) {
+      LOG_ERROR(
+          businessLogger,
+          "updateFriendApplyStatus update filed is failed, from {}, to {}",
+          fromUid, toUid);
+      rsp["error"] = -2;
+      rsp["message"] = "数据库修改发送异常";
+    } else {
+      rsp["error"] = ErrorCodes::Success;
+    }
+    return rsp;
   }
 
-  bool isOnline = OnlineUser::GetInstance()->isOnline(to);
+  Json::Value userInfo =
+      db::RedisDao::GetInstance()->getOnlineUserInfoObject(toUid);
 
-  rsp["uid"] = to;
-  rsp["error"] = ErrorCodes::Success;
-  rsp["status"] = "wait";
-  if (isOnline) {
-    auto toSession = OnlineUser::GetInstance()->GetUserSession(to);
-    int rt = OnlineRemoveFriend(from, to, toSession);
-    if (rt == -1) {
-      rsp["error"] = -1;
-      return;
-    }
+  bool isOtherMachineOnline = !userInfo.empty();
+  if (isOtherMachineOnline) {
+    LOG_INFO(businessLogger, "toUid {} userinfo: {}",
+             userInfo.toStyledString());
+
+    std::string machineId = userInfo["machineId"].asString();
+
+    rpc::ReplyAddFriendRequest replyRequest;
+    rpc::ReplyAddFriendResponse replyResponse;
+    replyRequest.set_fromuid(fromUid);
+    replyRequest.set_touid(toUid);
+    replyRequest.set_accept(accept);
+    replyRequest.set_replymessage(replyMessage);
+    replyResponse =
+        rpc::ImRpc::GetInstance()->getRpc(machineId)->forwardReplyAddFriend(
+            replyRequest);
+    LOG_INFO(
+        businessLogger,
+        "forwardReplyAddFriend(from: {}, to: {}) to machine: {}, response: {}",
+        fromUid, toUid, machineId, replyResponse.status());
+    rsp["error"] = ErrorCodes::Success;
+
+    return rsp;
   } else {
-    int rt = OfflineRemoveFriend(from, to, request);
+    int rt = OfflineReplyAddFriend(request);
     if (rt == -1) {
-      rsp["error"] = -1;
+      LOG_ERROR(
+          businessLogger,
+          "updateFriendApplyStatus update filed is failed, from {}, to {}",
+          fromUid, toUid);
+      rsp["error"] = -2;
+      rsp["message"] = "数据库修改发送异常";
+    } else {
+      rsp["error"] = ErrorCodes::Success;
     }
+    return rsp;
   }
 }
+int OnlineReplyAddFriend(ChatSession::Ptr user, Json::Value &request) {
+
+  // 暂行，保险方案
+  int sessionId = OfflineReplyAddFriend(request);
+  if (sessionId > 0) {
+    request["sessionId"] = sessionId;
+    user->Send(request.toStyledString(), ID_REPLY_ADD_FRIEND_REQ);
+
+    return 0;
+  }
+
+  return sessionId;
+}
+
+int OfflineReplyAddFriend(Json::Value &request) {
+
+  long fromUid = request["fromUid"].asInt64();
+  long toUid = request["toUid"].asInt64();
+  bool accept = request["accept"].asBool();
+  std::string replyMessage = request["replyMessage"].asString();
+
+  int rt = 0;
+  db::FriendApply::Status status{};
+  std::string time = getCurrentDateTime();
+  long sessionId{};
+  if (accept) {
+    status = db::FriendApply::Status::Agree;
+    long sessionId = db::RedisDao::GetInstance()->generateSessionId();
+    db::Friend::Ptr friendInfo(new db::Friend(fromUid, toUid, time, sessionId));
+
+    rt = db::MysqlDao::GetInstance()->insertFriend(friendInfo);
+    if (rt == -1) {
+      LOG_ERROR(businessLogger, "insertFriend filed is failed, from {}, to {}",
+                fromUid, toUid);
+      return -1;
+    }
+  } else {
+    status = db::FriendApply::Status::Refuse;
+  }
+
+  db::FriendApply::Ptr friendApply(
+      new db::FriendApply(fromUid, toUid, status, replyMessage, time));
+  rt = db::MysqlDao::GetInstance()->updateFriendApplyStatus(friendApply);
+  if (rt == -1) {
+    LOG_ERROR(businessLogger,
+              "updateFriendApplyStatus filed is failed, from {}, to {}",
+              fromUid, toUid);
+  }
+  // 暂用
+  return rt == -1 ? -1 : sessionId;
+}
+
 }; // namespace wim

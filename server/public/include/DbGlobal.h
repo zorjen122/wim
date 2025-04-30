@@ -56,6 +56,12 @@ struct FriendApply {
   using Ptr = std::shared_ptr<FriendApply>;
   using FriendApplyGroup = std::shared_ptr<std::vector<Ptr>>;
   FriendApply() = default;
+  enum Status {
+    Wait = 0,
+    Agree = 1,
+    Refuse = 2,
+  };
+
   FriendApply(size_t fromUid, size_t toUId, short status = 0,
               const std::string &content = "",
               const std::string &createTime = "")
@@ -85,7 +91,12 @@ struct FriendApply {
 struct Message {
   using Ptr = std::shared_ptr<Message>;
   using MessageGroup = std::shared_ptr<std::vector<Message::Ptr>>;
-
+  enum Type { TEXT = 1, IMAGE = 2, AUDIO = 3, VIDEO = 4, FILE = 5 };
+  enum Status {
+    WITHDRAW = 0,
+    WAIT = 1,
+    DONE = 2,
+  };
   Message() = default;
   Message(long messageId, long fromUid, long toUid, std::string sessionKey,
           short type, std::string content, short status,

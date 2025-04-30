@@ -69,7 +69,7 @@ public:
     // 等待时间不超1秒钟，因为keepThread线程函数每次休眠1秒
     if (keepThread.joinable())
       keepThread.join();
-    LOG_DEBUG(dbLogger, "Redis Pool is destroyed!");
+    LOG_INFO(dbLogger, "RedisPool::~RedisPool()!");
   }
 
   void ClearConnections() {
@@ -172,6 +172,11 @@ class RedisDao : public Singleton<RedisDao>,
 public:
   using Ptr = std::shared_ptr<RedisDao>;
   RedisDao() {
+    static bool inited = false;
+    if (inited) {
+      LOG_WARN(dbLogger, "RedisDao is already inited");
+      return;
+    }
     auto conf = Configer::getNode("server");
     auto host = conf["redis"]["host"].as<std::string>();
     auto port = conf["redis"]["port"].as<int>();
@@ -193,28 +198,84 @@ public:
                "{}, password: {}, clientCount: {}, machineId: {}",
                host, port, password, clientCount, machine);
     }
+    inited = true;
   }
 
   void Close() { return redisPool->Close(); }
 
-  std::string getPrefixUserId() {
-    static const std::string PrefixUserId = "im:userId:";
-    return PrefixUserId;
+  const std::string PrefixUserId = "im:userId:";
+  std::string getPrefixUserId() { return PrefixUserId; }
+
+  const std::string PrefixOnlineUserInfo = "im:user:";
+  std::string getPrefixOnlineUserInfo() { return PrefixOnlineUserInfo; }
+
+  const std::string __prefixUid = "im:userId";
+  int64_t generateUserId() { return generateId(__prefixUid); }
+
+  const std::string __prefixMsgId = "im:msgId";
+  int64_t generateMsgId() { return generateId(__prefixMsgId); }
+
+  const std::string __prefixSessionId = "im:sessionId";
+  int64_t generateSessionId() { return generateId(__prefixSessionId); }
+
+  bool getMsgId(int64_t msgId) {
+    auto redis = redisPool->GetConnection();
+    if (!redis) {
+      LOG_DEBUG(wim::dbLogger, "redis connection is null");
+      return false;
+    }
+    Defer defer(
+        [this, &redis]() { redisPool->ReturnConnection(std::move(redis)); });
+    auto result = redis->get(__prefixMsgId + ":" + std::to_string(msgId));
+
+    return result.has_value();
   }
 
-  std::string getPrefixOnlineUserInfo() {
-    static const std::string PrefixOnlineUserInfo = "im:user:";
-    return PrefixOnlineUserInfo;
+  const std::string __prefixUserMsgId = "im:userMsgId";
+  bool setUserMsgId(long userId, int64_t msgId, short expired) {
+    auto redis = redisPool->GetConnection();
+    if (!redis) {
+      LOG_DEBUG(wim::dbLogger, "redis connection is null");
+      return false;
+    }
+    Defer defer(
+        [this, &redis]() { redisPool->ReturnConnection(std::move(redis)); });
+    redis->setex(__prefixUserMsgId + ":" + std::to_string(userId) + ":" +
+                     std::to_string(msgId),
+                 expired, "1");
+    return true;
   }
 
-  int64_t generateUserId() {
-    static std::string __prefixUid = "im:userId";
-    return generateId(__prefixUid);
+  bool getUserMsgId(long userId, int64_t msgId) {
+    auto redis = redisPool->GetConnection();
+    if (!redis) {
+      LOG_DEBUG(wim::dbLogger, "redis connection is null");
+      return false;
+    }
+
+    Defer defer(
+        [this, &redis]() { redisPool->ReturnConnection(std::move(redis)); });
+
+    auto result = redis->get(__prefixUserMsgId + ":" + std::to_string(userId) +
+                             ":" + std::to_string(msgId));
+    return result.has_value();
   }
 
-  int64_t generateMessageId() {
-    static std::string __prefixUid = "im:msgId";
-    return generateId(__prefixUid);
+  bool expireUserMsgId(long userId, int64_t msgId, short expired) {
+    auto redis = redisPool->GetConnection();
+    if (!redis) {
+      LOG_DEBUG(wim::dbLogger, "redis connection is null");
+      return false;
+    }
+
+    Defer defer(
+        [this, &redis]() { redisPool->ReturnConnection(std::move(redis)); });
+
+    auto result =
+        redis->expire(__prefixUserMsgId + ":" + std::to_string(userId) + ":" +
+                          std::to_string(msgId),
+                      expired);
+    return result;
   }
 
   bool authVerifycode(const std::string &email, const std::string &verifycode) {
@@ -229,21 +290,6 @@ public:
 
     return result.has_value() && result.value() == verifycode;
   }
-
-  // 未使用，待废弃
-  std::string getUserId(long uid) {
-    auto redis = redisPool->GetConnection();
-    if (!redis) {
-      LOG_DEBUG(wim::dbLogger, "redis connection is null");
-      return "";
-    }
-    Defer defer(
-        [this, &redis]() { redisPool->ReturnConnection(std::move(redis)); });
-    auto result = redis->get(getPrefixUserId() + std::to_string(uid));
-    return result->data();
-  }
-
-  bool setUserId(long uid);
 
   // 暂用字符串MachineId标识机器
   bool setOnlineUserInfo(db::UserInfo::Ptr userInfo, std::string machineId) {
@@ -283,7 +329,7 @@ public:
     return source.value();
   }
 
-  std::pair<UserInfo::Ptr, std::string> getOnlineUserInfoObject(long uid) {
+  Json::Value getOnlineUserInfoObject(long uid) {
     std::string source = getOnlineUserInfo(uid);
     if (source.empty())
       return {};
@@ -293,12 +339,7 @@ public:
       LOG_DEBUG(wim::dbLogger, "parse online user info json data error");
       return {};
     }
-    UserInfo::Ptr userInfo(
-        new UserInfo(jsonData["userId"].asInt64(), jsonData["name"].asString(),
-                     jsonData["age"].asInt(), jsonData["sex"].asString(),
-                     jsonData["headImageURL"].asString()));
-    std::string machineId = jsonData["machineId"].asString();
-    return {userInfo, machineId};
+    return jsonData;
   }
 
   bool delOnlineUserInfo(long uid) {
@@ -346,5 +387,5 @@ private:
   RedisPool::Ptr redisPool;
   uint16_t machineId; // 集群中每个节点的唯一ID (0-1023)
   static const int64_t epoch = 1672531200000; // 2023-01-01 00:00:00
-};
-}; // namespace wim::db
+};                                            // namespace wim::db
+};                                            // namespace wim::db

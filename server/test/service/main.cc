@@ -97,7 +97,9 @@ int main(int argc, char *argv[]) {
       return -1;
     }
 
-    chat->ping(user->uid);
+    chat->ping();
+    chat->OnheartBeat();
+
     net::signal_set signals(ioContext, SIGINT, SIGTERM);
     signals.async_wait(
         [&](const boost::system::error_code &ec, int sig) { clearUp(); });
@@ -128,9 +130,8 @@ int main(int argc, char *argv[]) {
         }
       } else if (command == "showFriendApplyList") {
         std::cout << "好友请求列表: \n";
-        for (auto it : chat->friendApplyList) {
-          std::cout << "[用户ID: " << it->fromUid
-                    << ", 消息: " << it->replyMessage << "]\n";
+        for (auto [key, it] : chat->friendApplyMap) {
+          std::cout << "[用户ID: " << key << ", 消息: " << it->content << "]\n";
         }
       } else if (command == "replyAddFriend") {
 
@@ -155,14 +156,21 @@ int main(int argc, char *argv[]) {
         chat->replyAddFriend(std::atol(uid.c_str()), accept, replyMessage);
 
       } else if (command == "textSend") {
-        std::string fromUid, toUid, message;
-        std::cout << "请输入发送消息的用户ID: ";
-        std::cin >> fromUid;
+        std::string toUid, message;
         std::cout << "请输入接收消息的用户ID: ";
         std::cin >> toUid;
         std::cout << "请输入消息内容: ";
         std::cin >> message;
-        chat->sendMessage(std::atol(toUid.c_str()), message);
+        chat->sendTextMessage(std::atol(toUid.c_str()), message);
+      } else if (command == "pullMessage") {
+        std::string toUid;
+        std::cout << "请输入接收消息的用户ID: ";
+        std::cin >> toUid;
+        chat->pullMessageList(std::atol(toUid.c_str()));
+      } else if (command == "pullFriendList") {
+        chat->pullFriendList();
+      } else if (command == "pullFriendApplyList") {
+        chat->pullFriendApplyList();
       } else {
         std::cout << "Unknown command. enter 'q' to quit." << std::endl;
       }

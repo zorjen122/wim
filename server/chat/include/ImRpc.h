@@ -35,11 +35,16 @@ private:
 
 class ImRpc : public Singleton<ImRpc> {
 public:
+  using Machinekey = std::string;
   ImRpc();
-  ImRpcNode::Ptr getRpc(const std::string &machine);
+  ImRpcNode::Ptr getRpc(const Machinekey &machine);
+  ImRpcNode::Ptr getRpc(long hashValue);
 
 private:
-  std::unordered_map<std::string, ImRpcNode::Ptr> rpcGroup;
+  Machinekey getMachineKey(long hashValue);
+
+private:
+  std::unordered_map<Machinekey, ImRpcNode::Ptr> rpcGroup;
 };
 
 }; // namespace wim::rpc
