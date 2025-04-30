@@ -1,5 +1,6 @@
 #include "RpcService.h"
 #include "Configer.h"
+#include "Const.h"
 #include "ImActiver.h"
 #include "Logger.h"
 #include "Mysql.h"
@@ -11,6 +12,7 @@
 #include <jsoncpp/json/value.h>
 
 #include "Friend.h"
+#include "Service.h"
 
 namespace wim::rpc {
 // ImRpcService.cpp
@@ -74,6 +76,25 @@ grpc::Status
 ImRpcService::TextSendMessage(ServerContext *context,
                               const TextSendMessageRequest *request,
                               TextSendMessageResponse *response) {
+
+  long fromUid = request->fromuid();
+  long toUid = request->touid();
+  std::string text = request->text();
+  Json::Value requestJsonData;
+  requestJsonData["fromUid"] = Json::Value::Int64(fromUid);
+  requestJsonData["toUid"] = Json::Value::Int64(toUid);
+  requestJsonData["text"] = Json::Value(text);
+  requestJsonData["sessionKey"] = Json::Value::Int64(0);
+
+  auto localServiceResponse =
+      wim::TextSend(nullptr, ID_TEXT_SEND_REQ, requestJsonData);
+
+  int ec = localServiceResponse["error"].asInt();
+  if (ec < 0) {
+    LOG_INFO(businessLogger, "error: ", ec);
+    return grpc::Status::CANCELLED;
+  }
+
   return grpc::Status::OK;
 }
 }; // namespace wim::rpc

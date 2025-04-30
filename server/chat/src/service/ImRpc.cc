@@ -43,9 +43,51 @@ ImRpcNode::forwardNotifyAddFriend(const NotifyAddFriendRequest &request) {
 }
 
 ReplyAddFriendResponse
-ImRpcNode::forwardReplyAddFriend(const ReplyAddFriendRequest &) {}
+ImRpcNode::forwardReplyAddFriend(const ReplyAddFriendRequest &request) {
+
+  auto rpc = pool->getConnection();
+  if (!rpc)
+    return {};
+
+  Defer defer([this, &rpc] { pool->returnConnection(std::move(rpc)); });
+
+  grpc::ClientContext context;
+  ReplyAddFriendResponse response;
+
+  grpc::Status status = rpc->ReplyAddFriend(&context, request, &response);
+  if (status.ok()) {
+    response.set_status("success");
+  } else {
+    response.set_status("failed");
+    LOG_DEBUG(netLogger, "Failed to forward NotifyAddFriendRequest: {}",
+              status.error_message());
+  }
+
+  return response;
+}
 TextSendMessageResponse
-ImRpcNode::forwardTextSendMessage(const TextSendMessageRequest &) {}
+ImRpcNode::forwardTextSendMessage(const TextSendMessageRequest &request) {
+
+  auto rpc = pool->getConnection();
+  if (!rpc)
+    return {};
+
+  Defer defer([this, &rpc] { pool->returnConnection(std::move(rpc)); });
+
+  grpc::ClientContext context;
+  TextSendMessageResponse response;
+
+  grpc::Status status = rpc->TextSendMessage(&context, request, &response);
+  if (status.ok()) {
+    response.set_status("success");
+  } else {
+    response.set_status("failed");
+    LOG_DEBUG(netLogger, "Failed to forward NotifyAddFriendRequest: {}",
+              status.error_message());
+  }
+
+  return response;
+}
 
 ImRpc::ImRpc() {
   auto conf = Configer::getNode("server");
