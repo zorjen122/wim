@@ -97,8 +97,7 @@ int main(int argc, char *argv[]) {
       return -1;
     }
 
-    chat->ping();
-    chat->OnheartBeat();
+    // chat->OnheartBeat();
 
     net::signal_set signals(ioContext, SIGINT, SIGTERM);
     signals.async_wait(

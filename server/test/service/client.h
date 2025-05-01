@@ -106,6 +106,29 @@ struct Chat : public Singleton<Chat> {
   std::map<long, db::UserInfo::Ptr> friendMap{};
 
   std::map<long, db::Message::MessageGroup> messageListMap{};
+
+  // 群聊
+  std::map<long, db::GroupMember::MemberList> groupMemberMap{};
+  bool createGroup(const std::string &groupName);
+  bool joinGroup(long groupId);
+  bool quitGroup(long groupId);
+  bool sendGroupMessage(long groupId, const std::string &message);
+  bool pullGroupMember(long groupId);
+  bool pullGroupMessage(long groupId, long lastMsgId, int limit);
+
+  bool createGroupHandle(Json::Value &response);
+  bool joinGroupHandle(Json::Value &response);
+  bool applyJoinGroupHandle(Json::Value &response);
+  bool quitGroupHandle(Json::Value &response);
+  bool sendGroupTextMessageHandle(Json::Value &response);
+  bool pullGroupMemberHandle(Json::Value &response);
+  bool pullGroupMessageHandle(Json::Value &response);
+
+  // 文件
+  std::map<std::string, db::File::Ptr> fileMap{};
+  bool sendFile(long toId, const std::string &filePath);
+  bool sendFileHandle(Json::Value &response);
+  bool recvFileHandle(Json::Value &response);
 };
 
 struct Client {

@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+package file;
+
+// 通用文件块消息，用于上传和发送的公共字段
+message FileChunk {
+  int64 seq = 1;        // 序列号
+  int64 offset = 2;     // 当前偏移量
+  int64 total_size = 3; // 文件总大小(更清晰的命名)
+  FileType type = 4;
+
+  bytes data = 5;
+  string filename = 6;
+  string save_path = 7;
+  string timestamp = 8;
+}
+
+// 上传请求
+message UploadRequest {
+  FileChunk chunk = 1;
+  int64 user_id = 2;
+}
+
+// 上传响应
+message UploadResponse {
+  int64 seq = 1;
+  int64 user_id = 2;
+  TransferStatus status = 3;
+}
+
+// 发送请求
+message SendRequest {
+  FileChunk chunk = 1;
+  int64 sender_id = 2;
+  int64 receiver_id = 3;
+}
+
+// 发送响应
+message SendResponse {
+  int64 seq = 1;
+  int64 sender_id = 2;
+  int64 receiver_id = 3;
+  TransferStatus status = 4;
+}
+
+// 枚举定义
+enum FileType {
+  UNKNOWN = 0;
+  TEXT = 1;
+  IMAGE = 2;
+  VIDEO = 3;
+  MARKDOWN = 4;
+  AUDIO = 5;
+  OTHER = 6;
+}
+
+enum TransferStatus {
+  SUCCESS = 0;
+  FAILED = 1;
+  PARTIAL = 2;
+  PENDING = 3;
+}
+
+service FileService {
+  rpc Upload(UploadRequest) returns (UploadResponse) {}
+  rpc Send(SendRequest) returns (SendResponse) {}
+}

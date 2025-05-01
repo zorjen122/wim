@@ -19,6 +19,7 @@
 #include <boost/system/detail/error_code.hpp>
 #include <cassert>
 #include <chrono>
+#include <fstream>
 #include <mutex>
 #include <spdlog/spdlog.h>
 #include <string>
@@ -230,6 +231,7 @@ bool Chat::OnheartBeat(int count) {
         return;
       }
 
+      ping();
       LOG_INFO(businessLogger, "ping timeout, retry count: {}", count);
       this->OnheartBeat(count + 1);
       return;
@@ -578,4 +580,160 @@ void Chat::sendTextMessage(long uid, const std::string &message) {
 
   onReWrite(seq, textMsg.toStyledString(), ID_TEXT_SEND_REQ);
 }
+
+// 群聊
+bool Chat::createGroup(const std::string &groupName) {
+  Json::Value request;
+  request["groupName"] = groupName;
+  request["uid"] = Json::Value::Int64(user->uid);
+  chat->Send(request.toStyledString(), ID_GROUP_CREATE_REQ);
+  return true;
+}
+bool Chat::joinGroup(long groupId) {
+  Json::Value request;
+  request["groupId"] = Json::Value::Int64(groupId);
+  request["uid"] = Json::Value::Int64(user->uid);
+  chat->Send(request.toStyledString(), ID_GROUP_JOIN_REQ);
+  return true;
+  return true;
+}
+bool Chat::quitGroup(long groupId) {
+  Json::Value request;
+  request["groupId"] = Json::Value::Int64(groupId);
+  request["uid"] = Json::Value::Int64(user->uid);
+  chat->Send(request.toStyledString(), ID_GROUP_QUIT_REQ);
+  return true;
+}
+bool Chat::sendGroupMessage(long groupId, const std::string &message) {
+  Json::Value request;
+  request["groupId"] = Json::Value::Int64(groupId);
+  request["uid"] = Json::Value::Int64(user->uid);
+  request["text"] = message;
+  chat->Send(request.toStyledString(), ID_GROUP_TEXT_SEND_REQ);
+  return true;
+}
+bool Chat::pullGroupMember(long groupId) {
+  Json::Value request;
+  request["groupId"] = Json::Value::Int64(groupId);
+  request["uid"] = Json::Value::Int64(user->uid);
+  chat->Send(request.toStyledString(), ID_GROUP_PULL_MEMBER_REQ);
+  return true;
+}
+
+bool Chat::pullGroupMessage(long groupId, long lastMsgId, int limit) {
+  return true;
+}
+
+bool Chat::createGroupHandle(Json::Value &response) {
+  db::GroupManager info;
+
+  info.gid = response["groupId"].asInt64();
+  info.sessionKey = response["sessionKey"].asInt64();
+  info.createTime = response["createTime"].asString();
+
+  return true;
+}
+bool Chat::joinGroupHandle(Json::Value &response) { return true; }
+bool Chat::applyJoinGroupHandle(Json::Value &response) {
+  db::GroupMember member;
+  member.uid = response["uid"].asInt64();
+  member.memberName = response["name"].asString();
+  member.joinTime = response["joinTime"].asString();
+  member.role = response["role"].asInt();
+  member.speech = response["speech"].asInt();
+
+  return true;
+}
+bool Chat::quitGroupHandle(Json::Value &response) { return true; }
+bool Chat::sendGroupTextMessageHandle(Json::Value &response) { return true; }
+bool Chat::pullGroupMemberHandle(Json::Value &response) {
+
+  Json::Value list = response["memberList"];
+  long gid = response["groupId"].asInt64();
+  groupMemberMap[gid] = {};
+
+  for (auto &item : list) {
+    db::GroupMember::Ptr member;
+    member->uid = item["uid"].asInt64();
+    member->memberName = item["name"].asString();
+    member->joinTime = item["joinTime"].asString();
+    member->role = item["role"].asInt();
+    member->speech = item["speech"].asInt();
+    groupMemberMap[gid].push_back(member);
+  }
+  return true;
+}
+bool Chat::pullGroupMessageHandle(Json::Value &response) { return true; }
+
+// 文件
+bool Chat::sendFile(long toId, const std::string &filePath) {
+  Json::Value request;
+
+  std::fstream file(filePath, std::ios::in | std::ios::binary);
+  if (!file.is_open()) {
+    LOG_ERROR(businessLogger, "open file failed: {}", filePath);
+    return false;
+  }
+  static const int chunkSize = 1024 * 1024; // 1MB
+  static std::atomic<long> seq(3000);
+  char buffer[chunkSize];
+
+  db::File::Ptr fileInfo(new db::File());
+  fileInfo->seq = seq;
+  fileInfo->type = db::File::Type::FILE;
+  fileInfo->name = filePath;
+
+  fileMap[filePath] = fileInfo;
+
+  while (!file.eof()) {
+    file.read(buffer, chunkSize);
+    fileInfo->offset += chunkSize;
+    fileInfo->data.append(buffer, file.gcount());
+
+    request["seq"] = Json::Value::Int64(seq);
+    request["fromUid"] = Json::Value::Int64(user->uid);
+    request["toId"] = Json::Value::Int64(toId);
+    request["data"] = buffer;
+
+    chat->Send(request.toStyledString(), ID_FILE_UPLOAD_REQ);
+
+    // 客户端主动P99延迟，保顺序
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  }
+
+  seq++;
+  file.close();
+  return true;
+}
+bool Chat::sendFileHandle(Json::Value &response) {
+  std::string name = response["name"].asString();
+  long seq = response["seq"].asInt64();
+  long toUid = response["toId"].asInt64();
+  int status = response["status"].asInt();
+
+  LOG_INFO(businessLogger, "recv file: {}, seq: {}, toUid: {}, status: {}",
+           name, seq, toUid, status);
+  return true;
+}
+
+bool Chat::recvFileHandle(Json::Value &response) {
+  std::string name = response["name"].asString();
+  long seq = response["seq"].asInt64();
+  long fromUid = response["fromUid"].asInt64();
+  std::string data = response["data"].asString();
+
+  std::string savePath =
+      "./" + std::to_string(user->uid) + "/files/" + name + ".txt";
+  std::fstream file(savePath, std::ios::out | std::ios::binary | std::ios::app);
+  if (!file.is_open()) {
+    LOG_ERROR(businessLogger, "open file failed: {}", name);
+    return false;
+  }
+  file.write(data.c_str(), data.size());
+  file.close();
+
+  // ack todo...
+  return true;
+}
+
 }; // namespace wim
