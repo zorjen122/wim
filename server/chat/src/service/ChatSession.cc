@@ -63,7 +63,7 @@ std::string NetworkMessage::getData() { return protocolData->getData(); };
 ChatSession::ChatSession(boost::asio::io_context &ioContext, ChatServer *server,
                          size_t sessionID)
     : id(sessionID), socket(ioContext), chatServer(server), closeEnable(false),
-      parseState(WAIT_HEADER), ioContext(ioContext) {
+      parseState(WAIT_HEADER), sendMutex{}, ioContext(ioContext) {
   recvStreamBuffer.prepare(PROTOCOL_DATA_MTU);
   spdlog::info("ChatSession construct, sessionID is {}", sessionID);
 }

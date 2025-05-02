@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 
-project(file_test)
+project(public_test)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -10,13 +10,13 @@ set(CMAKE_CXX_STANDARD 17)
 find_package(GTest REQUIRED)
 include(CTest)
 
-function(add_file_test target)
+function(add_public_test target)
   add_executable(${target} ${ARGN})
   target_include_directories(${target} PUBLIC include)
-  target_link_libraries(${target} PRIVATE GTest::GTest GTest::Main imFile)
+  target_link_libraries(${target} PRIVATE GTest::GTest GTest::Main imPublic)
 
   add_test(NAME ${CMAKE_PROJECT_NAME}.${target} COMMAND ${target})
 endfunction()
 
-add_file_test(integration_file_client_test integration/file_client_test.cc)
-add_file_test(unit_demo_test unit/demo.cc)
+add_public_test(test_mysql_dao mysqlDaoTest.cc)
+add_public_test(test_redis_dao redisDaoTest.cc)

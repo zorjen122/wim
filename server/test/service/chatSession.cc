@@ -165,7 +165,6 @@ void ChatSession::HandleError(net::error_code ec) {
   */
   if (ec == net::error::eof) {
     LOG_DEBUG(netLogger, "end of file, chat close ");
-
   } else if (ec == net::error::connection_reset) {
     LOG_DEBUG(netLogger, "connection reset, chat close ");
   } else {

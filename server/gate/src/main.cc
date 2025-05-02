@@ -25,7 +25,7 @@ int main() {
       return 0;
     }
 
-    IocPool::GetInstance();
+    wim::IocPool::GetInstance();
     wim::db::MysqlDao::GetInstance();
     wim::db::RedisDao::GetInstance();
     wim::rpc::StateClient::GetInstance();

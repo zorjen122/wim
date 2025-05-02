@@ -41,7 +41,7 @@ ImRpcService::NotifyAddFriend(ServerContext *context,
 
   int ec = localServiceResponse["error"].asInt();
   if (ec < 0) {
-    LOG_INFO(businessLogger, "error: ", ec);
+    LOG_INFO(businessLogger, "error: {}", ec);
     return grpc::Status::CANCELLED;
   }
   return grpc::Status::OK;

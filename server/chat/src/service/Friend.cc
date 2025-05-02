@@ -111,8 +111,8 @@ Json::Value ReplyAddFriend(ChatSession::Ptr session, unsigned int msgID,
   bool accept = request["accept"].asBool();
   std::string replyMessage = request["replyMessage"].asString();
 
-  bool isMachineOnline = OnlineUser::GetInstance()->isOnline(toUid);
-  if (isMachineOnline) {
+  bool isLocalMachineOnline = OnlineUser::GetInstance()->isOnline(toUid);
+  if (isLocalMachineOnline) {
     auto toSession = OnlineUser::GetInstance()->GetUserSession(toUid);
     int rt = OnlineReplyAddFriend(toSession, request);
 
@@ -134,8 +134,7 @@ Json::Value ReplyAddFriend(ChatSession::Ptr session, unsigned int msgID,
 
   bool isOtherMachineOnline = !userInfo.empty();
   if (isOtherMachineOnline) {
-    LOG_INFO(businessLogger, "toUid {} userinfo: {}",
-             userInfo.toStyledString());
+    LOG_INFO(businessLogger, "userinfo {}", userInfo.toStyledString());
 
     std::string machineId = userInfo["machineId"].asString();
 
@@ -191,16 +190,16 @@ int OfflineReplyAddFriend(Json::Value &request) {
   bool accept = request["accept"].asBool();
   std::string replyMessage = request["replyMessage"].asString();
 
-  int rt = 0;
+  int rt = -1;
   db::FriendApply::Status status{};
   std::string time = getCurrentDateTime();
   long sessionId{};
   if (accept) {
     status = db::FriendApply::Status::Agree;
     long sessionId = db::RedisDao::GetInstance()->generateSessionId();
-    db::Friend::Ptr friendInfo(new db::Friend(fromUid, toUid, time, sessionId));
+    db::Friend::Ptr friendData(new db::Friend(fromUid, toUid, time, sessionId));
 
-    rt = db::MysqlDao::GetInstance()->insertFriend(friendInfo);
+    rt = db::MysqlDao::GetInstance()->insertFriend(friendData);
     if (rt == -1) {
       LOG_ERROR(businessLogger, "insertFriend filed is failed, from {}, to {}",
                 fromUid, toUid);

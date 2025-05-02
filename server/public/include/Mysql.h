@@ -254,6 +254,7 @@ public:
     对于指针（shared_ptr）返回类型，错误时统一返回nullptr
     对于bool返回类型，false表示错误
     返回接口定义处见：defaultForType
+  注意：为避免死锁，接口函数之间不得互相调用，因每个调用都会获取连接池，若池中没有可用连接，则会一直等待
   */
   template <typename Func>
   auto executeTemplate(Func &&processor) -> decltype(
@@ -269,7 +270,7 @@ public:
     try {
       return processor(con->session); // 完全由processor处理SQL执行
     } catch (mysqlx::Error &e) {
-      LOG_TRACE(dbLogger, "MySQL error: {}", e.what());
+      LOG_ERROR(dbLogger, "MySQL error: {}", e.what());
       HandleError(e);
       return defaultForType<decltype(processor(con->session))>();
     }
@@ -516,18 +517,24 @@ public:
   int insertFriend(Friend::Ptr friendData) {
     return executeTemplate(
         [&](std::unique_ptr<mysqlx::Session> &session) -> int {
-          int status = hasFriend(friendData->uidA, friendData->uidB);
-          if (status == 0)
-            return 1;
-
-          std::string dateTime = getCurrentDateTime();
-          std::string f = R"(INSERT INTO friends VALUES (?, ?, ?, ?))";
-          auto result = session->sql(f)
+          std::string hasFriend =
+              R"(SELECT COUNT(*) FROM friends WHERE uidA = ? AND uidB = ?)";
+          auto result = session->sql(hasFriend)
                             .bind(friendData->uidA)
                             .bind(friendData->uidB)
-                            .bind(friendData->sessionId)
-                            .bind(dateTime)
                             .execute();
+          auto row = result.fetchOne();
+          if (!row.isNull()) {
+            return 1;
+          }
+          std::string dateTime = getCurrentDateTime();
+          std::string f = R"(INSERT INTO friends VALUES (?, ?, ?, ?))";
+          result = session->sql(f)
+                       .bind(friendData->uidA)
+                       .bind(friendData->uidB)
+                       .bind(friendData->sessionId)
+                       .bind(dateTime)
+                       .execute();
           return 0;
         });
   }
