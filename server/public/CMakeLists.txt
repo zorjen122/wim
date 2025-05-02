@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.10)
 project(imPublic)
 set(CMAKE_EXPORT_COMPILE_COMMANDS true)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(protobuf_MODULE_COMPATIBLE TRUE)
 
 find_package(Threads REQUIRED)
@@ -29,3 +31,4 @@ target_include_directories(imPublic PUBLIC
 if(BUILD_TESTING)
     add_subdirectory(test/db)
 endif()
+

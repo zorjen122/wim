@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.10)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-project(mysql-test)
+project(db-test)
 
-file(GLOB SOURCE_CC mysqlDaoTest.cc redisDaoTest.cc test.cc)
+file(GLOB SOURCE_CC mysqlDaoTest.cc redisDaoTest.cc)
 
 foreach(SRC_FILE ${SOURCE_CC})
     # 获取文件名，不带路径和扩展名
@@ -24,7 +24,7 @@ foreach(SRC_FILE ${SOURCE_CC})
 
     # 设置每个可执行文件的链接库
     target_link_libraries(${EXEC_NAME} PUBLIC
-      ${_PUBLIC}
+      imPublic
       mysqlcppconn8 
       spdlog 
       yaml-cpp

@@ -65,7 +65,8 @@ struct FriendApply {
   FriendApply(size_t fromUid, size_t toUId, short status = 0,
               const std::string &content = "",
               const std::string &createTime = "")
-      : fromUid(fromUid), toUid(toUId) {}
+      : fromUid(fromUid), toUid(toUId), status(status), content(content),
+        createTime(createTime) {}
 
   std::string formatStatus(short status) {
     switch (status) {
@@ -145,6 +146,51 @@ struct Message {
   short status;
   std::string sendDateTime;
   std::string readDateTime;
+};
+
+// 新增，待定
+
+struct GroupManager {
+  using Ptr = std::shared_ptr<GroupManager>;
+  GroupManager() = default;
+  long gid;
+  long sessionKey;
+  std::string name;
+  std::string createTime;
+};
+
+struct GroupMember {
+  using Ptr = std::shared_ptr<GroupMember>;
+  using MemberList = std::vector<GroupMember::Ptr>;
+
+  enum Role { Member, Manager, Master };
+  enum Speech { NORMAL, BAN };
+  GroupMember() = default;
+  long gid;
+  long uid;
+  short role;
+  std::string joinTime;
+
+  // other
+  short speech;
+  std::string memberName;
+};
+
+// 暂放
+struct File {
+  using Ptr = std::shared_ptr<File>;
+
+  enum Type { IMAGE = 1, AUDIO = 2, VIDEO = 3, FILE = 4 };
+  File() = default;
+  long seq;
+  long offset;
+  long total;
+  Type type;
+
+  std::string data;
+  std::string name;
+  std::string savePath;
+  std::string createTime;
 };
 
 } // namespace wim::db

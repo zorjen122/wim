@@ -1,4 +1,5 @@
 #include "Configer.h"
+#include "DbGlobal.h"
 #include "Mysql.h"
 #include <cassert>
 
@@ -7,12 +8,13 @@ namespace wim::db {
 class MysqlDaoTest {
 public:
   static void runAllTests() {
-    testUserRegistration();
-    testUserInfoOperations();
+    // testUserRegistration();
+    // testUserInfoOperations();
     testFriendApplyOperations();
-    testFriendOperations();
-    testMessageOperations();
-    cleanupTestData();
+    // testFriendOperations();
+    // testMessageOperations();
+    // cleanupTestData();
+    // testGetUser();
   }
 
 private:
@@ -21,8 +23,16 @@ private:
   static constexpr int TEST_FRIEND_UID = 9998;
   static constexpr int TEST_MESSAGE_ID = 10000;
 
+  static void testGetUser() {
+    std::shared_ptr<MysqlDao> dao = MysqlDao::GetInstance();
+    User::Ptr fetchedUser = dao->getUser(TEST_USERNAME.data());
+    spdlog::info("uid: {}, email: {}, username: {}, password: {}",
+                 fetchedUser->uid, fetchedUser->email, fetchedUser->username,
+                 fetchedUser->password);
+  }
+
   static void testUserRegistration() {
-    auto dao = MysqlDao::GetInstance();
+    std::shared_ptr<MysqlDao> dao = MysqlDao::GetInstance();
 
     // 测试用户注册
     User::Ptr newUser(new User());
@@ -41,7 +51,8 @@ private:
   }
 
   static void testUserInfoOperations() {
-    auto dao = MysqlDao::GetInstance();
+    std::shared_ptr<MysqlDao> dao = MysqlDao::GetInstance();
+
     // 插入用户信息
     UserInfo::Ptr info(
         new UserInfo(TEST_UID, "Test User", 25, "male", "/images/test.jpg"));
@@ -70,9 +81,13 @@ private:
   }
 
   static void testFriendApplyOperations() {
-    auto dao = MysqlDao::GetInstance();
-    // 添加好友
-    FriendApply::Ptr newFriendApply(new FriendApply(TEST_UID, TEST_FRIEND_UID));
+    std::shared_ptr<MysqlDao> dao = MysqlDao::GetInstance();
+
+    static auto applyStatus = FriendApply::Status::Agree;
+
+    FriendApply::Ptr newFriendApply(new FriendApply(TEST_UID, TEST_FRIEND_UID,
+                                                    applyStatus, "Hello!",
+                                                    "2020-01-01 00:00:00"));
 
     int addResult = dao->insertFriendApply(newFriendApply);
     assert(addResult != -1 && "Add friend failed");
@@ -88,10 +103,11 @@ private:
   }
 
   static void testFriendOperations() {
-    auto dao = MysqlDao::GetInstance();
+    std::shared_ptr<MysqlDao> dao = MysqlDao::GetInstance();
+
     // 添加好友
-    Friend::Ptr newFriend(
-        new Friend(TEST_UID, TEST_FRIEND_UID, "2023-01-01 00:00:00", 1));
+    Friend::Ptr newFriend(new Friend(TEST_UID, TEST_FRIEND_UID,
+                                     "2023-01-01 00:00:00", 1323214125123));
 
     int addResult = dao->insertFriend(newFriend);
     assert(addResult != -1 && "Add friend failed");
@@ -107,7 +123,8 @@ private:
   }
 
   static void testMessageOperations() {
-    auto dao = MysqlDao::GetInstance();
+    std::shared_ptr<MysqlDao> dao = MysqlDao::GetInstance();
+
     // 插入测试消息
     Message::Ptr msg(new Message(TEST_MESSAGE_ID, TEST_UID, TEST_FRIEND_UID,
                                  "session_123",
@@ -132,7 +149,7 @@ private:
   }
 
   static void cleanupTestData() {
-    auto dao = MysqlDao::GetInstance();
+    std::shared_ptr<MysqlDao> dao = MysqlDao::GetInstance();
 
     // 清理测试数据
     int delResult = 0;
@@ -154,9 +171,8 @@ private:
 
 int main() {
 
-  // Configer::loadConfig("../config.yaml");
-
-  // wim::db::MysqlDaoTest::runAllTests();
-
+  Configer::loadConfig("/home/zorjen/proj/wim/server/public/config.yaml");
+  wim::db::MysqlDaoTest::runAllTests();
+  using wim::db::MysqlDao;
   return 0;
 }

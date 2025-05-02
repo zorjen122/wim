@@ -18,6 +18,7 @@
 #include <spdlog/spdlog.h>
 #include <string>
 #include <thread>
+#include <type_traits>
 
 #include "Configer.h"
 #include "Const.h"
@@ -197,7 +198,7 @@ private:
 
 private:
   std::string host;
-  unsigned int port;
+  unsigned short port;
   std::string user;
   std::string password;
   std::string schema;
@@ -247,309 +248,247 @@ public:
   }
   ~MysqlDao() {}
 
+  /*
+  接口说明：【2025-5-2】
+    对于int、long返回类型，返回-1表示存储时出错；对于查询，返回1表示已存在该数据
+    对于指针（shared_ptr）返回类型，错误时统一返回nullptr
+    对于bool返回类型，false表示错误
+    返回接口定义处见：defaultForType
+  */
+  template <typename Func>
+  auto executeTemplate(Func &&processor) -> decltype(
+      processor(std::declval<std::unique_ptr<mysqlx::Session> &>())) {
+    auto con = mysqlPool->GetConnection();
+    if (con == nullptr) {
+      LOG_INFO(dbLogger, "Mysql connection pool is empty!");
+      return defaultForType<decltype(processor(con->session))>();
+    }
+    Defer defer(
+        [&con, this]() { mysqlPool->ReturnConnection(std::move(con)); });
+
+    try {
+      return processor(con->session); // 完全由processor处理SQL执行
+    } catch (mysqlx::Error &e) {
+      LOG_TRACE(dbLogger, "MySQL error: {}", e.what());
+      HandleError(e);
+      return defaultForType<decltype(processor(con->session))>();
+    }
+  }
+  template <typename T> static auto defaultForType() {
+    if constexpr (std::is_same_v<T, bool>) {
+      return false;
+    } else if constexpr (std::is_integral_v<T>) {
+      return -1;
+    } else {
+      return T{};
+    }
+  }
+  void HandleError(mysqlx::Error &e) {
+    // 暂无处理
+    return;
+  }
+
   void Close() { mysqlPool->Close(); }
 
   User::Ptr getUser(const std::string &username) {
-    auto con = mysqlPool->GetConnection();
-    if (con == nullptr) {
-      // log...
-      LOG_DEBUG(dbLogger, "pool number is empty!, username: {}", username);
-      return nullptr;
-    }
+    return executeTemplate(
+        [&](std::unique_ptr<mysqlx::Session> &session) -> User::Ptr {
+          auto result = session->sql("SELECT * FROM users WHERE username = ?")
+                            .bind(username)
+                            .execute();
+          auto row = result.fetchOne();
+          if (row.isNull()) {
+            LOG_DEBUG(dbLogger, "result fetchOne is null");
+            return nullptr;
+          }
 
-    Defer defer(
-        [&con, this]() { mysqlPool->ReturnConnection(std::move(con)); });
-
-    try {
-      std::string hasUser = R"(SELECT * FROM users WHERE username = ?)";
-      auto result = con->session->sql(hasUser).bind(username).execute();
-      auto row = result.fetchOne();
-      if (row.isNull()) {
-        // log...
-        LOG_DEBUG(dbLogger, "result fetchOne is null");
-        return nullptr;
-      }
-
-      size_t id = row[0].get<size_t>();
-      size_t uid = row[1].get<size_t>();
-      std::string username = row[2].get<std::string>();
-      std::string password = row[3].get<std::string>();
-      std::string email = row[4].get<std::string>();
-      std::string createTime = row[5].get<std::string>();
-      return std::make_shared<User>(std::move(id), std::move(uid),
-                                    std::move(username), std::move(password),
-                                    std::move(email), createTime);
-    } catch (mysqlx::Error &e) {
-      LOG_WARN(dbLogger, "Error: {}", e.what());
-      return nullptr;
-    }
+          size_t id = row[0].get<size_t>();
+          size_t uid = row[1].get<size_t>();
+          std::string username = row[2].get<std::string>();
+          std::string password = row[3].get<std::string>();
+          std::string email = row[4].get<std::string>();
+          std::string createTime = row[5].get<std::string>();
+          return std::make_shared<User>(
+              std::move(id), std::move(uid), std::move(username),
+              std::move(password), std::move(email), createTime);
+        });
   }
 
   UserInfo::Ptr getUserInfo(long uid) {
-    auto con = mysqlPool->GetConnection();
-    if (con == nullptr) {
-      // log...
-      LOG_DEBUG(dbLogger, "pool number is empty!, uid: {}", uid);
-      return nullptr;
-    }
-
-    Defer defer(
-        [&con, this]() { mysqlPool->ReturnConnection(std::move(con)); });
-
-    try {
-      std::string f = R"(SELECT * FROM userInfo WHERE uid = ?)";
-      auto result = con->session->sql(f).bind(uid).execute();
-      auto row = result.fetchOne();
-      if (row.isNull()) {
-        // log...
-        LOG_DEBUG(dbLogger, "result fetchOne is null");
-        return nullptr;
-      }
-      std::string name = row[1].get<std::string>();
-      short age = row[2].get<int>();
-      std::string sex = row[3].get<std::string>();
-      std::string headImageURL = row[4].get<std::string>();
-      return std::make_shared<UserInfo>(std::move(uid), std::move(name),
-                                        std::move(age), std::move(sex),
-                                        std::move(headImageURL));
-
-    } catch (mysqlx::Error &e) {
-      LOG_INFO(dbLogger, "Error: {}", e.what());
-      return nullptr;
-    }
+    return executeTemplate(
+        [&](std::unique_ptr<mysqlx::Session> &session) -> UserInfo::Ptr {
+          auto result = session->sql("SELECT * FROM userInfo WHERE uid = ?")
+                            .bind(uid)
+                            .execute();
+          auto row = result.fetchOne();
+          if (row.isNull()) {
+            LOG_DEBUG(dbLogger, "result fetchOne is null");
+            return nullptr;
+          }
+          return std::make_shared<UserInfo>(
+              uid,
+              row[1].get<std::string>(), // name
+              row[2].get<int>(),         // age
+              row[3].get<std::string>(), // sex
+              row[4].get<std::string>()  // headImageURL
+          );
+        });
   }
 
   bool hasUserInfo(long uid) {
-    auto con = mysqlPool->GetConnection();
-    if (con == nullptr) {
-      // log...
-      LOG_DEBUG(dbLogger, "pool number is empty!, uid: {}", uid);
-      return false;
-    }
-
-    Defer defer(
-        [&con, this]() { mysqlPool->ReturnConnection(std::move(con)); });
-
-    try {
-      std::string f = R"(SELECT uid FROM userInfo WHERE uid = ?)";
-      auto result = con->session->sql(f).bind(uid).execute();
-      return result.hasData();
-    } catch (mysqlx::Error &e) {
-      LOG_DEBUG(wim::dbLogger, "Error: {}", e.what());
-      return false;
-    }
+    return executeTemplate(
+        [&](std::unique_ptr<mysqlx::Session> &session) -> bool {
+          auto result = session->sql("SELECT uid FROM userInfo WHERE uid = ?")
+                            .bind(uid)
+                            .execute();
+          return result.hasData();
+        });
   }
 
   Friend::FriendGroup getFriendList(long uid) {
-    auto con = mysqlPool->GetConnection();
-    if (con == nullptr) {
-      // log...
-      LOG_DEBUG(dbLogger, "pool number is empty!, uid: {}", uid);
-      return nullptr;
-    }
+    return executeTemplate(
+        [&](std::unique_ptr<mysqlx::Session> &session) -> Friend::FriendGroup {
+          auto result = session->sql("SELECT * FROM friends WHERE uidA = ?")
+                            .bind(uid)
+                            .execute();
 
-    Defer defer(
-        [&con, this]() { mysqlPool->ReturnConnection(std::move(con)); });
+          if (!result.hasData()) {
+            LOG_DEBUG(dbLogger, "result fetchOne is null");
+            return nullptr;
+          }
 
-    try {
-      std::string f = R"(SELECT * FROM friends WHERE uidA = ?)";
-      auto result = con->session->sql(f).bind(uid).execute();
-      if (!result.hasData()) {
-        // log...
-        LOG_DEBUG(dbLogger, "result fetchOne is null");
-        return nullptr;
-      }
-      auto friendGroup = std::make_shared<std::vector<Friend::Ptr>>();
-
-      for (const auto &row : result.fetchAll()) {
-        size_t uidA = row[0].get<size_t>();
-        size_t uidB = row[1].get<size_t>();
-        size_t sessionId = row[2].get<size_t>();
-        std::string createTime = row[3].get<std::string>();
-        Friend::Ptr friendA(new Friend(uidA, uidB, createTime, sessionId));
-        friendGroup->push_back(friendA);
-      }
-
-      return friendGroup;
-    } catch (mysqlx::Error &e) {
-      LOG_INFO(dbLogger, "Error: {}", e.what());
-      return nullptr;
-    }
+          auto friendGroup = std::make_shared<std::vector<Friend::Ptr>>();
+          for (const auto &row : result.fetchAll()) {
+            friendGroup->emplace_back(
+                new Friend(row[0].get<size_t>(),      // uidA
+                           row[1].get<size_t>(),      // uidB
+                           row[3].get<std::string>(), // createTime
+                           row[2].get<size_t>()       // sessionId
+                           ));
+          }
+          return friendGroup;
+        });
   }
 
   int userModifyPassword(User::Ptr user) {
-    auto con = mysqlPool->GetConnection();
-    if (con == nullptr) {
-      // log...
-      LOG_DEBUG(dbLogger, "pool number is empty!");
-      return 1;
-    }
+    return executeTemplate([user](std::unique_ptr<mysqlx::Session> &session)
+                               -> int {
+      // 验证用户存在
+      auto checkResult =
+          session->sql("SELECT * FROM users WHERE email = ? AND uid = ?")
+              .bind(user->email)
+              .bind(user->uid)
+              .execute();
 
-    Defer defer(
-        [&con, this]() { mysqlPool->ReturnConnection(std::move(con)); });
-
-    try {
-      std::string hasUser =
-          R"(SELECT * FROM users WHERE email = ? AND uid = ?)";
-      auto result = con->session->sql(hasUser)
-                        .bind(user->email)
-                        .bind(user->uid)
-                        .execute();
-      auto row = result.fetchOne();
-      if (row.isNull()) {
-        // log...
-        return 1;
+      if (checkResult.fetchOne().isNull()) {
+        LOG_DEBUG(dbLogger, "result fetchOne is null");
+        return 1; // 用户不存在
       }
-      std::string f =
-          R"(UPDATE users SET password = ? WHERE email = ? AND uid = ?)";
-      result = con->session->sql(f)
-                   .bind(user->password)
-                   .bind(user->email)
-                   .bind(user->uid)
-                   .execute();
-      return 0;
-    } catch (mysqlx::Error &e) {
-      LOG_INFO(dbLogger, "Error: {}", e.what());
-      return -1;
-    }
+
+      // 更新密码
+      auto updateResult =
+          session
+              ->sql("UPDATE users SET password = ? WHERE email = ? AND uid = ?")
+              .bind(user->password)
+              .bind(user->email)
+              .bind(user->uid)
+              .execute();
+
+      return 0; // 成功
+    });
   }
 
   int userRegister(User::Ptr user) {
+    return executeTemplate(
+        [&](std::unique_ptr<mysqlx::Session> &session) -> int {
+          // 检查用户是否已存在
+          auto checkResult =
+              session->sql("SELECT * FROM users WHERE email = ? OR uid = ?")
+                  .bind(user->email)
+                  .bind(user->uid)
+                  .execute();
 
-    auto con = mysqlPool->GetConnection();
+          if (!checkResult.fetchOne().isNull()) {
+            return 1; // 用户已存在
+          }
 
-    if (con == nullptr) {
-      // log...
-      LOG_DEBUG(dbLogger, "pool number is empty!");
-      return -1;
-    }
+          // 注册新用户
+          auto createTime = getCurrentDateTime();
+          auto insertResult =
+              session->sql("INSERT INTO users VALUES (NULL,?,?,?,?,?)")
+                  .bind(user->uid)
+                  .bind(user->username)
+                  .bind(user->password)
+                  .bind(user->email)
+                  .bind(createTime)
+                  .execute();
 
-    Defer defer(
-        [&con, this]() { mysqlPool->ReturnConnection(std::move(con)); });
-
-    try {
-      std::string hasUser =
-          R"(SELECT * FROM users WHERE email = ? AND uid = ?)";
-      auto result = con->session->sql(hasUser)
-                        .bind(user->email)
-                        .bind(user->uid)
-                        .execute();
-      auto row = result.fetchOne();
-      if (!row.isNull()) {
-        // log...
-        return 1;
-      }
-
-      std::string insertUser = R"(INSERT INTO users VALUES (NULL,?,?,?,?,?))";
-
-      auto createTime = getCurrentDateTime();
-      result = con->session->sql(insertUser)
-                   .bind(user->uid)
-                   .bind(user->username)
-                   .bind(user->password)
-                   .bind(user->email)
-                   .bind(createTime)
-                   .execute();
-      return 0;
-    } catch (mysqlx::Error &e) {
-      LOG_INFO(dbLogger, "Error: {}", e.what());
-      return -1;
-    }
+          return 0; // 注册成功
+        });
   }
 
   int insertUserInfo(UserInfo::Ptr userInfo) {
-    auto con = mysqlPool->GetConnection();
 
-    if (con == nullptr) {
-      // log...
-      LOG_DEBUG(dbLogger, "pool number is empty!");
-      return -1;
-    }
+    return executeTemplate(
+        [&](std::unique_ptr<mysqlx::Session> &session) -> int {
+          std::string hasUserInfo = R"(SELECT * FROM userInfo WHERE uid = ?)";
+          auto result = session->sql(hasUserInfo).bind(userInfo->uid).execute();
+          auto row = result.fetchOne();
+          if (!row.isNull()) {
+            LOG_DEBUG(dbLogger, "result fetchOne is null");
+            // log...
+            return 1;
+          }
 
-    Defer defer(
-        [&con, this]() { mysqlPool->ReturnConnection(std::move(con)); });
+          std::string f = R"(INSERT INTO userInfo VALUES (?,?,?,?,?))";
+          result = session->sql(f)
+                       .bind(userInfo->uid)
+                       .bind(userInfo->name)
+                       .bind(userInfo->age)
+                       .bind(userInfo->sex)
+                       .bind(userInfo->headImageURL)
+                       .execute();
 
-    try {
-      std::string hasUserInfo = R"(SELECT * FROM userInfo WHERE uid = ?)";
-      auto result =
-          con->session->sql(hasUserInfo).bind(userInfo->uid).execute();
-      auto row = result.fetchOne();
-      if (!row.isNull()) {
-        LOG_DEBUG(dbLogger, "result fetchOne is null");
-        // log...
+          return 0;
+        });
+  }
+
+  int insertFriendApply(FriendApply::Ptr friendData) {
+
+    return executeTemplate([&](std::unique_ptr<mysqlx::Session> &session)
+                               -> int {
+      std::string hasFriend =
+          R"(SELECT COUNT(*) FROM friendApplys WHERE fromUid = ? AND toUid = ?)";
+      auto count = session->sql(hasFriend)
+                       .bind(friendData->fromUid)
+                       .bind(friendData->toUid)
+                       .execute()
+                       .fetchOne()[0]
+                       .get<int>();
+      if (count > 0) {
+        LOG_DEBUG(dbLogger, "Record already exists");
         return 1;
       }
+      std::string f = R"(INSERT INTO friendApplys VALUES (?, ?, ?, ?, ?))";
 
-      std::string f = R"(INSERT INTO userInfo VALUES (?,?,?,?,?))";
-      result = con->session->sql(f)
-                   .bind(userInfo->uid)
-                   .bind(userInfo->name)
-                   .bind(userInfo->age)
-                   .bind(userInfo->sex)
-                   .bind(userInfo->headImageURL)
-                   .execute();
-
-      return 0;
-    } catch (mysqlx::Error &e) {
-      LOG_INFO(dbLogger, "Error: {}", e.what());
-      return -1;
-    }
-  }
-  int insertFriendApply(FriendApply::Ptr friendData) {
-    auto con = mysqlPool->GetConnection();
-    if (con == nullptr) {
-      // log...
-      LOG_DEBUG(dbLogger, "pool number is empty!");
-      return 1;
-    }
-
-    Defer defer(
-        [&con, this]() { mysqlPool->ReturnConnection(std::move(con)); });
-
-    try {
-      std::string hasFriend =
-          R"(SELECT * FROM friendApplys WHERE fromUid = ? AND toUid = ?)";
-      auto result = con->session->sql(hasFriend)
+      auto result = session->sql(f)
                         .bind(friendData->fromUid)
                         .bind(friendData->toUid)
+                        .bind(friendData->content)
+                        .bind(friendData->status)
+                        .bind(friendData->createTime)
                         .execute();
-      auto row = result.fetchOne();
-      if (row.isNull() == false) {
-        // log...
-        LOG_DEBUG(dbLogger, "result fetchOne is exist");
-        return 1;
-      }
-      std::string f = R"(INSERT INTO friendApplys VALUES (?, ?, ?, ?, ?)";
-      result = con->session->sql(f)
-                   .bind(friendData->fromUid)
-                   .bind(friendData->toUid)
-                   .bind(friendData->content)
-                   .bind(friendData->status)
-                   .bind(friendData->createTime)
-                   .execute();
       return 0;
-    } catch (mysqlx::Error &e) {
-      LOG_INFO(dbLogger, "Error: {}", e.what());
-      return -1;
-    }
+    });
   }
+
   int updateFriendApplyStatus(FriendApply::Ptr friendData) {
-    auto con = mysqlPool->GetConnection();
-    if (con == nullptr) {
-      // log...
-      LOG_DEBUG(dbLogger, "pool number is empty!");
-      return 1;
-    }
-
-    Defer defer(
-        [&con, this]() { mysqlPool->ReturnConnection(std::move(con)); });
-
-    try {
-
+    return executeTemplate([&](std::unique_ptr<mysqlx::Session> &session)
+                               -> int {
       // update: status, content, createTime
       std::string f =
           R"(UPDATE friendApplys SET status = ?, content = ?, createTime = ? WHERE fromUid = ? AND toUid = ?)";
-      auto result = con->session->sql(f)
+      auto result = session->sql(f)
                         .bind(friendData->status)
                         .bind(friendData->content)
                         .bind(friendData->createTime)
@@ -558,238 +497,124 @@ public:
                         .execute();
 
       return 0;
-    } catch (mysqlx::Error &e) {
-      LOG_INFO(dbLogger, "Error: {}", e.what());
-      return -1;
-    }
+    });
   }
-  // @return 0: 成功 1: 失败 -1: 组件异常
   int hasFriend(long uidA, long uidB) {
-    auto con = mysqlPool->GetConnection();
-    if (con == nullptr) {
-      // log...
-      LOG_DEBUG(dbLogger, "pool number is empty!");
-      return 1;
-    }
-
-    Defer defer(
-        [&con, this]() { mysqlPool->ReturnConnection(std::move(con)); });
-    try {
-      std::string hasFriend =
-          R"(SELECT * FROM friends WHERE uidA = ? AND uidB = ?)";
-      auto result =
-          con->session->sql(hasFriend).bind(uidA).bind(uidB).execute();
-      auto row = result.fetchOne();
-      if (!row) {
-        // log...
-        return 1;
-      }
-      return 0;
-    } catch (mysqlx::Error &e) {
-      // log...
-      LOG_DEBUG(dbLogger, "Error: {}", e.what());
-      return -1;
-    }
+    return executeTemplate(
+        [&](std::unique_ptr<mysqlx::Session> &session) -> int {
+          std::string hasFriend =
+              R"(SELECT * FROM friends WHERE uidA = ? AND uidB = ?)";
+          auto result = session->sql(hasFriend).bind(uidA).bind(uidB).execute();
+          auto row = result.fetchOne();
+          if (!row) {
+            // log...
+            return 1;
+          }
+          return 0;
+        });
   }
   int insertFriend(Friend::Ptr friendData) {
-    auto con = mysqlPool->GetConnection();
-    if (con == nullptr) {
-      // log...
-      LOG_DEBUG(dbLogger, "pool number is empty!");
-      return 1;
-    }
+    return executeTemplate(
+        [&](std::unique_ptr<mysqlx::Session> &session) -> int {
+          int status = hasFriend(friendData->uidA, friendData->uidB);
+          if (status == 0)
+            return 1;
 
-    Defer defer(
-        [&con, this]() { mysqlPool->ReturnConnection(std::move(con)); });
-
-    try {
-      int status = hasFriend(friendData->uidA, friendData->uidB);
-      if (status == 0)
-        return 1;
-
-      std::string dateTime = getCurrentDateTime();
-      std::string f = R"(INSERT INTO friends VALUES (?, ?, ?, ?))";
-      auto result = con->session->sql(f)
-                        .bind(friendData->uidA)
-                        .bind(friendData->uidB)
-                        .bind(friendData->sessionId)
-                        .bind(dateTime)
-                        .execute();
-      return 0;
-    } catch (mysqlx::Error &e) {
-      LOG_INFO(dbLogger, "Error: {}", e.what());
-      return -1;
-    }
+          std::string dateTime = getCurrentDateTime();
+          std::string f = R"(INSERT INTO friends VALUES (?, ?, ?, ?))";
+          auto result = session->sql(f)
+                            .bind(friendData->uidA)
+                            .bind(friendData->uidB)
+                            .bind(friendData->sessionId)
+                            .bind(dateTime)
+                            .execute();
+          return 0;
+        });
   }
 
   int insertMessage(Message::Ptr message) {
-    auto con = mysqlPool->GetConnection();
+    return executeTemplate(
+        [&](std::unique_ptr<mysqlx::Session> &session) -> int {
+          std::string f =
+              R"(INSERT INTO messages VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?))";
+          auto result = session->sql(f)
+                            .bind(message->messageId)
+                            .bind(message->fromUid)
+                            .bind(message->toUid)
+                            .bind(message->sessionKey)
+                            .bind(message->type)
+                            .bind(message->content)
+                            .bind(message->status)
+                            .bind(message->sendDateTime)
+                            .bind(message->readDateTime)
+                            .execute();
 
-    if (con == nullptr) {
-      // log...
-      LOG_DEBUG(dbLogger, "pool number is empty!");
-      return -1;
-    }
-
-    Defer defer(
-        [&con, this]() { mysqlPool->ReturnConnection(std::move(con)); });
-
-    try {
-      std::string f =
-          R"(INSERT INTO messages VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?))";
-      auto result = con->session->sql(f)
-                        .bind(message->messageId)
-                        .bind(message->fromUid)
-                        .bind(message->toUid)
-                        .bind(message->sessionKey)
-                        .bind(message->type)
-                        .bind(message->content)
-                        .bind(message->status)
-                        .bind(message->sendDateTime)
-                        .bind(message->readDateTime)
-                        .execute();
-
-      return 0;
-    } catch (mysqlx::Error &e) {
-      LOG_INFO(dbLogger, "Error: {}", e.what());
-      return -1;
-    }
+          return 0;
+        });
   }
   int updateUserInfoName(long uid, const std::string &name) {
-    auto con = mysqlPool->GetConnection();
+    return executeTemplate(
+        [&](std::unique_ptr<mysqlx::Session> &session) -> int {
+          std::string f = R"(UPDATE userInfo SET name = ? WHERE uid = ?)";
+          auto result = session->sql(f).bind(name).bind(uid).execute();
 
-    if (con == nullptr) {
-      // log...
-      LOG_DEBUG(dbLogger, "pool number is empty!");
-      return -1;
-    }
-
-    Defer defer(
-        [&con, this]() { mysqlPool->ReturnConnection(std::move(con)); });
-
-    try {
-      std::string f = R"(UPDATE userInfo SET name = ? WHERE uid = ?)";
-      auto result = con->session->sql(f).bind(name).bind(uid).execute();
-
-      return 0;
-    } catch (mysqlx::Error &e) {
-      LOG_INFO(dbLogger, "Error: {}", e.what());
-      return -1;
-    }
+          return 0;
+        });
   }
   int updateUserInfoAge(long uid, int age) {
-    auto con = mysqlPool->GetConnection();
+    return executeTemplate(
+        [&](std::unique_ptr<mysqlx::Session> &session) -> int {
+          std::string f = R"(UPDATE userInfo SET age = ? WHERE uid = ?)";
+          auto result = session->sql(f).bind(uid).bind(age).execute();
 
-    if (con == nullptr) {
-      // log...
-      LOG_DEBUG(dbLogger, "pool number is empty!");
-      return -1;
-    }
-
-    Defer defer(
-        [&con, this]() { mysqlPool->ReturnConnection(std::move(con)); });
-
-    try {
-      std::string f = R"(UPDATE userInfo SET age = ? WHERE uid = ?)";
-      auto result = con->session->sql(f).bind(uid).bind(age).execute();
-
-      return 0;
-    } catch (mysqlx::Error &e) {
-      LOG_INFO(dbLogger, "Error: {}", e.what());
-      return -1;
-    }
+          return 0;
+        });
   }
   int updateUserInfoSex(long uid, const std::string &sex) {
-    auto con = mysqlPool->GetConnection();
+    return executeTemplate(
+        [&](std::unique_ptr<mysqlx::Session> &session) -> int {
+          std::string f = R"(UPDATE userInfo SET sex = ? WHERE uid = ?)";
+          auto result = session->sql(f).bind(sex).bind(uid).execute();
 
-    if (con == nullptr) {
-      // log...
-      LOG_DEBUG(dbLogger, "pool number is empty!");
-      return -1;
-    }
-
-    Defer defer(
-        [&con, this]() { mysqlPool->ReturnConnection(std::move(con)); });
-
-    try {
-      std::string f = R"(UPDATE userInfo SET sex = ? WHERE uid = ?)";
-      auto result = con->session->sql(f).bind(sex).bind(uid).execute();
-
-      return 0;
-    } catch (mysqlx::Error &e) {
-      LOG_INFO(dbLogger, "Error: {}", e.what());
-      return -1;
-    }
+          return 0;
+        });
   }
   int updateUserInfoHeadImageURL(long uid, const std::string &headImageURL) {
-    auto con = mysqlPool->GetConnection();
+    return executeTemplate(
+        [&](std::unique_ptr<mysqlx::Session> &session) -> int {
+          std::string f =
+              R"(UPDATE userInfo SET headImageURL = ? WHERE uid = ?)";
+          auto result = session->sql(f).bind(headImageURL).bind(uid).execute();
 
-    if (con == nullptr) {
-      // log...
-      LOG_DEBUG(dbLogger, "pool number is empty!");
-      return -1;
-    }
-
-    Defer defer(
-        [&con, this]() { mysqlPool->ReturnConnection(std::move(con)); });
-
-    try {
-      std::string f = R"(UPDATE userInfo SET headImageURL = ? WHERE uid = ?)";
-      auto result = con->session->sql(f).bind(headImageURL).bind(uid).execute();
-
-      return 0;
-    } catch (mysqlx::Error &e) {
-      LOG_INFO(dbLogger, "Error: {}", e.what());
-      return -1;
-    }
+          return 0;
+        });
   }
   int updateMessage(long messageId, short status) {
-    auto con = mysqlPool->GetConnection();
+    return executeTemplate(
+        [&](std::unique_ptr<mysqlx::Session> &session) -> int {
+          std::string hasMessage =
+              R"(SELECT * FROM messages WHERE messageId = ?)";
+          auto result = session->sql(hasMessage).bind(messageId).execute();
+          auto row = result.fetchOne();
+          if (row.isNull()) {
+            // log...
+            LOG_DEBUG(dbLogger, "result fetchOne is null");
+            return 1;
+          }
+          std::string f =
+              R"(UPDATE messages SET status = ? WHERE messageId = ?)";
+          result = session->sql(f).bind(status).bind(messageId).execute();
 
-    if (con == nullptr) {
-      // log...
-      LOG_DEBUG(dbLogger, "pool number is empty!");
-      return -1;
-    }
-
-    Defer defer(
-        [&con, this]() { mysqlPool->ReturnConnection(std::move(con)); });
-
-    try {
-      std::string hasMessage = R"(SELECT * FROM messages WHERE messageId = ?)";
-      auto result = con->session->sql(hasMessage).bind(messageId).execute();
-      auto row = result.fetchOne();
-      if (row.isNull()) {
-        // log...
-        LOG_DEBUG(dbLogger, "result fetchOne is null");
-        return 1;
-      }
-      std::string f = R"(UPDATE messages SET status = ? WHERE messageId = ?)";
-      result = con->session->sql(f).bind(status).bind(messageId).execute();
-
-      return 0;
-    } catch (mysqlx::Error &e) {
-      LOG_INFO(dbLogger, "Error: {}", e.what());
-      return -1;
-    }
+          return 0;
+        });
   }
   FriendApply::FriendApplyGroup getFriendApplyList(long from) {
-    auto con = mysqlPool->GetConnection();
-
-    if (con == nullptr) {
-      // log...
-      LOG_DEBUG(dbLogger, "pool number is empty!");
-      return nullptr;
-    }
-
-    Defer defer(
-        [&con, this]() { mysqlPool->ReturnConnection(std::move(con)); });
-
-    try {
+    return executeTemplate([&](std::unique_ptr<mysqlx::Session> &session)
+                               -> FriendApply::FriendApplyGroup {
       const static short STATUS = 0;
       std::string f =
           R"(SELECT * FROM friendApplys WHERE status = ? AND fromUid = ?)";
-      auto result = con->session->sql(f).bind(STATUS).bind(from).execute();
+      auto result = session->sql(f).bind(STATUS).bind(from).execute();
       if (!result.hasData()) {
         // log...
         LOG_DEBUG(dbLogger, "result fetchOne is null");
@@ -801,39 +626,26 @@ public:
       for (auto row : result.fetchAll()) {
         size_t fromUid = row[0].get<size_t>();
         size_t toUid = row[1].get<size_t>();
-        short status = row[2].get<int>();
-        std::string content = row[3].get<std::string>();
+        std::string content = row[2].get<std::string>();
+        short status = row[3].get<int>();
         std::string createTime = row[4].get<std::string>();
         friendApply.reset(
             new FriendApply(fromUid, toUid, status, content, createTime));
         friendApplyGroup->push_back(friendApply);
       }
       return friendApplyGroup;
-    } catch (mysqlx::Error &e) {
-      LOG_INFO(dbLogger, "Error: {}", e.what());
-      return nullptr;
-    }
+    });
   }
 
   Message::MessageGroup getUserMessage(long from, long to, int startMessageId,
                                        int pullCount) {
     if (startMessageId <= 0)
       return nullptr;
-    auto con = mysqlPool->GetConnection();
-
-    if (con == nullptr) {
-      // log...
-      LOG_DEBUG(dbLogger, "pool number is empty!");
-      return nullptr;
-    }
-
-    Defer defer(
-        [&con, this]() { mysqlPool->ReturnConnection(std::move(con)); });
-
-    try {
+    return executeTemplate([&](std::unique_ptr<mysqlx::Session> &session)
+                               -> Message::MessageGroup {
       std::string f =
           R"(SELECT * FROM messages WHERE senderId = ? AND receiverId = ? AND messageId >= ? ORDER BY messageId DESC LIMIT ?)";
-      auto result = con->session->sql(f)
+      auto result = session->sql(f)
                         .bind(from)
                         .bind(to)
                         .bind(startMessageId)
@@ -864,27 +676,14 @@ public:
         messageGroup->push_back(messagePtr);
       }
       return messageGroup;
-    } catch (mysqlx::Error &e) {
-      LOG_INFO(dbLogger, "Error: {}", e.what());
-      return nullptr;
-    }
+    });
   }
   int deleteUser(long uid) {
-    auto con = mysqlPool->GetConnection();
-
-    if (con == nullptr) {
-      // log...
-      LOG_DEBUG(dbLogger, "pool number is empty!");
-      return 1;
-    }
-
-    Defer defer(
-        [&con, this]() { mysqlPool->ReturnConnection(std::move(con)); });
-
-    try {
+    return executeTemplate([&](std::unique_ptr<mysqlx::Session> &session)
+                               -> int {
       std::string hasUser =
           R"(SELECT a.uid FROM users AS a, userInfo AS b WHERE a.uid = ? AND a.uid = b.uid)";
-      auto result = con->session->sql(hasUser).bind(uid).execute();
+      auto result = session->sql(hasUser).bind(uid).execute();
       if (!result.hasData()) {
         // log...
         LOG_DEBUG(dbLogger, "result fetchOne is null");
@@ -892,31 +691,18 @@ public:
       }
       std::string f1 = R"(DELETE FROM users WHERE uid = ?)";
       std::string f2 = R"(DELETE FROM userInfo WHERE uid = ?)";
-      result = con->session->sql(f1).bind(uid).execute();
-      result = con->session->sql(f2).bind(uid).execute();
+      result = session->sql(f1).bind(uid).execute();
+      result = session->sql(f2).bind(uid).execute();
       return 0;
-    } catch (mysqlx::Error &e) {
-      LOG_INFO(dbLogger, "Error: {}", e.what());
-      return -1;
-    }
+    });
   }
   int deleteFriendApply(long fromUid, long toUid) {
-    auto con = mysqlPool->GetConnection();
-
-    if (con == nullptr) {
-      // log...
-      LOG_DEBUG(dbLogger, "pool number is empty!");
-      return 1;
-    }
-
-    Defer defer(
-        [&con, this]() { mysqlPool->ReturnConnection(std::move(con)); });
-
-    try {
+    return executeTemplate([&](std::unique_ptr<mysqlx::Session> &session)
+                               -> int {
       std::string hasFriendApply =
           R"(SELECT fromUid FROM friendApplys WHERE fromUid = ? AND toUid = ?)";
       auto result =
-          con->session->sql(hasFriendApply).bind(fromUid).bind(toUid).execute();
+          session->sql(hasFriendApply).bind(fromUid).bind(toUid).execute();
       if (!result.hasData()) {
         // log...
         LOG_DEBUG(dbLogger, "result fetchOne is null");
@@ -924,116 +710,58 @@ public:
       }
       std::string f =
           R"(DELETE FROM friendApplys WHERE fromUid = ? AND toUid = ?)";
-      result = con->session->sql(f).bind(fromUid).bind(toUid).execute();
+      result = session->sql(f).bind(fromUid).bind(toUid).execute();
       return 0;
-    } catch (mysqlx::Error &e) {
-      LOG_INFO(dbLogger, "Error: {}", e.what());
-      return -1;
-    }
+    });
   }
   int deleteFriend(long uidA, long uidB) {
-    auto con = mysqlPool->GetConnection();
-
-    if (con == nullptr) {
-      // log...
-      LOG_DEBUG(dbLogger, "pool number is empty!");
-      return 1;
-    }
-
-    Defer defer(
-        [&con, this]() { mysqlPool->ReturnConnection(std::move(con)); });
-
-    try {
-      std::string hasFriend =
-          R"(SELECT uidA FROM friends WHERE uidA = ? AND uidB = ?)";
-      auto result =
-          con->session->sql(hasFriend).bind(uidA).bind(uidB).execute();
-      if (!result.hasData()) {
-        // log...
-        LOG_DEBUG(dbLogger, "result fetchOne is null");
-        return 1;
-      }
-      std::string f = R"(DELETE FROM friends WHERE uidA = ? AND uidB = ?)";
-      result = con->session->sql(f).bind(uidA).bind(uidB).execute();
-      return 0;
-    } catch (mysqlx::Error &e) {
-      LOG_INFO(dbLogger, "Error: {}", e.what());
-      return -1;
-    }
+    return executeTemplate(
+        [&](std::unique_ptr<mysqlx::Session> &session) -> int {
+          std::string hasFriend =
+              R"(SELECT uidA FROM friends WHERE uidA = ? AND uidB = ?)";
+          auto result = session->sql(hasFriend).bind(uidA).bind(uidB).execute();
+          if (!result.hasData()) {
+            // log...
+            LOG_DEBUG(dbLogger, "result fetchOne is null");
+            return 1;
+          }
+          std::string f = R"(DELETE FROM friends WHERE uidA = ? AND uidB = ?)";
+          result = session->sql(f).bind(uidA).bind(uidB).execute();
+          return 0;
+        });
   }
 
   // todo...
   int deleteMessage(long uid, int startMessageId, int delCount) {
-    auto con = mysqlPool->GetConnection();
-
-    if (con == nullptr) {
-      // log...
-      LOG_DEBUG(dbLogger, "pool number is empty!");
-      return -1;
-    }
-
-    Defer defer(
-        [&con, this]() { mysqlPool->ReturnConnection(std::move(con)); });
-
-    try {
-      return 0;
-    } catch (mysqlx::Error &e) {
-      LOG_INFO(dbLogger, "Error: {}", e.what());
-      return -1;
-    }
+    return executeTemplate(
+        [&](std::unique_ptr<mysqlx::Session> &session) -> int { return 0; });
   }
 
   int hasEmail(std::string email) {
-    auto con = mysqlPool->GetConnection();
-
-    if (con == nullptr) {
-      // log...
-      LOG_DEBUG(dbLogger, "pool number is empty!");
-      return -1;
-    }
-
-    Defer defer(
-        [&con, this]() { mysqlPool->ReturnConnection(std::move(con)); });
-
-    try {
-      std::string f = R"(SELECT email FROM users WHERE email = ?)";
-      auto result = con->session->sql(f).bind(email).execute();
-      if (!result.hasData()) {
-        // log...
-        LOG_DEBUG(dbLogger, "result fetchOne is null");
-        return 1;
-      }
-      return 0;
-    } catch (mysqlx::Error &e) {
-      LOG_INFO(dbLogger, "Error: {}", e.what());
-      return -1;
-    }
+    return executeTemplate(
+        [&](std::unique_ptr<mysqlx::Session> &session) -> int {
+          std::string f = R"(SELECT email FROM users WHERE email = ?)";
+          auto result = session->sql(f).bind(email).execute();
+          if (!result.hasData()) {
+            // log...
+            LOG_DEBUG(dbLogger, "result fetchOne is null");
+            return 1;
+          }
+          return 0;
+        });
   }
   int hasUsername(std::string username) {
-    auto con = mysqlPool->GetConnection();
-
-    if (con == nullptr) {
-      // log...
-      LOG_DEBUG(dbLogger, "pool number is empty!");
-      return -1;
-    }
-
-    Defer defer(
-        [&con, this]() { mysqlPool->ReturnConnection(std::move(con)); });
-
-    try {
-      std::string f = R"(SELECT username FROM users WHERE username = ?)";
-      auto result = con->session->sql(f).bind(username).execute();
-      if (!result.hasData()) {
-        // log...
-        LOG_DEBUG(dbLogger, "result fetchOne is null");
-        return 1;
-      }
-      return 0;
-    } catch (mysqlx::Error &e) {
-      LOG_INFO(dbLogger, "Error: {}", e.what());
-      return -1;
-    }
+    return executeTemplate(
+        [&](std::unique_ptr<mysqlx::Session> &session) -> int {
+          std::string f = R"(SELECT username FROM users WHERE username = ?)";
+          auto result = session->sql(f).bind(username).execute();
+          if (!result.hasData()) {
+            // log...
+            LOG_DEBUG(dbLogger, "result fetchOne is null");
+            return 1;
+          }
+          return 0;
+        });
   }
 };
 }; // namespace wim::db

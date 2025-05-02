@@ -79,6 +79,9 @@ enum ServiceID {
   ID_PULL_MESSAGE_LIST_REQ, // 拉取消息列表
   ID_PULL_MESSAGE_LIST_RSP,
 
+  ID_GROUP_PULL_MEMBER_REQ, // 拉取群组成员列表
+  ID_GROUP_PULL_MEMBER_RSP,
+
   /* 状态 */
   ID_PING_REQ, // 心跳
   ID_PING_RSP,
@@ -115,11 +118,15 @@ enum ServiceID {
   ID_GROUP_JOIN_REQ, // 加入群组
   ID_GROUP_JOIN_RSP,
 
-  ID_USER_QUIT_GROUP_REQ, // 退出群组
-  ID_USER_QUIT_GROUP_RSP,
+  ID_GROUP_QUIT_REQ, // 退出群组
+  ID_GROUP_QUIT_RSP,
 
   ID_GROUP_TEXT_SEND_REQ, // 发送群组消息
   ID_GROUP_TEXT_SEND_RSP,
+
+  /* 文件 */
+  ID_FILE_UPLOAD_REQ,
+  ID_FILE_UPLOAD_RSP
 
 };
 

@@ -5,7 +5,7 @@ server:
     user: zorjen
     password: root
     schema: chatServ
-    clientCount: 1
+    clientCount: 2
     machineId: 1
   redis:
     host: 127.0.0.1
