@@ -7,8 +7,8 @@ find_package(GTest REQUIRED)
 find_package(Threads REQUIRED)
 
 # 设置测试源文件
-file(GLOB unit_test_sources "unit/*.cc")
-file(GLOB integration_test_sources "integration/*.cc")
+file(GLOB unit_test_sources unit/*.cc)
+file(GLOB integration_test_sources integration/*.cc)
 
 enable_testing()
 

@@ -62,6 +62,14 @@ std::string FileServiceImpl::getFileType(const std::string &filename) {
   return suffix;
 }
 
+void FileServiceImpl::PushTask(FileWorker::Task task){
+  static int routeCount = 0;
+  workers[routeCount]->PushTask(task);
+routeCount++;
+if(routeCount >= workers.size())
+routeCount = 0;
+}
+
 grpc::Status FileServiceImpl::Upload(grpc::ServerContext *context,
                                      const file::UploadRequest *request,
                                      file::UploadResponse *response) {
@@ -82,6 +90,8 @@ grpc::Status FileServiceImpl::Upload(grpc::ServerContext *context,
       UnifiedCallData<file::UploadRequest, file::UploadResponse>>(
       context, request, response, handle);
 
+  PushTask(task);
+
   return grpc::Status::OK;
 }
 
@@ -95,6 +105,7 @@ grpc::Status FileServiceImpl::Send(grpc::ServerContext *context,
   auto task =
       std::make_shared<UnifiedCallData<file::SendRequest, file::SendResponse>>(
           context, request, response, handle);
+          PushTask(task);
 
   return grpc::Status::OK;
 }
