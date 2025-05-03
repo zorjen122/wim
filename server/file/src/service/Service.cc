@@ -2,9 +2,11 @@
 #include "Configer.h"
 #include "Logger.h"
 #include "file.pb.h"
+#include <filesystem>
 #include <fstream>
 #include <grpcpp/support/status.h>
 #include <string>
+namespace fs = std::filesystem;
 
 namespace wim::rpc {
 
@@ -62,12 +64,12 @@ std::string FileServiceImpl::getFileType(const std::string &filename) {
   return suffix;
 }
 
-void FileServiceImpl::PushTask(FileWorker::Task task){
+void FileServiceImpl::PushTask(FileWorker::Task task) {
   static int routeCount = 0;
   workers[routeCount]->PushTask(task);
-routeCount++;
-if(routeCount >= workers.size())
-routeCount = 0;
+  routeCount++;
+  if (routeCount >= workers.size())
+    routeCount = 0;
 }
 
 grpc::Status FileServiceImpl::Upload(grpc::ServerContext *context,
@@ -75,15 +77,41 @@ grpc::Status FileServiceImpl::Upload(grpc::ServerContext *context,
                                      file::UploadResponse *response) {
 
   auto handle = [&] {
-    long uid = request->user_id();
-    auto fileChunk = request->chunk();
-    std::string filename = fileChunk.filename();
-    std::string saveFilePath = Configer::getSaveFilePath() + "/" +
-                               std::to_string(uid) + "/" + filename;
+    if (!request->has_chunk()) {
+      LOG_ERROR(netLogger, "Missing file chunk");
+      return;
+    }
 
-    // 模式： 追加
-    std::ofstream ofs(saveFilePath, std::ios::binary | std::ios::app);
-    ofs.write(fileChunk.data().c_str(), fileChunk.data().size());
+    auto fileChunk = request->chunk();
+    if (fileChunk.filename().empty()) {
+      LOG_ERROR(netLogger, "Invalid filename");
+      return;
+    }
+
+    long uid = request->user_id();
+    std::string filename = fileChunk.filename();
+
+    // 构建完整保存路径
+    fs::path saveDir =
+        fs::path(Configer::getSaveFilePath()) / std::to_string(uid);
+    fs::path saveFilePath = saveDir / filename;
+
+    try {
+      if (!fs::exists(saveDir)) {
+        fs::create_directories(saveDir); // 递归创建所有不存在的目录
+      }
+
+      std::ofstream ofs(saveFilePath, std::ios::binary | std::ios::app);
+      if (!ofs.is_open()) {
+        throw std::runtime_error("Failed to open file: " +
+                                 saveFilePath.string());
+      }
+      ofs.write(fileChunk.data().c_str(), fileChunk.data().size());
+    } catch (const fs::filesystem_error &e) {
+      std::cerr << "Filesystem error: " << e.what() << std::endl;
+    } catch (const std::exception &e) {
+      std::cerr << "Error: " << e.what() << std::endl;
+    }
   };
 
   auto task = std::make_shared<
@@ -105,13 +133,13 @@ grpc::Status FileServiceImpl::Send(grpc::ServerContext *context,
   auto task =
       std::make_shared<UnifiedCallData<file::SendRequest, file::SendResponse>>(
           context, request, response, handle);
-          PushTask(task);
+  PushTask(task);
 
   return grpc::Status::OK;
 }
 
 FileServer::FileServer(size_t workerSize)
-    : workerSize(workerSize), stopEnable(true) {
+    : stopEnable(true), workerSize(workerSize) {
   if (workerSize > std::thread::hardware_concurrency()) {
     LOG_ERROR(
         netLogger,
@@ -131,6 +159,9 @@ void FileServer::Run(unsigned short port) {
 
   service.reset(new FileServiceImpl(workerSize));
   builder.RegisterService(service.get());
+
+  // 10MB MSS发送接口限制
+  builder.SetMaxReceiveMessageSize(10 * 1024 * 1024);
   server = builder.BuildAndStart();
 
   LOG_INFO(netLogger, "Server listening on " + serverAddress);

@@ -32,7 +32,7 @@ private:
   std::queue<std::shared_ptr<NetworkMessage>> messageQueue;
   std::mutex _mutex;
   std::condition_variable consume;
-  bool isStop;
+  bool stopEnable;
   std::map<unsigned int, HandleType> serviceGroup;
 };
 
@@ -41,7 +41,14 @@ private:
 Json::Value OnLogin(ChatSession::Ptr session, unsigned int msgID,
                     Json::Value &request);
 
+Json::Value PingHandle(ChatSession::Ptr session, unsigned int msgID,
+                       Json::Value &request);
+
+Json::Value TextSend(ChatSession::Ptr session, unsigned int msgID,
+                     Json::Value &request);
 // 待测试
+Json::Value UploadFile(ChatSession::Ptr session, unsigned int msgID,
+                       Json::Value &request);
 
 Json::Value pullFriendApplyList(ChatSession::Ptr session, unsigned int msgID,
                                 Json::Value &request);
@@ -49,12 +56,6 @@ Json::Value pullFriendList(ChatSession::Ptr session, unsigned int msgID,
                            Json::Value &request);
 Json::Value pullMessageList(ChatSession::Ptr session, unsigned int msgID,
                             Json::Value &request);
-
-Json::Value PingHandle(ChatSession::Ptr session, unsigned int msgID,
-                       Json::Value &request);
-
-Json::Value TextSend(ChatSession::Ptr session, unsigned int msgID,
-                     Json::Value &request);
 
 Json::Value UserQuit(ChatSession::Ptr session, unsigned int msgID,
                      Json::Value &request);

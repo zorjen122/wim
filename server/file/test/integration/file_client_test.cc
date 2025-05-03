@@ -15,9 +15,12 @@ protected:
       server->Run(50051);
     });
     std::this_thread::sleep_for(std::chrono::seconds(1)); // 等待服务器启动
+    grpc::ChannelArguments args;
+    args.SetMaxReceiveMessageSize(10 * 1024 * 1024); // 10MB
+    args.SetMaxSendMessageSize(10 * 1024 * 1024);    // 10MB
 
-    auto channel = grpc::CreateChannel("localhost:50051",
-                                       grpc::InsecureChannelCredentials());
+    auto channel = grpc::CreateCustomChannel(
+        "localhost:50051", grpc::InsecureChannelCredentials(), args);
     stub = file::FileService::NewStub(channel);
   }
 

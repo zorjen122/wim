@@ -64,7 +64,9 @@ enum ErrorCodes {
   UserOnline,
   UserOffline,
   NotFound,
-  RepeatMessage
+  RepeatMessage,
+  MysqlFailed,
+  FileTypeError
 };
 
 enum ServiceID {
@@ -109,7 +111,14 @@ enum ServiceID {
   ID_TEXT_SEND_REQ, // 发送文本消息
   ID_TEXT_SEND_RSP,
 
-  ID_ACK, // 确认消息
+  ID_FILE_SEND_REQ,
+  ID_FILE_SEND_RSP,
+
+  ID_FILE_UPLOAD_REQ,
+  ID_FILE_UPLOAD_RSP,
+
+  ID_ACK,  // 确认消息
+  ID_NULL, // ACK确认的响应包无用，仅因Service::Run回包将自动发送，此待修整
 
   /* 群组 */
   ID_GROUP_CREATE_REQ, // 创建群组
@@ -123,10 +132,6 @@ enum ServiceID {
 
   ID_GROUP_TEXT_SEND_REQ, // 发送群组消息
   ID_GROUP_TEXT_SEND_RSP,
-
-  /* 文件 */
-  ID_FILE_UPLOAD_REQ,
-  ID_FILE_UPLOAD_RSP
 
 };
 

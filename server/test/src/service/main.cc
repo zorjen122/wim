@@ -1,18 +1,7 @@
 #include "Configer.h"
-#include "Const.h"
-#include "Logger.h"
-#include "client.h"
-#include "global.h"
-#include "service/chatSession.h"
-#include "spdlog/spdlog.h"
-#include <boost/asio/io_context.hpp>
-#include <cstddef>
-#include <cstdio>
-#include <cstdlib>
+#include "chat.h"
+#include "gate.h"
 #include <iostream>
-#include <ratio>
-#include <thread>
-#include <yaml-cpp/node/node.h>
 
 int main(int argc, char *argv[]) {
 
@@ -90,6 +79,8 @@ int main(int argc, char *argv[]) {
     session.reset(new wim::ChatSession(ioContext, endpoint));
     chat->setSession(session->GetSharedSelf());
 
+    if (!session->isConnected())
+      throw std::runtime_error("session connect failed");
     session->Start();
     status = chat->login(init);
     if (status == false) {

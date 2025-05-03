@@ -14,7 +14,7 @@ function(add_file_test target)
   add_executable(${target} ${ARGN})
   target_include_directories(${target} PUBLIC include)
   target_link_libraries(${target} PRIVATE GTest::GTest GTest::Main imFile)
-
+  target_compile_options(${target} PRIVATE -Wall -g)
   add_test(NAME ${CMAKE_PROJECT_NAME}.${target} COMMAND ${target})
 endfunction()
 

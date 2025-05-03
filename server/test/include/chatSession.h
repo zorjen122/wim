@@ -57,6 +57,8 @@ public:
   ChatSession(net::io_context &iocontext, Endpoint endpoint);
   ~ChatSession();
 
+  bool isConnected();
+
   void Start();
   void Send(char *msgData, unsigned int msgLength, unsigned int msgID);
   void Send(std::string msgData, unsigned int msgID);

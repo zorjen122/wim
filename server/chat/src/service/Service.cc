@@ -8,8 +8,8 @@
 #include "OnlineUser.h"
 #include "Redis.h"
 
+#include "FileRpc.h"
 #include "Friend.h"
-
 #include "Logger.h"
 #include "Mysql.h"
 #include "OnlineUser.h"
@@ -26,13 +26,13 @@
 #include <string>
 
 namespace wim {
-Service::Service() : isStop(false) {
+Service::Service() : stopEnable(false) {
   Init();
   worker = std::thread(&Service::Run, this);
 }
 
 Service::~Service() {
-  isStop = true;
+  stopEnable = true;
   consume.notify_one();
   worker.join();
 }
@@ -60,7 +60,14 @@ void Service::Init() {
       std::bind(&PingHandle, std::placeholders::_1, std::placeholders::_2,
                 std::placeholders::_3);
 
+  serviceGroup[ID_TEXT_SEND_REQ] =
+      std::bind(&TextSend, std::placeholders::_1, std::placeholders::_2,
+                std::placeholders::_3);
   // 待测试
+
+  serviceGroup[ID_FILE_UPLOAD_REQ] =
+      std::bind(&UploadFile, std::placeholders::_1, std::placeholders::_2,
+                std::placeholders::_3);
 
   serviceGroup[ID_REPLY_ADD_FRIEND_REQ] =
       std::bind(wim::ReplyAddFriend, std::placeholders::_1,
@@ -77,9 +84,6 @@ void Service::Init() {
   serviceGroup[ID_PULL_MESSAGE_LIST_REQ] =
       std::bind(&pullMessageList, std::placeholders::_1, std::placeholders::_2,
 
-                std::placeholders::_3);
-  serviceGroup[ID_TEXT_SEND_REQ] =
-      std::bind(&TextSend, std::placeholders::_1, std::placeholders::_2,
                 std::placeholders::_3);
 
   serviceGroup[ID_ACK] =
@@ -100,11 +104,11 @@ void Service::PushService(std::shared_ptr<NetworkMessage> msg) {
 void Service::Run() {
   for (;;) {
     std::unique_lock<std::mutex> lock(_mutex);
-    while (messageQueue.empty() && !isStop) {
+    while (messageQueue.empty() && !stopEnable) {
       consume.wait(lock);
     }
 
-    if (isStop) {
+    if (stopEnable) {
       while (!messageQueue.empty()) {
         auto package = messageQueue.front();
         unsigned int id = package->protocolData->id;
@@ -125,6 +129,7 @@ void Service::Run() {
         std::string msgData{data, dataSize};
         Json::Reader reader;
         Json::Value request, response;
+        int responseId = __getServiceResponseId(ServiceID(id));
 
         bool parserSuccess = reader.parse(msgData, request);
         if (!parserSuccess) {
@@ -132,7 +137,7 @@ void Service::Run() {
                    id);
           Json::Value rsp;
           rsp["error"] = ErrorCodes::JsonParser;
-          package->contextSession->Send(rsp.toStyledString(), id);
+          package->contextSession->Send(rsp.toStyledString(), responseId);
           messageQueue.pop();
           continue;
         }
@@ -142,10 +147,9 @@ void Service::Run() {
 
         response = handleCaller->second(package->contextSession, id, request);
         auto ret = response.toStyledString();
-        package->contextSession->Send(ret,
-                                      __getServiceResponseId(ServiceID(id)));
+        package->contextSession->Send(ret, responseId);
 
-        LOG_DEBUG(wim::businessLogger, "msgId: {}, response: {}",
+        LOG_DEBUG(wim::businessLogger, "msgId: {}, response: {}", responseId,
                   response.toStyledString());
 
         messageQueue.pop();
@@ -162,8 +166,8 @@ void Service::Run() {
              "Package is {}",
              id, data);
 
-    auto handleCall = serviceGroup.find(id);
-    if (handleCall == serviceGroup.end()) {
+    auto handleCaller = serviceGroup.find(id);
+    if (handleCaller == serviceGroup.end()) {
       LOG_INFO(wim::businessLogger, "not found! service ID  is {}, ", id);
 
       Json::Value rsp;
@@ -175,7 +179,8 @@ void Service::Run() {
 
     std::string msgData{data, dataSize};
     Json::Reader reader;
-    Json::Value request;
+    Json::Value request, response;
+    int responseId = __getServiceResponseId(ServiceID(id));
 
     bool parserSuccess = reader.parse(msgData, request);
     if (!parserSuccess) {
@@ -183,12 +188,20 @@ void Service::Run() {
 
       Json::Value rsp;
       rsp["error"] = ErrorCodes::JsonParser;
-      package->contextSession->Send(rsp.toStyledString(), id);
+      package->contextSession->Send(rsp.toStyledString(), responseId);
       messageQueue.pop();
       continue;
     }
+    LOG_DEBUG(wim::businessLogger, "msgId: {}, request: {}", id,
+              request.toStyledString());
 
-    handleCall->second(package->contextSession, id, request);
+    response = handleCaller->second(package->contextSession, id, request);
+    auto ret = response.toStyledString();
+    package->contextSession->Send(ret, responseId);
+
+    LOG_DEBUG(wim::businessLogger, "msgId: {}, response: {}", responseId,
+              response.toStyledString());
+
     messageQueue.pop();
   }
 }
@@ -238,6 +251,8 @@ Json::Value AckHandle(ChatSession::Ptr session, unsigned int msgID,
   long seq = request["seq"].asInt64();
 
   OnlineUser::GetInstance()->cancelAckTimer(seq);
+  rsp["error"] = ErrorCodes::Success;
+  return rsp;
 }
 
 Json::Value SerachUser(ChatSession::Ptr session, unsigned int msgID,
@@ -263,7 +278,67 @@ Json::Value SerachUser(ChatSession::Ptr session, unsigned int msgID,
   return rsp;
 }
 
-// 待验证
+Json::Value UploadFile(ChatSession::Ptr session, unsigned int msgID,
+                       Json::Value &request) {
+  Json::Value rsp;
+  long clientSeq = rsp["seq"].asInt64();
+  long uid = request["uid"].asInt64();
+  std::string data = rsp["data"].asString();
+  std::string fileName = rsp["fileName"].asString();
+  rpc::FileType type;
+
+  bool hasUserMsgId = db::RedisDao::GetInstance()->getUserMsgId(uid, clientSeq);
+  static short __expireUserMsgId = 10;
+  if (hasUserMsgId) {
+    LOG_INFO(businessLogger, "重复消息, 客户端消息序列号为: {}", clientSeq);
+    db::RedisDao::GetInstance()->expireUserMsgId(uid, clientSeq,
+                                                 __expireUserMsgId);
+    rsp["error"] = ErrorCodes::RepeatMessage;
+    rsp["message"] = "重复消息";
+    return rsp;
+  }
+
+  std::string tmpType = rsp["type"].asString();
+  if (tmpType == "TEXT") {
+    type = rpc::FileType::TEXT;
+  } else if (tmpType == "IMAGE") {
+    type = rpc::FileType::IMAGE;
+  } else {
+    LOG_ERROR(businessLogger, "upload file type error | fromUid: {}, type: {}",
+              uid, tmpType);
+    rsp["error"] = ErrorCodes::FileTypeError;
+    return rsp;
+  }
+
+  rpc::UploadRequest rpcRequest;
+  rpc::UploadResponse rpcResponse;
+  rpc::FileChunk fileChunk;
+
+  fileChunk.set_seq(clientSeq);
+  fileChunk.set_data(data);
+  fileChunk.set_filename(fileName);
+  fileChunk.set_type(type);
+  fileChunk.set_data(data);
+
+  rpcRequest.set_user_id(uid);
+  rpcRequest.set_allocated_chunk(&fileChunk);
+
+  db::RedisDao::GetInstance()->setUserMsgId(uid, clientSeq, __expireUserMsgId);
+
+  grpc::Status status =
+      rpc::FileRpc::GetInstance()->forwardUpload(rpcRequest, rpcResponse);
+  if (status.ok()) {
+    rsp["status"] = "wait";
+    rsp["error"] = ErrorCodes::Success;
+  } else {
+    rsp["message"] = "文件RPC服务异常";
+    rsp["error"] = ErrorCodes::RPCFailed;
+  }
+
+  LOG_INFO(businessLogger, "响应发送者，消息：{}", rsp.toStyledString());
+  return rsp;
+}
+
 Json::Value TextSend(ChatSession::Ptr session, unsigned int msgID,
                      Json::Value &request) {
 
@@ -271,7 +346,7 @@ Json::Value TextSend(ChatSession::Ptr session, unsigned int msgID,
 
   long clientSeq = request["seq"].asInt64();
   long from = request["fromUid"].asInt64();
-  long to = request["toUid"].asInt64();
+  long to = request["toid"].asInt64();
   long sessionHashKey = request["sessionKey"].asInt64();
   std::string text = request["text"].asString();
   LOG_INFO(businessLogger,
@@ -308,19 +383,10 @@ Json::Value TextSend(ChatSession::Ptr session, unsigned int msgID,
         request.toStyledString(), ID_TEXT_SEND_REQ);
     LOG_INFO(businessLogger, "响应发送者，消息：{}", rsp.toStyledString());
     return rsp;
-  } else {
-    LOG_INFO(businessLogger, "用户不在线，存储离线消息, 用户ID: {}", to);
-    db::Message::Ptr message(new db::Message(
-        serverMsgSeq, from, to, std::to_string(sessionHashKey),
-        db::Message::Type::TEXT, text, db::Message::Status::WAIT));
-    db::MysqlDao::GetInstance()->insertMessage(message);
-    rsp["seq"] = Json::Value::Int64(clientSeq);
-    rsp["status"] = "wait";
-    rsp["error"] = ErrorCodes::Success;
   }
 
   std::string userInfo = db::RedisDao::GetInstance()->getOnlineUserInfo(to);
-  bool isOtherMachineOnline = userInfo.empty();
+  bool isOtherMachineOnline = !userInfo.empty();
   if (isOtherMachineOnline) {
     LOG_INFO(businessLogger, "用户不在本地机器，转发消息到其他机器, 用户ID: {}",
              to);
@@ -338,6 +404,25 @@ Json::Value TextSend(ChatSession::Ptr session, unsigned int msgID,
     std::string status = rpcResponse.status();
     LOG_INFO(businessLogger, "rpc response: {}, status: {}",
              rpcResponse.DebugString(), status);
+    rsp["seq"] = Json::Value::Int64(clientSeq);
+    rsp["status"] = "wait";
+    if (status != "success")
+      rsp["error"] = ErrorCodes::RPCFailed;
+    else
+      rsp["error"] = ErrorCodes::Success;
+  } else {
+    LOG_INFO(businessLogger, "用户不在线，存储离线消息, 用户ID: {}", to);
+    db::Message::Ptr message(new db::Message(
+        serverMsgSeq, from, to, std::to_string(sessionHashKey),
+        db::Message::Type::TEXT, text, db::Message::Status::WAIT));
+    int sqlStatus = db::MysqlDao::GetInstance()->insertMessage(message);
+
+    rsp["seq"] = Json::Value::Int64(clientSeq);
+    rsp["status"] = "wait";
+    if (sqlStatus != -1)
+      rsp["error"] = ErrorCodes::Success;
+    else
+      rsp["error"] = ErrorCodes::MysqlFailed;
   }
 
   return rsp;

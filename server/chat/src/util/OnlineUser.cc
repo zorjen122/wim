@@ -85,7 +85,7 @@ void OnlineUser::onReWrite(OnlineUser::ReWriteType type, long seq, long uid,
         if (type == ReWriteType::HeartBeat) {
           ClearUser(uid, uid);
         } else if (type == ReWriteType::Message) {
-          ClearUser(uid, seq);
+          ClearUser(seq, uid);
           // 暂无其他处理
         }
 
@@ -110,7 +110,7 @@ void OnlineUser::onReWrite(OnlineUser::ReWriteType type, long seq, long uid,
         if (type == ReWriteType::HeartBeat) {
           ClearUser(uid, uid);
         } else if (type == ReWriteType::Message) {
-          ClearUser(uid, seq);
+          ClearUser(seq, uid);
           // 暂无其他处理
         }
       }

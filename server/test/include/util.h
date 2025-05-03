@@ -1,14 +1,13 @@
-#include "util.h"
+#pragma once
 
 #include <ctime>
-#include <iostream>
 #include <random>
 #include <string>
 
 using namespace std;
 
 // 生成一个随机字符串作为用户名
-string generateRandomUserName(int length) {
+inline string generateRandomUserName(int length) {
   const string chars =
       "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   string result;
@@ -23,7 +22,7 @@ string generateRandomUserName(int length) {
 }
 
 // 生成随机电子邮件（Gmail 或 QQ）
-string generateRandomEmail() {
+inline string generateRandomEmail() {
   // 随机选择邮箱的域名：Gmail 或 QQ
   random_device rd;
   mt19937 gen(rd());
@@ -44,15 +43,15 @@ string generateRandomEmail() {
   return username + domain;
 }
 
-unsigned long long generateRandomNumber(unsigned long long left,
-                                        unsigned long long right) {
+inline unsigned long long generateRandomNumber(unsigned long long left,
+                                               unsigned long long right) {
   random_device rd;
   mt19937 gen(rd());
   uniform_int_distribution<> dis(left, right);
 
   return dis(gen);
 }
-void toNormalString(std::string &str) {
+inline void toNormalString(std::string &str) {
   // 去掉前后的换行符、空格、制表符等
 
   auto first = str.find_first_of("\"");
@@ -66,7 +65,7 @@ void toNormalString(std::string &str) {
 #include <cstdlib>
 #include <ctime>
 
-int generateGroupId(int min, int max) {
+inline int generateGroupId(int min, int max) {
   std::srand(std::time(0)); // 使用当前时间作为随机数生成器的种子
   return std::rand() % (max - min + 1) + min;
 }

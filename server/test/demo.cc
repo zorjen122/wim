@@ -4,8 +4,6 @@
 #include <string>
 #include <unordered_map>
 
-#include "base.h"
-
 void foo() {
 
   std::string host = "\"127.0.0.1\"\\n";

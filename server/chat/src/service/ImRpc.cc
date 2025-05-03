@@ -69,7 +69,7 @@ TextSendMessageResponse
 ImRpcNode::forwardTextSendMessage(const TextSendMessageRequest &request) {
 
   auto rpc = pool->getConnection();
-  if (!rpc)
+  if (rpc == nullptr)
     return {};
 
   Defer defer([this, &rpc] { pool->returnConnection(std::move(rpc)); });

@@ -90,8 +90,8 @@ ImRpcService::TextSendMessage(ServerContext *context,
       wim::TextSend(nullptr, ID_TEXT_SEND_REQ, requestJsonData);
 
   int ec = localServiceResponse["error"].asInt();
-  if (ec < 0) {
-    LOG_INFO(businessLogger, "error: ", ec);
+  if (ec != 0) {
+    LOG_INFO(businessLogger, "error: {}", ec);
     return grpc::Status::CANCELLED;
   }
 

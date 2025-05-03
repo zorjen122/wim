@@ -1,4 +1,4 @@
-# Top-level Makefile for CMake modules
+# Top-level Makefile with debug support
 
 # Configuration
 MODULES := state chat public gate file
@@ -7,6 +7,7 @@ TEST_DIR := test
 BUILD_DIR := build
 RUN_TARGETS := $(addprefix run-,$(MODULES))
 TEST_TARGETS := $(addprefix test-,$(MODULES))
+DEBUG_TARGETS := $(addprefix debug-,$(MODULES))
 
 # Default target
 all: build
@@ -32,15 +33,20 @@ clean:
 		rm -rf $$module/$(BUILD_DIR); \
 	done
 
-# Run targets for each module
+# Run targets with arguments
 $(RUN_TARGETS): run-%:
-	@echo "Running $*..."
-	@cd $*/$(BUILD_DIR) && ./$*
+	@echo "Running $* with arguments: $(ARGS)"
+	@cd $*/$(BUILD_DIR) && ./$* $(ARGS)
 
-# Test targets for each module
+# Debug targets - launch with gdb
+$(DEBUG_TARGETS): debug-%:
+	@echo "Debugging $* with arguments: $(ARGS)"
+	@cd $*/$(BUILD_DIR) && gdb --args ./$* $(ARGS)
+
+# Test targets
 $(TEST_TARGETS): test-%:
 	@echo "Testing $*..."
-	@cd $*/$(BUILD_DIR)/test && ctest --output-on-failure
+	@cd $*/$(BUILD_DIR) && ctest --output-on-failure
 
 # Top-level test run
 run-test:
@@ -60,5 +66,12 @@ build-%:
 	@mkdir -p $*/$(BUILD_DIR)
 	@cd $*/$(BUILD_DIR) && cmake .. && $(MAKE)
 
+# Special targets with common arguments(TODO)
+gate-with-args: ARGS = ../config.yaml --info
+chat-with-args-1: ARGS = run-chat ../config.yaml --normal --info
+chat-with-args-2: ARGS = run-chat ../config2.yaml --normal --info
+
+
 # Phony targets
-.PHONY: all build clean run-t	est $(RUN_TARGETS) $(TEST_TARGETS) $(MODULES)
+.PHONY: all build clean run-test $(RUN_TARGETS) $(TEST_TARGETS) $(DEBUG_TARGETS) \
+        $(MODULES) gate-with-args chat-with-args-1 chat-with-args-2

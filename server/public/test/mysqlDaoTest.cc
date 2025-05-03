@@ -129,7 +129,7 @@ TEST_F(MysqlDaoTest, TestMessageOperations) {
   std::shared_ptr<MysqlDao> dao = MysqlDao::GetInstance();
 
   Message::Ptr msg(new Message(TEST_MESSAGE_ID, TEST_UID, TEST_FRIEND_UID,
-                               "session_123",
+                               "3241",
                                1, // text
                                "Hello World",
                                1, // wait

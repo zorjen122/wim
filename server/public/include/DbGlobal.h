@@ -180,7 +180,7 @@ struct GroupMember {
 struct File {
   using Ptr = std::shared_ptr<File>;
 
-  enum Type { IMAGE = 1, AUDIO = 2, VIDEO = 3, FILE = 4 };
+  enum Type { IMAGE = 1, AUDIO = 2, VIDEO = 3, TEXT = 4 };
   File() = default;
   long seq;
   long offset;

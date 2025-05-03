@@ -1,28 +1,9 @@
-#include "client.h"
+#include "chat.h"
 #include "Const.h"
-#include "DbGlobal.h"
-#include "Logger.h"
-#include "global.h"
-#include "service/chatSession.h"
 #include <boost/asio/steady_timer.hpp>
-#include <cstddef>
-#include <iostream>
-#include <jsoncpp/json/value.h>
-
-#include <boost/asio/error.hpp>
-#include <boost/asio/io_context.hpp>
-#include <boost/beast/core/buffers_to_string.hpp>
-#include <boost/beast/http.hpp>
-#include <boost/beast/http/field.hpp>
-#include <boost/beast/http/verb.hpp>
-#include <boost/beast/http/write.hpp>
-#include <boost/system/detail/error_code.hpp>
-#include <cassert>
 #include <chrono>
 #include <fstream>
-#include <mutex>
-#include <spdlog/spdlog.h>
-#include <string>
+#include <iostream>
 
 namespace wim {
 
@@ -30,156 +11,8 @@ static std::shared_ptr<net::steady_timer> waitPongTimer;
 static std::map<long, std::shared_ptr<net::steady_timer>> waitAckTimerMap;
 
 long generateSequeueId() {
-  std::atomic<long> seq{0};
+  static std::atomic<long> seq{0};
   return seq.fetch_add(1);
-}
-
-Gate::Gate(net::io_context &iocontext, const std::string &host,
-           const std::string &port)
-    : context(iocontext), stream(iocontext) {
-  if (host.empty() || port.empty())
-    throw std::invalid_argument("host or port is empty");
-
-  Defer _([this]() { __clearStatusMessage(); });
-
-  tcp::resolver resolver(context);
-
-  endpoint = resolver.resolve(host, port);
-
-  boost::system::error_code ec;
-  stream.connect(endpoint, ec);
-  if (ec.failed())
-    throw std::runtime_error("connect failed: " + ec.message());
-
-  request.method(http::verb::get);
-  request.target(__GateTestPath__);
-  request.version(11);
-  request.set(http::field::host, host);
-  request.set(http::field::content_type, "application/json");
-
-  http::write(stream, request, ec);
-  if (ec.failed())
-    throw std::runtime_error("write failed: " + ec.message());
-
-  http::read(stream, buffer, response, ec);
-  if (ec.failed())
-    throw std::runtime_error("read failed: " + ec.message());
-
-  auto bodyBuffer = response.body().data();
-  auto stringBody = beast::buffers_to_string(bodyBuffer);
-
-  LOG_INFO(wim::businessLogger, "response message: {}", stringBody);
-}
-
-std::pair<Endpoint, int> Gate::signIn(const std::string &username,
-                                      const std::string &password) {
-  LOG_INFO(wim::businessLogger, "sign in as {}, password as {}", username,
-           password);
-
-  Defer _([this]() { __clearStatusMessage(); });
-
-  boost::system::error_code ec;
-  stream.connect(endpoint, ec);
-  if (ec.failed())
-    throw std::runtime_error("connect failed: " + ec.message());
-
-  request.method(http::verb::post);
-  request.target(__GateSigninPath__);
-
-  Json::Value requestData;
-  requestData["username"] = username;
-  requestData["password"] = password;
-
-  request.body() = requestData.toStyledString();
-  request.prepare_payload();
-  http::write(stream, request, ec);
-  if (ec.failed())
-    throw std::runtime_error("write failed: " + ec.message());
-  http::read(stream, buffer, response, ec);
-  if (ec.failed())
-    throw std::runtime_error("read failed: " + ec.message());
-
-  auto stringBody = __parseResponse();
-  LOG_INFO(wim::businessLogger, "response status: {}", stringBody);
-
-  Json::Reader reader;
-  Json::Value responseData;
-  reader.parse(stringBody, responseData);
-
-  int init = responseData["init"].asInt();
-
-  Endpoint chatEndpoint(responseData["ip"].asString(),
-                        responseData["port"].asString());
-
-  auto uid = responseData["uid"].asInt64();
-  users[username] =
-      std::make_shared<db::User>(0, uid, username, password, "null");
-
-  return {chatEndpoint, init};
-}
-
-bool Gate::signUp(const std::string &username, const std::string &password,
-                  const std::string &email) {
-  LOG_INFO(wim::businessLogger, "sign in as {}, password as {}", username,
-           password);
-
-  Defer _([this]() { __clearStatusMessage(); });
-
-  boost::system::error_code ec;
-  stream.connect(endpoint, ec);
-  if (ec.failed())
-    throw std::runtime_error("connect failed: " + ec.message());
-
-  request.method(http::verb::post);
-  request.target(__GateSignupPath__);
-
-  Json::Value requestData;
-  requestData["username"] = username;
-  requestData["password"] = password;
-  requestData["email"] = email;
-
-  request.body() = requestData.toStyledString();
-  request.prepare_payload();
-
-  LOG_INFO(wim::businessLogger, "http-write({}): request body: {}",
-           request.target(), (request.body().data()));
-  http::write(stream, request, ec);
-  if (ec.failed())
-    throw std::runtime_error("write failed: " + ec.message());
-  http::read(stream, buffer, response, ec);
-  if (ec.failed())
-    throw std::runtime_error("read failed: " + ec.message());
-
-  auto stringBody = __parseResponse();
-  LOG_INFO(wim::businessLogger, "response message: {} | status:{}", stringBody,
-           response.result_int());
-
-  Json::Value responseData = __parseJson(stringBody);
-  auto uid = responseData["uid"].asInt64();
-  users[username] =
-      std::make_shared<db::User>(0, uid, username, password, email);
-
-  return true;
-}
-bool Gate::signOut() { return true; }
-bool Gate::fogetPassword(const std::string &username) { return true; }
-
-std::string Gate::__parseResponse() {
-  auto bodyBuffer = response.body().data();
-  return beast::buffers_to_string(bodyBuffer);
-}
-Json::Value __parseJson(const std::string &source) {
-  Json::Reader reader;
-  Json::Value responseData;
-  bool parseSuccess = reader.parse(source, responseData);
-  if (parseSuccess == false)
-    throw std::runtime_error("parse json failed");
-  return responseData;
-}
-void Gate::__clearStatusMessage() {
-  request.body().clear();
-  response.body().clear();
-  buffer.clear();
 }
 
 void Text_recv_rsp_handler(int from, int to, int seq, std::string text) {
@@ -357,35 +190,41 @@ void Chat::handleRun(Tlv::Ptr protocolData) {
           });
 
       // 推入到消息队列中，每隔100ms拉取（确保%99有序————具体保障P99的延迟数值待分析)
-
+      using db::Message;
       Message message;
-      message.id = seq;
+      message.messageId = seq;
       message.fromUid = from;
       message.toUid = to;
-      message.type = Message::Type::TEXT;
-      message.source = text;
+      message.type = db::Message::Type::TEXT;
+      message.content = text;
       messageQueue.push_back(message);
 
+      bool isFirst = messageReadTimer == nullptr;
+      if (isFirst) {
+        messageReadTimer = std::make_shared<net::steady_timer>(
+            chat->iocontext, std::chrono::seconds(10));
+      }
       // 查看定时器是否已启动，消费消息的触发逻辑放在handleRun中，则是惰性的，以避免重复启动定时器
       bool onRunMessageTimer = messageReadTimer->expiry() >
                                boost::asio::steady_timer::clock_type::now();
-      if (onRunMessageTimer) {
+      if (isFirst || onRunMessageTimer == false) {
         messageReadTimer->async_wait(
             [this](const boost::system::error_code &ec) {
-              if (ec == boost::asio::error::timed_out) {
+              if (ec == boost::asio::error::operation_aborted) {
+                spdlog::info("messageReadTimer canceled");
+              } else {
                 std::lock_guard<std::mutex> lock(comsumeMessageMutex);
                 std::sort(messageQueue.begin(), messageQueue.end(),
                           [](const Message &a, const Message &b) {
-                            return a.id < b.id;
+                            return a.messageId < b.messageId;
                           });
                 for (auto &message : messageQueue) {
-                  std::cout << "view message Id: " << message.id << "\n";
+                  std::cout << "view message messageId: " << message.messageId
+                            << "\n";
                   Text_recv_rsp_handler(message.fromUid, message.toUid,
-                                        message.id, message.source);
+                                        message.messageId, message.content);
                 }
                 messageQueue.clear();
-              } else if (ec == boost::asio::error::operation_aborted) {
-                spdlog::info("messageReadTimer canceled");
               }
             });
       }
@@ -417,6 +256,8 @@ void Chat::handleRun(Tlv::Ptr protocolData) {
     friendApplyMap[apply->fromUid] = apply;
     break;
   }
+  case ID_NULL:
+    break;
   default:
     spdlog::error("没有这样的服务响应ID");
   }
@@ -666,6 +507,47 @@ bool Chat::pullGroupMemberHandle(Json::Value &response) {
 bool Chat::pullGroupMessageHandle(Json::Value &response) { return true; }
 
 // 文件
+bool Chat::uploadFile(const std::string &fileName) {
+  Json::Value request;
+
+  std::fstream file(fileName, std::ios::in | std::ios::binary);
+  if (!file.is_open()) {
+    LOG_ERROR(businessLogger, "open file failed: {}", fileName);
+    return false;
+  }
+  static const int chunkSize = 1024 * 1024; // 1MB
+  static std::atomic<long> seq(3000);
+  char buffer[chunkSize];
+
+  db::File::Ptr fileInfo(new db::File());
+  fileInfo->seq = seq;
+  fileInfo->type = db::File::Type::TEXT;
+  fileInfo->name = fileName;
+
+  fileMap[fileName] = fileInfo;
+
+  while (!file.eof()) {
+    file.read(buffer, chunkSize);
+    fileInfo->offset += chunkSize;
+    fileInfo->data.append(buffer, file.gcount());
+
+    request["seq"] = Json::Value::Int64(seq);
+    request["uid"] = Json::Value::Int64(user->uid);
+    request["data"] = buffer;
+    request["fileName"] = fileName;
+    request["type"] = "TEXT";
+
+    onReWrite(seq, request.toStyledString(), ID_FILE_UPLOAD_REQ);
+
+    chat->Send(request.toStyledString(), ID_FILE_UPLOAD_REQ);
+    seq++;
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  }
+
+  file.close();
+  return true;
+}
 bool Chat::sendFile(long toId, const std::string &filePath) {
   Json::Value request;
 
@@ -680,7 +562,7 @@ bool Chat::sendFile(long toId, const std::string &filePath) {
 
   db::File::Ptr fileInfo(new db::File());
   fileInfo->seq = seq;
-  fileInfo->type = db::File::Type::FILE;
+  fileInfo->type = db::File::Type::TEXT; // 待调整
   fileInfo->name = filePath;
 
   fileMap[filePath] = fileInfo;

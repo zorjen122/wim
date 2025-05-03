@@ -81,7 +81,6 @@ public:
                     const file::SendRequest *request,
                     file::SendResponse *response) override;
 
-
 private:
   std::string getFileType(const std::string &filename);
 

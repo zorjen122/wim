@@ -1,6 +1,7 @@
 #include "chatSession.h"
 #include "Const.h"
 #include "Logger.h"
+#include "chat.h"
 
 #include <boost/asio/detail/socket_ops.hpp>
 #include <boost/asio/error.hpp>
@@ -74,7 +75,9 @@ ChatSession::ChatSession(net::io_context &iocontext, Endpoint endpoint)
 ChatSession::~ChatSession() {
   spdlog::info("ChatSession::~ChatSession");
   Close();
-} // namespace wim
+}
+
+bool ChatSession::isConnected() { return chat->is_open(); }
 
 void ChatSession::Start() {
   switch (parseState) {
