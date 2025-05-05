@@ -66,7 +66,10 @@ enum ErrorCodes {
   NotFound,
   RepeatMessage,
   MysqlFailed,
-  FileTypeError
+  FileTypeError,
+  InternalError,
+  GroupAlreadyExists,
+  GroupNotExists
 };
 
 enum ServiceID {
@@ -124,8 +127,11 @@ enum ServiceID {
   ID_GROUP_CREATE_REQ, // 创建群组
   ID_GROUP_CREATE_RSP,
 
-  ID_GROUP_JOIN_REQ, // 加入群组
-  ID_GROUP_JOIN_RSP,
+  ID_GROUP_NOTIFY_JOIN_REQ, // 申请加入群组
+  ID_GROUP_NOTIFY_JOIN_RSP,
+
+  ID_GROUP_REPLY_JOIN_REQ, // 处理加入群组申请
+  ID_GROUP_REPLY_JOIN_RSP,
 
   ID_GROUP_QUIT_REQ, // 退出群组
   ID_GROUP_QUIT_RSP,

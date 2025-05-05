@@ -9,44 +9,19 @@
 #include <vector>
 
 namespace wim {
-class Group {
-public:
-  Group() { channel = nullptr; }
-  Group(size_t id, size_t up, const std::vector<size_t> &numbers) {
-    this->channel = nullptr, this->id = id, this->up = up,
-    this->numbers = numbers;
-  }
 
-  bool setChannel(int uid) {
-    this->channel = std::make_shared<Channel>(uid, id, Channel::Type::GROUP);
+Json::Value GroupCreate(ChatSession::Ptr session, unsigned int msgID,
+                        Json::Value &request);
+Json::Value GroupNotifyJoin(ChatSession::Ptr session, unsigned int msgID,
+                            Json::Value &request);
 
-    if (channelManager[uid][id] != nullptr) {
-      return false;
-    }
+Json::Value GroupPullNotify(ChatSession::Ptr session, unsigned int msgID,
+                            Json::Value &request);
 
-    channelManager[uid][id] = channel;
-    return true;
-  }
-
-  using Ptr = std::shared_ptr<Group>;
-  size_t id;
-  size_t up;
-  std::vector<size_t> numbers;
-
-  Channel::Ptr channel;
-};
-
-namespace dev {
-static std::unordered_map<size_t, Group> gg;
-};
-
-void GroupCreate(ChatSession::Ptr session, unsigned int msgID,
-                 const Json::Value &request);
-void GroupJoin(ChatSession::Ptr session, unsigned int msgID,
-               const Json::Value &request);
-// TEXT todo...
-void GroupQuit(ChatSession::Ptr session, unsigned int msgID,
-               const Json::Value &request);
-void GroupTextSend(ChatSession::Ptr session, unsigned int msgID,
-                   const Json::Value &request);
+Json::Value GroupReplyJoin(ChatSession::Ptr session, unsigned int msgID,
+                           Json::Value &request);
+Json::Value GroupQuit(ChatSession::Ptr session, unsigned int msgID,
+                      Json::Value &request);
+Json::Value GroupTextSend(ChatSession::Ptr session, unsigned int msgID,
+                          Json::Value &request);
 }; // namespace wim

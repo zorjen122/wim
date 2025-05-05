@@ -27,6 +27,7 @@ private:
   void Run();
   void Init();
   void PopHandler();
+  void RegisterHandle(unsigned int msgID, HandleType handle);
 
   std::thread worker;
   std::queue<std::shared_ptr<NetworkMessage>> messageQueue;

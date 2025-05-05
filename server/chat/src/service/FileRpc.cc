@@ -9,11 +9,14 @@ namespace wim::rpc {
 FileRpc::FileRpc() {
   try {
     auto conf = Configer::getNode("server");
-    std::string host = conf["host"].as<std::string>();
-    unsigned short rpcPort = conf["rpcPort"].as<int>();
-    int rpcCount = conf["rpcCount"].as<int>();
+    std::string host = conf["file"]["host"].as<std::string>();
+    unsigned short rpcPort = conf["file"]["rpcPort"].as<int>();
+    int rpcCount = conf["file"]["rpcCount"].as<int>();
     pool.reset(
         new RpcPool<FileService>(rpcCount, host, std::to_string(rpcPort)));
+    LOG_INFO(netLogger,
+             "FileRpc::FileRpc() | host: {}, rpcPort: {}, rpcCount: {}", host,
+             rpcPort, pool->getPoolSize());
   } catch (std::exception &e) {
     LOG_ERROR(netLogger, "FileRpc::FileRpc() is wrong | what: {}", e.what());
   }

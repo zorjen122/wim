@@ -1,4 +1,5 @@
 #include "chat.h"
+#include "Configer.h"
 #include "Const.h"
 #include <boost/asio/steady_timer.hpp>
 #include <chrono>
@@ -118,32 +119,61 @@ void Chat::handleRun(Tlv::Ptr protocolData) {
   }
   // 通知请求者添加的好友请求被响应
   case ID_REPLY_ADD_FRIEND_REQ: {
-    auto fromUid = response["fromUid"].asInt64();
+    auto fromUid = response["uid"].asInt64();
     auto accept = response["accept"].asBool();
-    auto replyMessage = response["content"].asString();
-
-    friendApplyMap[fromUid]->status = accept;
-    friendApplyMap[fromUid]->content = replyMessage;
-
+    auto replyMessage = response["replyMessage"].asString();
+    if (friendApplyMap.find(fromUid) == friendApplyMap.end()) {
+      spdlog::error("friend apply not found, uid:{}", fromUid);
+      return;
+    }
+    if (response["error"].asInt() == ErrorCodes::Success) {
+      friendApplyMap[fromUid]->status = accept;
+      friendApplyMap[fromUid]->content = replyMessage;
+    }
     spdlog::info("reply add friend response, uid:{}, accept:{}, message:{}",
                  fromUid, accept, replyMessage);
     break;
   }
   case ID_REPLY_ADD_FRIEND_RSP: {
+    long uid = response["uid"].asInt64();
+
+    // 服务端处理失败时则回复原来状态
+    if (response["error"].asInt() != ErrorCodes::Success) {
+      spdlog::error("reply add friend failed, message: {}",
+                    response["message"].asString());
+      if (friendApplyMap.find(uid) == friendApplyMap.end()) {
+        spdlog::info("friend apply not found, uid:{}", uid);
+        return;
+      }
+      friendApplyMap[uid]->status = 0;
+      if (friendMap.find(uid) != friendMap.end()) {
+        spdlog::info("friend already exist, uid:{}", uid);
+      }
+      friendMap.erase(uid);
+      return;
+    }
+
     spdlog::info("reply add friend success, recvRsp {}",
                  response.toStyledString());
     break;
   }
   case ID_NOTIFY_ADD_FRIEND_RSP: {
-    db::FriendApply::Ptr apply(new db::FriendApply());
-    apply->fromUid = user->uid;
-    apply->toUid = response["toUid"].asInt64();
-    apply->content = response["content"].asString();
+    long uid = response["uid"].asInt64();
 
-    friendApplyMap[apply->toUid] = apply;
+    // 服务端处理失败时则回复原来状态
+    if (response["error"].asInt() != ErrorCodes::Success) {
+      spdlog::error("reply add friend failed, message: {}",
+                    response["message"].asString());
+      if (friendApplyMap.find(uid) == friendApplyMap.end()) {
+        spdlog::info("friend apply not found, uid:{}", uid);
+        return;
+      }
+      friendApplyMap.erase(uid);
+      return;
+    }
 
-    LOG_INFO(wim::businessLogger, "add friend success, response {}",
-             response.toStyledString());
+    spdlog::info("notify add friend success, recvRsp {}",
+                 response.toStyledString());
     break;
   }
   case ID_LOGIN_INIT_RSP: {
@@ -258,10 +288,14 @@ void Chat::handleRun(Tlv::Ptr protocolData) {
   }
   case ID_NULL:
     break;
+  case ID_FILE_UPLOAD_RSP:
+    spdlog::info("handleRun: ID_FILE_UPLOAD_RSP, response: {}",
+                 response.toStyledString());
   default:
-    spdlog::error("没有这样的服务响应ID");
+    spdlog::warn("没有这样的服务响应, ID: {}, response: {}", protocolData->id,
+                 response.toStyledString());
   }
-}
+} // namespace wim
 
 void Chat::serachUserHandle(const Json::Value &response) {
 
@@ -370,6 +404,12 @@ bool Chat::notifyAddFriend(long uid, const std::string &requestMessage) {
   addFriendReq["requestMessage"] = requestMessage;
   chat->Send(addFriendReq.toStyledString(), ID_NOTIFY_ADD_FRIEND_REQ);
 
+  friendApplyMap[uid] = std::make_shared<db::FriendApply>();
+  friendApplyMap[uid]->fromUid = user->uid;
+  friendApplyMap[uid]->toUid = uid;
+  friendApplyMap[uid]->content = requestMessage;
+  friendApplyMap[uid]->status = 0;
+
   return true;
 }
 bool Chat::replyAddFriend(long uid, bool accept,
@@ -383,6 +423,12 @@ bool Chat::replyAddFriend(long uid, bool accept,
            addFriendRequest.toStyledString());
 
   chat->Send(addFriendRequest.toStyledString(), ID_REPLY_ADD_FRIEND_REQ);
+  friendApplyMap[uid] = std::make_shared<db::FriendApply>();
+  friendApplyMap[uid]->status = accept;
+  friendApplyMap[uid]->content = replyMessage;
+
+  friendMap[uid] = std::make_shared<db::UserInfo>();
+  friendMap[uid]->uid = uid;
 
   return true;
 }
@@ -434,7 +480,7 @@ bool Chat::joinGroup(long groupId) {
   Json::Value request;
   request["groupId"] = Json::Value::Int64(groupId);
   request["uid"] = Json::Value::Int64(user->uid);
-  chat->Send(request.toStyledString(), ID_GROUP_JOIN_REQ);
+  chat->Send(request.toStyledString(), ID_GROUP_NOTIFY_JOIN_REQ);
   return true;
   return true;
 }
@@ -510,7 +556,8 @@ bool Chat::pullGroupMessageHandle(Json::Value &response) { return true; }
 bool Chat::uploadFile(const std::string &fileName) {
   Json::Value request;
 
-  std::fstream file(fileName, std::ios::in | std::ios::binary);
+  std::fstream file(Configer::getSaveFilePath() + fileName,
+                    std::ios::in | std::ios::binary);
   if (!file.is_open()) {
     LOG_ERROR(businessLogger, "open file failed: {}", fileName);
     return false;
@@ -537,7 +584,7 @@ bool Chat::uploadFile(const std::string &fileName) {
     request["fileName"] = fileName;
     request["type"] = "TEXT";
 
-    onReWrite(seq, request.toStyledString(), ID_FILE_UPLOAD_REQ);
+    // onReWrite(seq, request.toStyledString(), ID_FILE_UPLOAD_REQ);
 
     chat->Send(request.toStyledString(), ID_FILE_UPLOAD_REQ);
     seq++;
@@ -617,5 +664,4 @@ bool Chat::recvFileHandle(Json::Value &response) {
   // ack todo...
   return true;
 }
-
 }; // namespace wim

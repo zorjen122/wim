@@ -2,17 +2,15 @@
 #include "ChatSession.h"
 #include "Const.h"
 #include "DbGlobal.h"
+#include "FileRpc.h"
+#include "Friend.h"
+#include "Group.h"
 #include "ImRpc.h"
 #include "KafkaOperator.h"
 #include "Logger.h"
-#include "OnlineUser.h"
-#include "Redis.h"
-
-#include "FileRpc.h"
-#include "Friend.h"
-#include "Logger.h"
 #include "Mysql.h"
 #include "OnlineUser.h"
+#include "Redis.h"
 #include <boost/asio/error.hpp>
 #include <boost/asio/steady_timer.hpp>
 #include <boost/system/detail/error_code.hpp>
@@ -37,6 +35,13 @@ Service::~Service() {
   worker.join();
 }
 
+void Service::RegisterHandle(unsigned int msgID, HandleType handle) {
+  if (serviceGroup.find(msgID) != serviceGroup.end()) {
+    LOG_WARN(businessLogger, "该服务已注册,sgID: {}", msgID);
+  }
+  serviceGroup[msgID] = std::bind(handle, std::placeholders::_1,
+                                  std::placeholders::_2, std::placeholders::_3);
+}
 /*
 接口说明:
   1、函数处理分为两类：直接处理或转发处理
@@ -48,47 +53,21 @@ Service::~Service() {
 */
 void Service::Init() {
   // 已成功
-  serviceGroup[ID_LOGIN_INIT_REQ] =
-      std::bind(&OnLogin, std::placeholders::_1, std::placeholders::_2,
-                std::placeholders::_3);
+  RegisterHandle(ID_LOGIN_INIT_REQ, OnLogin);
+  RegisterHandle(ID_NOTIFY_ADD_FRIEND_REQ, NotifyAddFriend);
+  RegisterHandle(ID_PING_REQ, PingHandle);
+  RegisterHandle(ID_TEXT_SEND_REQ, TextSend);
+  RegisterHandle(ID_ACK, AckHandle);
 
-  serviceGroup[ID_NOTIFY_ADD_FRIEND_REQ] =
-      std::bind(wim::NotifyAddFriend, std::placeholders::_1,
-                std::placeholders::_2, std::placeholders::_3);
-
-  serviceGroup[ID_PING_REQ] =
-      std::bind(&PingHandle, std::placeholders::_1, std::placeholders::_2,
-                std::placeholders::_3);
-
-  serviceGroup[ID_TEXT_SEND_REQ] =
-      std::bind(&TextSend, std::placeholders::_1, std::placeholders::_2,
-                std::placeholders::_3);
   // 待测试
-
-  serviceGroup[ID_FILE_UPLOAD_REQ] =
-      std::bind(&UploadFile, std::placeholders::_1, std::placeholders::_2,
-                std::placeholders::_3);
-
-  serviceGroup[ID_REPLY_ADD_FRIEND_REQ] =
-      std::bind(wim::ReplyAddFriend, std::placeholders::_1,
-                std::placeholders::_2, std::placeholders::_3);
-
-  serviceGroup[ID_PULL_FRIEND_LIST_REQ] =
-      std::bind(&pullFriendList, std::placeholders::_1, std::placeholders::_2,
-                std::placeholders::_3);
-
-  serviceGroup[ID_PULL_FRIEND_APPLY_LIST_REQ] =
-      std::bind(&pullFriendApplyList, std::placeholders::_1,
-                std::placeholders::_2, std::placeholders::_3);
-
-  serviceGroup[ID_PULL_MESSAGE_LIST_REQ] =
-      std::bind(&pullMessageList, std::placeholders::_1, std::placeholders::_2,
-
-                std::placeholders::_3);
-
-  serviceGroup[ID_ACK] =
-      std::bind(&AckHandle, std::placeholders::_1, std::placeholders::_2,
-                std::placeholders::_3);
+  RegisterHandle(ID_FILE_UPLOAD_REQ, UploadFile);
+  RegisterHandle(ID_REPLY_ADD_FRIEND_REQ, ReplyAddFriend);
+  RegisterHandle(ID_PULL_FRIEND_LIST_REQ, pullFriendList);
+  RegisterHandle(ID_PULL_FRIEND_APPLY_LIST_REQ, pullFriendApplyList);
+  RegisterHandle(ID_PULL_MESSAGE_LIST_REQ, pullMessageList);
+  RegisterHandle(ID_GROUP_CREATE_REQ, GroupCreate);
+  RegisterHandle(ID_GROUP_NOTIFY_JOIN_REQ, GroupNotifyJoin);
+  RegisterHandle(ID_GROUP_REPLY_JOIN_REQ, GroupReplyJoin);
 }
 
 void Service::PushService(std::shared_ptr<NetworkMessage> msg) {
@@ -281,11 +260,13 @@ Json::Value SerachUser(ChatSession::Ptr session, unsigned int msgID,
 Json::Value UploadFile(ChatSession::Ptr session, unsigned int msgID,
                        Json::Value &request) {
   Json::Value rsp;
-  long clientSeq = rsp["seq"].asInt64();
+  long clientSeq = request["seq"].asInt64();
   long uid = request["uid"].asInt64();
-  std::string data = rsp["data"].asString();
-  std::string fileName = rsp["fileName"].asString();
+  std::string data = request["data"].asString();
+  std::string fileName = request["fileName"].asString();
   rpc::FileType type;
+
+  rsp["seq"] = Json::Value::Int64(clientSeq);
 
   bool hasUserMsgId = db::RedisDao::GetInstance()->getUserMsgId(uid, clientSeq);
   static short __expireUserMsgId = 10;
@@ -298,7 +279,7 @@ Json::Value UploadFile(ChatSession::Ptr session, unsigned int msgID,
     return rsp;
   }
 
-  std::string tmpType = rsp["type"].asString();
+  std::string tmpType = request["type"].asString();
   if (tmpType == "TEXT") {
     type = rpc::FileType::TEXT;
   } else if (tmpType == "IMAGE") {
@@ -307,32 +288,40 @@ Json::Value UploadFile(ChatSession::Ptr session, unsigned int msgID,
     LOG_ERROR(businessLogger, "upload file type error | fromUid: {}, type: {}",
               uid, tmpType);
     rsp["error"] = ErrorCodes::FileTypeError;
+    rsp["message"] = "文件类型错误";
     return rsp;
   }
 
   rpc::UploadRequest rpcRequest;
   rpc::UploadResponse rpcResponse;
-  rpc::FileChunk fileChunk;
 
-  fileChunk.set_seq(clientSeq);
-  fileChunk.set_data(data);
-  fileChunk.set_filename(fileName);
-  fileChunk.set_type(type);
-  fileChunk.set_data(data);
+  // 当set_allocated_chunk时，protobuf会自动管理 chunk 内存
+  rpc::FileChunk *fileChunk = new rpc::FileChunk();
+  fileChunk->set_seq(clientSeq);
+  fileChunk->set_filename(fileName);
+  fileChunk->set_type(type);
+  fileChunk->set_data(data);
 
   rpcRequest.set_user_id(uid);
-  rpcRequest.set_allocated_chunk(&fileChunk);
+  rpcRequest.set_allocated_chunk(fileChunk);
+  if (rpcRequest.has_chunk() == false) {
+    LOG_ERROR(businessLogger, "upload file chunk error | fromUid: {}, seq: {}",
+              uid, clientSeq);
+  }
 
-  db::RedisDao::GetInstance()->setUserMsgId(uid, clientSeq, __expireUserMsgId);
+  try {
+    grpc::Status status =
+        rpc::FileRpc::GetInstance()->forwardUpload(rpcRequest, rpcResponse);
 
-  grpc::Status status =
-      rpc::FileRpc::GetInstance()->forwardUpload(rpcRequest, rpcResponse);
-  if (status.ok()) {
-    rsp["status"] = "wait";
-    rsp["error"] = ErrorCodes::Success;
-  } else {
-    rsp["message"] = "文件RPC服务异常";
-    rsp["error"] = ErrorCodes::RPCFailed;
+    if (status.ok()) {
+      rsp["error"] = ErrorCodes::Success;
+    } else {
+      rsp["error"] = ErrorCodes::RPCFailed;
+      rsp["message"] = "RPC 失败: " + status.error_message();
+    }
+  } catch (const std::exception &e) {
+    rsp["error"] = ErrorCodes::InternalError;
+    rsp["message"] = "系统异常: " + std::string(e.what());
   }
 
   LOG_INFO(businessLogger, "响应发送者，消息：{}", rsp.toStyledString());

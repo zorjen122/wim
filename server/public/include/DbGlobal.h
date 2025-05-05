@@ -153,6 +153,9 @@ struct Message {
 struct GroupManager {
   using Ptr = std::shared_ptr<GroupManager>;
   GroupManager() = default;
+  GroupManager(long gid, long sessionKey, std::string name,
+               std::string createTime = "")
+      : gid(gid), sessionKey(sessionKey), name(name), createTime(createTime) {}
   long gid;
   long sessionKey;
   std::string name;
@@ -166,6 +169,10 @@ struct GroupMember {
   enum Role { Member, Manager, Master };
   enum Speech { NORMAL, BAN };
   GroupMember() = default;
+  GroupMember(long gid, long uid, short role, std::string joinTime = "",
+              short speech = 0, std::string memberName = "")
+      : gid(gid), uid(uid), role(role), joinTime(std::move(joinTime)),
+        speech(speech), memberName(std::move(memberName)) {}
   long gid;
   long uid;
   short role;

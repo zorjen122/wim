@@ -161,6 +161,11 @@ int main(int argc, char *argv[]) {
         chat->pullFriendList();
       } else if (command == "pullFriendApplyList") {
         chat->pullFriendApplyList();
+      } else if (command == "uploadFile") {
+        std::string fileName;
+        std::cout << "请输入文件全称: ";
+        std::cin >> fileName;
+        chat->uploadFile(fileName);
       } else {
         std::cout << "Unknown command. enter 'q' to quit." << std::endl;
       }

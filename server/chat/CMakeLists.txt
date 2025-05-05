@@ -13,11 +13,12 @@ find_package(gRPC REQUIRED)
 
 set(protobuf_MODULE_COMPATIBLE TRUE)
 file(GLOB SOURCE src/**/*.cc)
-file(GLOB RPC_SOURCE rpc/*.cc)
+file(GLOB RPC_SOURCE ../public/rpc/chat/*.cc ../public/rpc/file/*.cc)
 add_library(imChat ${SOURCE} ${RPC_SOURCE})
 add_executable(chat src/main.cc)
 
-target_include_directories(imChat PUBLIC ./include ./rpc ../public/include)
+target_include_directories(imChat PUBLIC ./include ../public/rpc/chat
+                                         ../public/rpc/file ../public/include)
 target_link_directories(imChat PUBLIC ../public/build)
 
 target_link_libraries(
