@@ -76,19 +76,23 @@ grpc::Status FileServiceImpl::Upload(grpc::ServerContext *context,
                                      const file::UploadRequest *request,
                                      file::UploadResponse *response) {
 
-  auto handle = [&] {
-    if (!request->has_chunk()) {
-      LOG_ERROR(netLogger, "Missing file chunk");
+  std::shared_ptr<file::UploadRequest> requestTemp(
+      new file::UploadRequest(*request));
+  auto handle = [requestTemp] {
+    LOG_INFO(businessLogger, "Upload file request received");
+    if (!requestTemp->has_chunk()) {
+      LOG_ERROR(netLogger, "Missing file chunk, request size: {}, data: {}",
+                requestTemp->ByteSizeLong(), requestTemp->DebugString());
       return;
     }
 
-    auto fileChunk = request->chunk();
+    long uid = requestTemp->user_id();
+    auto fileChunk = requestTemp->chunk();
     if (fileChunk.filename().empty()) {
       LOG_ERROR(netLogger, "Invalid filename");
       return;
     }
 
-    long uid = request->user_id();
     std::string filename = fileChunk.filename();
 
     // 构建完整保存路径
@@ -123,21 +127,6 @@ grpc::Status FileServiceImpl::Upload(grpc::ServerContext *context,
   return grpc::Status::OK;
 }
 
-grpc::Status FileServiceImpl::Send(grpc::ServerContext *context,
-                                   const file::SendRequest *request,
-                                   file::SendResponse *response) {
-  auto handle = [&]() {
-    // 待消息划分为一个服务时，实现该类似函数；
-  };
-
-  auto task =
-      std::make_shared<UnifiedCallData<file::SendRequest, file::SendResponse>>(
-          context, request, response, handle);
-  PushTask(task);
-
-  return grpc::Status::OK;
-}
-
 FileServer::FileServer(size_t workerSize)
     : stopEnable(true), workerSize(workerSize) {
   if (workerSize > std::thread::hardware_concurrency()) {
@@ -148,7 +137,7 @@ FileServer::FileServer(size_t workerSize)
   }
 }
 
-FileServer::~FileServer() {}
+FileServer::~FileServer() { Stop(); }
 
 void FileServer::Run(unsigned short port) {
 
@@ -160,7 +149,7 @@ void FileServer::Run(unsigned short port) {
   service.reset(new FileServiceImpl(workerSize));
   builder.RegisterService(service.get());
 
-  // 10MB MSS发送接口限制
+  // 10MB MSS客户端发送接口限制
   builder.SetMaxReceiveMessageSize(10 * 1024 * 1024);
   server = builder.BuildAndStart();
 

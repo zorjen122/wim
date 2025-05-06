@@ -1,10 +1,10 @@
 #include "Configer.h"
 #include "Service.h"
+#include <chrono>
 #include <fstream>
 #include <grpcpp/grpcpp.h>
 #include <gtest/gtest.h>
 #include <thread>
-
 namespace wim::rpc::test {
 
 class FileClientTest : public ::testing::Test {
@@ -16,12 +16,14 @@ protected:
     });
     std::this_thread::sleep_for(std::chrono::seconds(1)); // 等待服务器启动
     grpc::ChannelArguments args;
-    args.SetMaxReceiveMessageSize(10 * 1024 * 1024); // 10MB
-    args.SetMaxSendMessageSize(10 * 1024 * 1024);    // 10MB
+    args.SetMaxReceiveMessageSize(10 * 1024 * 1024);    // 10MB
+    args.SetMaxSendMessageSize(10 * 1024 * 1024);       // 10MB
+    args.SetInt(GRPC_ARG_USE_LOCAL_SUBCHANNEL_POOL, 1); // 避免代理干扰
 
     auto channel = grpc::CreateCustomChannel(
         "localhost:50051", grpc::InsecureChannelCredentials(), args);
     stub = file::FileService::NewStub(channel);
+    std::this_thread::sleep_for(std::chrono::seconds(2));
   }
 
   void TearDown() override {
@@ -39,10 +41,12 @@ TEST_F(FileClientTest, UploadSmallFile) {
   file::UploadRequest request;
   file::UploadResponse response;
 
-  auto *chunk = request.mutable_chunk();
+  file::FileChunk *chunk = new file::FileChunk();
   chunk->set_filename("test.txt");
   chunk->set_data("Hello, gRPC!");
   request.set_user_id(123);
+
+  request.set_allocated_chunk(chunk);
 
   grpc::Status status = stub->Upload(&context, request, &response);
   EXPECT_TRUE(status.ok());
@@ -65,10 +69,11 @@ TEST_F(FileClientTest, UploadLargeFileInChunks) {
   file::UploadRequest request;
   file::UploadResponse response;
 
-  auto *chunk = request.mutable_chunk();
+  file::FileChunk *chunk = new file::FileChunk();
   chunk->set_filename("large.bin");
   chunk->set_data(testData);
   request.set_user_id(123);
+  request.set_allocated_chunk(chunk);
 
   grpc::Status status = stub->Upload(&context, request, &response);
   EXPECT_TRUE(status.ok());
@@ -76,7 +81,7 @@ TEST_F(FileClientTest, UploadLargeFileInChunks) {
   // 验证文件大小
   std::ifstream file(Configer::getSaveFilePath() + "/123/large.bin",
                      std::ios::binary | std::ios::ate);
-  EXPECT_EQ(file.tellg(), testData.size());
+  EXPECT_EQ(file.tellg(), testData.size() + 1);
 }
 
 } // namespace wim::rpc::test

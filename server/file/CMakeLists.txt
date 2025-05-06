@@ -13,11 +13,11 @@ find_package(gRPC REQUIRED)
 
 set(protobuf_MODULE_COMPATIBLE TRUE)
 file(GLOB SOURCE src/**/*.cc)
-file(GLOB RPC_SOURCE rpc/*.cc)
+file(GLOB RPC_SOURCE ../public/rpc/file/*.cc)
 add_library(imFile ${SOURCE} ${RPC_SOURCE})
 add_executable(file src/main.cc)
 
-target_include_directories(imFile PUBLIC ./include ./rpc ../public/include)
+target_include_directories(imFile PUBLIC ./include ../public/rpc/file ../public/include)
 target_link_directories(imFile PUBLIC ../public/build)
 
 target_link_libraries(

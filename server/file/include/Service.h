@@ -15,8 +15,6 @@ namespace wim::rpc {
 using file::FileChunk;
 using file::FileService;
 using file::FileType;
-using file::SendRequest;
-using file::SendResponse;
 using file::TransferStatus;
 using file::UploadRequest;
 using file::UploadResponse;
@@ -77,10 +75,6 @@ public:
   grpc::Status Upload(grpc::ServerContext *context,
                       const file::UploadRequest *request,
                       file::UploadResponse *response) override;
-  grpc::Status Send(grpc::ServerContext *context,
-                    const file::SendRequest *request,
-                    file::SendResponse *response) override;
-
 private:
   std::string getFileType(const std::string &filename);
 
