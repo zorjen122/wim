@@ -75,6 +75,8 @@ int main(int argc, char *argv[]) {
       t.join();
   };
 
+  std::cout << "\n【请求方式：【命令】 (q/Q 退出)】\n";
+
   try {
     session.reset(new wim::ChatSession(ioContext, endpoint));
     chat->setSession(session->GetSharedSelf());
@@ -91,32 +93,32 @@ int main(int argc, char *argv[]) {
     // chat->OnheartBeat();
 
     net::signal_set signals(ioContext, SIGINT, SIGTERM);
-    signals.async_wait(
-        [&](const boost::system::error_code &ec, int sig) { clearUp(); });
+    signals.async_wait([&](const boost::system::error_code &ec, int sig) {
+      if (chat)
+        chat->quit();
+      clearUp();
+    });
 
     while (true) {
-      std::cout << "Enter a command (q or Q to quit):";
       std::string command;
       std::cin >> command;
 
       if (command == "q" || command == "Q") {
         std::cout << "Exiting..." << std::endl;
+        chat->quit();
         break;
       } else if (command == "addFriend") {
         // 执行添加好友操作
         long userId = -1;
-        std::cout << "Enter the user id of the friend you want to add: ";
+        std::cout << "申请好友ID为: ";
         std::cin >> userId;
-        if (userId == -1) {
-          std::cerr << "Failed to add friend. Invalid user id."
-                    << "\n";
+        if (userId <= 0) {
+          std::cerr << "无效的好友ID\n";
           continue;
         }
         status = chat->notifyAddFriend(userId, "Hello!");
         if (status == 0) {
-          std::cerr << "Failed to add friend. Retrying..." << std::endl;
-        } else {
-          std::cout << "Friend added successfully!" << std::endl;
+          std::cerr << "网络异常，请稍后重试..." << std::endl;
         }
       } else if (command == "showFriendApplyList") {
         std::cout << "好友请求列表: \n";
@@ -140,7 +142,7 @@ int main(int argc, char *argv[]) {
         } else if (tmp == "n" || tmp == "N") {
           accept = false;
         } else {
-          std::cerr << "Invalid input. Please enter 'y' or 'n'." << std::endl;
+          std::cerr << "无效的输入，请输入y（同意）或n（拒绝）" << std::endl;
           continue;
         }
         chat->replyAddFriend(std::atol(uid.c_str()), accept, replyMessage);
@@ -152,11 +154,13 @@ int main(int argc, char *argv[]) {
         std::cout << "请输入消息内容: ";
         std::cin >> message;
         chat->sendTextMessage(std::atol(toUid.c_str()), message);
-      } else if (command == "pullMessage") {
+      } else if (command == "pullSessionMessage") {
         std::string toUid;
-        std::cout << "请输入接收消息的用户ID: ";
+        std::cout << "请输入拉取的用户ID消息: ";
         std::cin >> toUid;
-        chat->pullMessageList(std::atol(toUid.c_str()));
+        chat->pullSessionMessageList(std::atol(toUid.c_str()));
+      } else if (command == "pullMessage") {
+        chat->pullMessageList();
       } else if (command == "pullFriendList") {
         chat->pullFriendList();
       } else if (command == "pullFriendApplyList") {
@@ -166,15 +170,59 @@ int main(int argc, char *argv[]) {
         std::cout << "请输入文件全称: ";
         std::cin >> fileName;
         chat->uploadFile(fileName);
+      } else if (command == "createGroup") {
+        std::string groupName;
+        std::cout << "请输入群组名称: ";
+        std::cin >> groupName;
+        chat->createGroup(groupName);
+      } else if (command == "joinGroup") {
+        std::string groupId;
+        std::cout << "请输入群组ID: ";
+        std::cin >> groupId;
+        std::string requestMessage;
+        std::cout << "请输入申请消息: ";
+        std::cin >> requestMessage;
+        chat->joinGroup(std::atol(groupId.c_str()), requestMessage);
+      } else if (command == "replyJoinGroup") {
+        std::string groupId, requestorUid;
+        bool accept = false; // 同意 == true, 拒绝 == false
+        std::cout << "请输入群组ID: ";
+        std::cin >> groupId;
+        std::cout << "请输入申请者ID: ";
+        std::cin >> requestorUid;
+        std::cout << "是否同意? (y/n): ";
+        std::string tmp;
+        std::cin >> tmp;
+        if (tmp == "y" || tmp == "Y") {
+          accept = true;
+        } else if (tmp == "n" || tmp == "N") {
+          accept = false;
+        } else {
+          std::cerr << "无效的输入，请输入y（同意）或n（拒绝）" << std::endl;
+          continue;
+        }
+        chat->replyJoinGroup(std::atol(groupId.c_str()),
+                             std::atol(requestorUid.c_str()), accept);
+      } else if (command == "quitGroup") {
+        std::string groupId;
+        std::cout << "请输入群组ID: ";
+        std::cin >> groupId;
+        chat->quitGroup(std::atol(groupId.c_str()));
+      } else if (command == "sendFile") {
+        std::string toUid, fileName;
+        std::cout << "请输入接收消息的用户ID: ";
+        std::cin >> toUid;
+        std::cout << "请输入文件全称: ";
+        std::cin >> fileName;
+        chat->sendFile(std::atol(toUid.c_str()), fileName);
       } else {
-        std::cout << "Unknown command. enter 'q' to quit." << std::endl;
+        std::cout << "无效命令" << std::endl;
       }
     }
     clearUp();
   } catch (std::exception &e) {
-    spdlog::error("exception: {}", e.what());
+    spdlog::error("异常: {}", e.what());
     clearUp();
-    status = -1;
   }
 
   return 0;

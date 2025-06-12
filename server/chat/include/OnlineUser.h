@@ -3,14 +3,12 @@
 #include "ChatSession.h"
 #include "Const.h"
 #include "DbGlobal.h"
-#include <atomic>
 #include <jsoncpp/json/value.h>
 #include <memory>
 #include <string>
 #include <unordered_map>
-namespace wim {
 
-static std::unordered_map<long, std::atomic<long>> seqUserMessage;
+namespace wim {
 
 // ok
 class OnlineUser : public Singleton<OnlineUser> {
@@ -34,15 +32,26 @@ public:
     @param callcount: 递归调用次数
   */
   enum ReWriteType { HeartBeat, Message };
-  void onReWrite(ReWriteType type, long seq, long uid,
-                 const std::string &protocolData, int rsp, int callcount = 0);
+  std::string getReWriteString(ReWriteType type);
 
-  void cancelAckTimer(long seq);
+  void onReWrite(ReWriteType type, long seq, long uid, std::string packet,
+                 int rsp, int callcount = 0);
+
+  void cancelAckTimer(long seq, long uid);
 
 private:
   OnlineUser();
   std::mutex sessionMutex;
   std::unordered_map<long, ChatSession::Ptr> sessionMap;
-  std::map<long, std::shared_ptr<net::steady_timer>> waitAckTimerMap;
+
+  /*
+    此字段是通用的，作用于好友、群聊、心跳。
+    一对一好友通讯时，表示为：<seq, uid->timer>；
+    群聊通讯时，表示为：<seq, <member1 -> timer, member2->timer, ...,
+    memberN->timer>>； 心跳时，表示为：<uid, uid->timer>。
+  */
+  std::unordered_map<
+      long, std::unordered_map<long, std::shared_ptr<net::steady_timer>>>
+      waitAckTimerMap;
 };
 }; // namespace wim

@@ -40,9 +40,9 @@ public:
   unsigned int getDataSize();
 
 private:
-  unsigned int id;
-  unsigned int length;
-  char *data;
+  unsigned int id = 0;
+  unsigned int length = 0;
+  char *data = nullptr;
 };
 
 class Chat;

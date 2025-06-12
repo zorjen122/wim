@@ -16,7 +16,9 @@ find_package(gRPC REQUIRED)
 # 添加 src 目录下的所有源文件
 file(GLOB SOURCES src/*.cc)
 
-add_library(imPublic STATIC ${SOURCES})
+add_library(imPublic SHARED ${SOURCES})
+
+#add_library(imPublicStatic STATIC ${SOURCES})
 
 target_include_directories(imPublic PUBLIC ./include)
 target_link_libraries(

@@ -253,6 +253,9 @@ public:
   const std::string __prefixSessionId = "im:sessionId";
   int64_t generateSessionId() { return generateId(__prefixSessionId); }
 
+  const std::string __prefixGid = "im:gid";
+  int64_t generateGid() { return generateId(__prefixGid); }
+
   std::string getMsgId(int64_t msgId) {
     return executeTemplate(
         [&](std::unique_ptr<sw::redis::Redis> &redis) -> std::string {

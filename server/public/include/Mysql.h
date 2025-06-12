@@ -297,8 +297,8 @@ public:
           auto result = session->sql("SELECT * FROM users WHERE username = ?")
                             .bind(username)
                             .execute();
-          if (result.count() == 0) {
-            LOG_DEBUG(dbLogger, "result fetchOne is null");
+          if (!(result.count() > 0)) {
+            LOG_DEBUG(dbLogger, "Mysql指令调用的结果集为空");
             return nullptr;
           }
 
@@ -322,8 +322,8 @@ public:
           auto result = session->sql("SELECT * FROM userInfo WHERE uid = ?")
                             .bind(uid)
                             .execute();
-          if (result.count() == 0) {
-            LOG_DEBUG(dbLogger, "result fetchOne is null");
+          if (!(result.count() > 0)) {
+            LOG_DEBUG(dbLogger, "Mysql指令调用的结果集为空");
             return nullptr;
           }
           auto row = result.fetchOne();
@@ -340,22 +340,22 @@ public:
   bool hasUserInfo(long uid) {
     return executeTemplate(
         [&](std::unique_ptr<mysqlx::Session> &session) -> bool {
-          auto result = session->sql("SELECT uid FROM userInfo WHERE uid = ?")
+          auto result = session->sql("SELECT 1 FROM userInfo WHERE uid = ?")
                             .bind(uid)
                             .execute();
-          return result.hasData();
+          return (result.fetchOne() != 0);
         });
   }
 
   Friend::FriendGroup getFriendList(long uid) {
     return executeTemplate(
         [&](std::unique_ptr<mysqlx::Session> &session) -> Friend::FriendGroup {
-          auto result = session->sql("SELECT * FROM friends WHERE uidA = ?")
+          auto result = session->sql("SELECT * FROM `friends` WHERE uidA = ?")
                             .bind(uid)
                             .execute();
 
-          if (!result.hasData()) {
-            LOG_DEBUG(dbLogger, "result fetchOne is null");
+          if (!(result.count() > 0)) {
+            LOG_DEBUG(dbLogger, "Mysql指令调用的结果集为空");
             return nullptr;
           }
 
@@ -382,8 +382,8 @@ public:
               .bind(user->uid)
               .execute();
 
-      if (checkResult.count() == 0) {
-        LOG_DEBUG(dbLogger, "result fetchOne is null");
+      if (!(checkResult.count() > 0)) {
+        LOG_DEBUG(dbLogger, "Mysql指令调用的结果集为空");
         return 1; // 用户不存在
       }
 
@@ -411,7 +411,7 @@ public:
                   .bind(user->uid)
                   .execute();
 
-          if (result.count() > 0) {
+          if ((result.count() > 0)) {
             LOG_INFO(dbLogger, "User already exists");
             return 1;
           }
@@ -434,23 +434,14 @@ public:
 
     return executeTemplate(
         [&](std::unique_ptr<mysqlx::Session> &session) -> int {
-          std::string hasUserInfo =
-              R"(SELECT COUNT(*) FROM userInfo WHERE uid = ?)";
-          auto result = session->sql(hasUserInfo).bind(userInfo->uid).execute();
-          if (result.count() > 0) {
-            LOG_DEBUG(dbLogger, "Record already exists");
-            // log...
-            return 1;
-          }
-
           std::string f = R"(INSERT INTO userInfo VALUES (?,?,?,?,?))";
-          result = session->sql(f)
-                       .bind(userInfo->uid)
-                       .bind(userInfo->name)
-                       .bind(userInfo->age)
-                       .bind(userInfo->sex)
-                       .bind(userInfo->headImageURL)
-                       .execute();
+          auto result = session->sql(f)
+                            .bind(userInfo->uid)
+                            .bind(userInfo->name)
+                            .bind(userInfo->age)
+                            .bind(userInfo->sex)
+                            .bind(userInfo->headImageURL)
+                            .execute();
 
           return 0;
         });
@@ -458,29 +449,26 @@ public:
 
   int insertFriendApply(FriendApply::Ptr friendData) {
 
-    return executeTemplate([&](std::unique_ptr<mysqlx::Session> &session)
-                               -> int {
-      std::string hasFriend =
-          R"(SELECT COUNT(*) FROM friendApplys WHERE fromUid = ? AND toUid = ?)";
-      auto result = session->sql(hasFriend)
-                        .bind(friendData->fromUid)
-                        .bind(friendData->toUid)
-                        .execute();
-      if (result.count() > 0) {
-        LOG_DEBUG(dbLogger, "Record already exists");
-        return 1;
-      }
-      std::string f = R"(INSERT INTO friendApplys VALUES (?, ?, ?, ?, ?))";
-
-      result = session->sql(f)
-                   .bind(friendData->fromUid)
-                   .bind(friendData->toUid)
-                   .bind(friendData->content)
-                   .bind(friendData->status)
-                   .bind(friendData->createTime)
-                   .execute();
-      return 0;
-    });
+    return executeTemplate(
+        [&](std::unique_ptr<mysqlx::Session> &session) -> int {
+          std::string f = R"(INSERT INTO friendApplys VALUES (?, ?, ?, ?, ?))";
+          // 存两份，便于两边查找
+          auto result = session->sql(f)
+                            .bind(friendData->from)
+                            .bind(friendData->to)
+                            .bind(friendData->content)
+                            .bind(friendData->status)
+                            .bind(friendData->createTime)
+                            .execute();
+          result = session->sql(f)
+                       .bind(friendData->to)
+                       .bind(friendData->from)
+                       .bind(friendData->content)
+                       .bind(friendData->status)
+                       .bind(friendData->createTime)
+                       .execute();
+          return 0;
+        });
   }
 
   int updateFriendApplyStatus(FriendApply::Ptr friendData) {
@@ -493,10 +481,17 @@ public:
                         .bind(friendData->status)
                         .bind(friendData->content)
                         .bind(friendData->createTime)
-                        .bind(friendData->fromUid)
-                        .bind(friendData->toUid)
+                        .bind(friendData->from)
+                        .bind(friendData->to)
                         .execute();
 
+      result = session->sql(f)
+                   .bind(friendData->status)
+                   .bind(friendData->content)
+                   .bind(friendData->createTime)
+                   .bind(friendData->to)
+                   .bind(friendData->from)
+                   .execute();
       return 0;
     });
   }
@@ -504,34 +499,25 @@ public:
     return executeTemplate(
         [&](std::unique_ptr<mysqlx::Session> &session) -> int {
           std::string hasFriend =
-              R"(SELECT COUNT(*) FROM friends WHERE uidA = ? AND uidB = ?)";
+              R"(SELECT 1FROM `friends` WHERE uidA = ? AND uidB = ?)";
           auto result = session->sql(hasFriend).bind(uidA).bind(uidB).execute();
-          auto row = result.fetchOne();
-          if (result.count() > 0) {
-            LOG_DEBUG(dbLogger, "Record already exists");
-            return 1;
-          }
-          return 0;
+          return (result.fetchOne() != 0);
         });
   }
   int insertFriend(Friend::Ptr friendData) {
     return executeTemplate(
         [&](std::unique_ptr<mysqlx::Session> &session) -> int {
-          std::string hasFriend =
-              R"(SELECT COUNT(*) FROM friends WHERE uidA = ? AND uidB = ?)";
-          auto result = session->sql(hasFriend)
+          std::string dateTime = getCurrentDateTime();
+          std::string f = R"(INSERT INTO `friends` VALUES (?, ?, ?, ?))";
+          auto result = session->sql(f)
                             .bind(friendData->uidA)
                             .bind(friendData->uidB)
+                            .bind(friendData->sessionId)
+                            .bind(dateTime)
                             .execute();
-          if (result.count() > 0) {
-            LOG_DEBUG(dbLogger, "Record already exists");
-            return 1;
-          }
-          std::string dateTime = getCurrentDateTime();
-          std::string f = R"(INSERT INTO friends VALUES (?, ?, ?, ?))";
           result = session->sql(f)
-                       .bind(friendData->uidA)
                        .bind(friendData->uidB)
+                       .bind(friendData->uidA)
                        .bind(friendData->sessionId)
                        .bind(dateTime)
                        .execute();
@@ -546,8 +532,8 @@ public:
               R"(INSERT INTO messages VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?))";
           auto result = session->sql(f)
                             .bind(message->messageId)
-                            .bind(message->fromUid)
-                            .bind(message->toUid)
+                            .bind(message->from)
+                            .bind(message->to)
                             .bind(message->sessionKey)
                             .bind(message->type)
                             .bind(message->content)
@@ -599,18 +585,9 @@ public:
   int updateMessage(long messageId, short status) {
     return executeTemplate(
         [&](std::unique_ptr<mysqlx::Session> &session) -> int {
-          std::string hasMessage =
-              R"(SELECT * FROM messages WHERE messageId = ?)";
-          auto result = session->sql(hasMessage).bind(messageId).execute();
-          auto row = result.fetchOne();
-          if (row.isNull()) {
-            // log...
-            LOG_DEBUG(dbLogger, "result fetchOne is null");
-            return 1;
-          }
           std::string f =
               R"(UPDATE messages SET status = ? WHERE messageId = ?)";
-          result = session->sql(f).bind(status).bind(messageId).execute();
+          auto result = session->sql(f).bind(status).bind(messageId).execute();
 
           return 0;
         });
@@ -622,9 +599,9 @@ public:
       std::string f =
           R"(SELECT * FROM friendApplys WHERE status = ? AND fromUid = ?)";
       auto result = session->sql(f).bind(STATUS).bind(from).execute();
-      if (!result.hasData()) {
+      if (!(result.count() > 0)) {
         // log...
-        LOG_DEBUG(dbLogger, "result fetchOne is null");
+        LOG_DEBUG(dbLogger, "Mysql指令调用的结果集为空");
         return nullptr;
       }
       FriendApply::FriendApplyGroup friendApplyGroup(
@@ -644,9 +621,9 @@ public:
     });
   }
 
-  Message::MessageGroup getUserMessage(long from, long to, int startMessageId,
-                                       int pullCount) {
-    if (startMessageId <= 0)
+  Message::MessageGroup getSessionMessage(long from, long to, int lastMessageId,
+                                          int pullCount) {
+    if (lastMessageId < 0)
       return nullptr;
     return executeTemplate([&](std::unique_ptr<mysqlx::Session> &session)
                                -> Message::MessageGroup {
@@ -655,12 +632,50 @@ public:
       auto result = session->sql(f)
                         .bind(from)
                         .bind(to)
-                        .bind(startMessageId)
+                        .bind(lastMessageId)
                         .bind(pullCount)
                         .execute();
-      if (!result.hasData()) {
-        // log...
-        LOG_DEBUG(dbLogger, "result fetchOne is null");
+      if (!(result.count() > 0)) {
+        LOG_DEBUG(dbLogger, "Mysql指令调用的结果集为空");
+        return nullptr;
+      }
+      Message::MessageGroup messageGroup(new std::vector<Message::Ptr>());
+      Message::Ptr messagePtr;
+      for (auto row : result.fetchAll()) {
+        size_t messageId = row[0].get<size_t>();
+        size_t fromUid = row[1].get<size_t>();
+        size_t toUid = row[2].get<size_t>();
+        std::string sessionKey = row[3].get<std::string>();
+        short type = row[4].get<int>();
+        std::string content = row[5].get<std::string>();
+        short status = row[6].get<int>();
+        std::string sendDateTime = row[7].get<std::string>();
+        std::string readDateTime = row[8].get<std::string>();
+
+        messagePtr.reset(
+            new Message(messageId, fromUid, toUid, std::move(sessionKey), type,
+                        std::move(content), status, std::move(sendDateTime),
+                        std::move(readDateTime)));
+        messageGroup->push_back(messagePtr);
+      }
+      return messageGroup;
+    });
+  }
+  Message::MessageGroup getUserMessage(long uid, int lastMessageId,
+                                       int pullCount) {
+    if (lastMessageId < 0)
+      return nullptr;
+    return executeTemplate([&](std::unique_ptr<mysqlx::Session> &session)
+                               -> Message::MessageGroup {
+      std::string f =
+          R"(SELECT * FROM messages WHERE receiverId = ? AND messageId >= ? ORDER BY messageId DESC LIMIT ?)";
+      auto result = session->sql(f)
+                        .bind(uid)
+                        .bind(lastMessageId)
+                        .bind(pullCount)
+                        .execute();
+      if (!(result.count() > 0)) {
+        LOG_DEBUG(dbLogger, "Mysql指令调用的结果集为空");
         return nullptr;
       }
       Message::MessageGroup messageGroup(new std::vector<Message::Ptr>());
@@ -686,60 +701,36 @@ public:
     });
   }
   int deleteUser(long uid) {
-    return executeTemplate([&](std::unique_ptr<mysqlx::Session> &session)
-                               -> int {
-      std::string hasUser =
-          R"(SELECT a.uid FROM users AS a, userInfo AS b WHERE a.uid = ? AND a.uid = b.uid)";
-      auto result = session->sql(hasUser).bind(uid).execute();
-      if (!result.hasData()) {
-        // log...
-        LOG_DEBUG(dbLogger, "result fetchOne is null");
-        return 1;
-      }
-      std::string f1 = R"(DELETE FROM users WHERE uid = ?)";
-      std::string f2 = R"(DELETE FROM userInfo WHERE uid = ?)";
-      result = session->sql(f1).bind(uid).execute();
-      result = session->sql(f2).bind(uid).execute();
-      return 0;
-    });
+    return executeTemplate(
+        [&](std::unique_ptr<mysqlx::Session> &session) -> int {
+          std::string f1 = R"(DELETE FROM users WHERE uid = ?)";
+          std::string f2 = R"(DELETE FROM userInfo WHERE uid = ?)";
+          auto result = session->sql(f1).bind(uid).execute();
+          result = session->sql(f2).bind(uid).execute();
+          return 0;
+        });
   }
   int deleteFriendApply(long fromUid, long toUid) {
-    return executeTemplate([&](std::unique_ptr<mysqlx::Session> &session)
-                               -> int {
-      std::string hasFriendApply =
-          R"(SELECT fromUid FROM friendApplys WHERE fromUid = ? AND toUid = ?)";
-      auto result =
-          session->sql(hasFriendApply).bind(fromUid).bind(toUid).execute();
-      if (!result.hasData()) {
-        // log...
-        LOG_DEBUG(dbLogger, "result fetchOne is null");
-        return 1;
-      }
-      std::string f =
-          R"(DELETE FROM friendApplys WHERE fromUid = ? AND toUid = ?)";
-      result = session->sql(f).bind(fromUid).bind(toUid).execute();
-      return 0;
-    });
+    return executeTemplate(
+        [&](std::unique_ptr<mysqlx::Session> &session) -> int {
+          std::string f =
+              R"(DELETE FROM friendApplys WHERE fromUid = ? AND toUid = ?)";
+          auto result = session->sql(f).bind(fromUid).bind(toUid).execute();
+          return 0;
+        });
   }
   int deleteFriend(long uidA, long uidB) {
     return executeTemplate(
         [&](std::unique_ptr<mysqlx::Session> &session) -> int {
-          std::string hasFriend =
-              R"(SELECT uidA FROM friends WHERE uidA = ? AND uidB = ?)";
-          auto result = session->sql(hasFriend).bind(uidA).bind(uidB).execute();
-          if (!result.hasData()) {
-            // log...
-            LOG_DEBUG(dbLogger, "result fetchOne is null");
-            return 1;
-          }
-          std::string f = R"(DELETE FROM friends WHERE uidA = ? AND uidB = ?)";
-          result = session->sql(f).bind(uidA).bind(uidB).execute();
+          std::string f =
+              R"(DELETE FROM `friends` WHERE uidA = ? AND uidB = ?)";
+          auto result = session->sql(f).bind(uidA).bind(uidB).execute();
           return 0;
         });
   }
 
   // todo...
-  int deleteMessage(long uid, int startMessageId, int delCount) {
+  int deleteMessage(long uid, int lastMessageId, int delCount) {
     return executeTemplate(
         [&](std::unique_ptr<mysqlx::Session> &session) -> int { return 0; });
   }
@@ -747,34 +738,24 @@ public:
   int hasEmail(std::string email) {
     return executeTemplate(
         [&](std::unique_ptr<mysqlx::Session> &session) -> int {
-          std::string f = R"(SELECT email FROM users WHERE email = ?)";
+          std::string f = R"(SELECT 1 FROM users WHERE email = ?)";
           auto result = session->sql(f).bind(email).execute();
-          if (!result.hasData()) {
-            // log...
-            LOG_DEBUG(dbLogger, "result fetchOne is null");
-            return 1;
-          }
-          return 0;
+          return (result.fetchOne() != 0);
         });
   }
   int hasUsername(std::string username) {
     return executeTemplate(
         [&](std::unique_ptr<mysqlx::Session> &session) -> int {
-          std::string f = R"(SELECT username FROM users WHERE username = ?)";
+          std::string f = R"(SELECT 1 FROM users WHERE username = ?)";
           auto result = session->sql(f).bind(username).execute();
-          if (!result.hasData()) {
-            // log...
-            LOG_DEBUG(dbLogger, "result fetchOne is null");
-            return 1;
-          }
-          return 0;
+          return (result.fetchOne() != 0);
         });
   }
 
   int insertGroup(GroupManager::Ptr group) {
     return executeTemplate(
         [&](std::unique_ptr<mysqlx::Session> &session) -> int {
-          std::string f = R"(INSERT INTO groups VALUES (?, ?, ?, ?))";
+          std::string f = R"(INSERT INTO `groups` VALUES (?, ?, ?, ?))";
           auto result = session->sql(f)
                             .bind(group->gid)
                             .bind(group->sessionKey)
@@ -826,21 +807,19 @@ public:
   int hasGroup(long gid) {
     return executeTemplate(
         [&](std::unique_ptr<mysqlx::Session> &session) -> int {
-          std::string f = R"(SELECT COUNT(*) FROM groups WHERE gid = ?)";
+          std::string f = R"(SELECT 1 FROM `groups` WHERE gid = ?)";
           auto result = session->sql(f).bind(gid).execute();
-          if (result.count() > 0) {
-            LOG_DEBUG(dbLogger, "Record already exists");
-            return 1;
-          }
-          return 0;
+          return (result.fetchOne() != 0);
         });
   }
 
   GroupMember::MemberList getGroupRoleMemberList(long gid, short role) {
     return executeTemplate([&](std::unique_ptr<mysqlx::Session> &session)
                                -> GroupMember::MemberList {
+      // role
+      // 大于等于是因为，管理往上的级别按数值排序，若2为管理，3则是大于管理的级别，如群主
       std::string f =
-          R"(SELECT * FROM groupMembers WHERE gid = ? AND role = ?)";
+          R"(SELECT * FROM groupMembers WHERE gid = ? AND role >= ?)";
       auto result = session->sql(f).bind(gid).bind(role).execute();
       GroupMember::MemberList memberList;
       for (auto row : result.fetchAll()) {
@@ -848,7 +827,27 @@ public:
         size_t uid = row[1].get<size_t>();
         short role = row[2].get<int>();
         std::string joinTime = row[3].get<std::string>();
-        short speech = row[4].get<short>();
+        short speech = row[4].get<int>();
+        std::string memberName = row[5].get<std::string>();
+        GroupMember::Ptr member(
+            new GroupMember(gid, uid, role, joinTime, speech, memberName));
+        memberList.push_back(member);
+      }
+      return memberList;
+    });
+  }
+  GroupMember::MemberList getGroupMemberList(long gid) {
+    return executeTemplate([&](std::unique_ptr<mysqlx::Session> &session)
+                               -> GroupMember::MemberList {
+      std::string f = R"(SELECT * FROM groupMembers WHERE gid = ?)";
+      auto result = session->sql(f).bind(gid).execute();
+      GroupMember::MemberList memberList;
+      for (auto row : result.fetchAll()) {
+        size_t gid = row[0].get<size_t>();
+        size_t uid = row[1].get<size_t>();
+        short role = row[2].get<int>();
+        std::string joinTime = row[3].get<std::string>();
+        short speech = row[4].get<int>();
         std::string memberName = row[5].get<std::string>();
         GroupMember::Ptr member(
             new GroupMember(gid, uid, role, joinTime, speech, memberName));
@@ -858,5 +857,110 @@ public:
     });
   }
 
-}; // namespace wim::db
+  int insertGroupApply(GroupApply::Ptr apply) {
+    return executeTemplate([&](std::unique_ptr<mysqlx::Session> &session) {
+      std::string f =
+          R"(INSERT INTO `groupApplys` VALUES (?, ?, ?, ? , ?, ?, ?))";
+      auto result = session->sql(f)
+                        .bind(apply->requestor)
+                        .bind(apply->handler)
+                        .bind(apply->gid)
+                        .bind(apply->type)
+                        .bind(apply->status)
+                        .bind(apply->message)
+                        .bind(apply->updateTime)
+                        .execute();
+      return 0;
+    });
+  }
+
+  GroupApply::GroupApplyList selectGroupApply() {
+    return executeTemplate([&](std::unique_ptr<mysqlx::Session> &session)
+                               -> GroupApply::GroupApplyList {
+      std::string f = R"(SELECT * FROM `groupApplys`)";
+      auto result = session->sql(f).execute();
+      if (!(result.count() > 0)) {
+        LOG_INFO(dbLogger, "Mysql指令调用的结果集为空");
+        return nullptr;
+      }
+      GroupApply::GroupApplyList applyList(new std::vector<GroupApply::Ptr>());
+      for (auto row : result.fetchAll()) {
+        size_t requestor = row[0].get<size_t>();
+        size_t handler = row[1].get<size_t>();
+        size_t gid = row[2].get<size_t>();
+        short type = row[3].get<int>();
+        short status = row[4].get<int>();
+        std::string message = row[5].get<std::string>();
+        std::string updateTime = row[6].get<std::string>();
+        GroupApply::Ptr apply(new GroupApply(requestor, handler, gid, type,
+                                             status, message, updateTime));
+        applyList->push_back(apply);
+      }
+      return applyList;
+    });
+  }
+
+  int hasGroupApply(long requestor, long gid) {
+    return executeTemplate(
+        [&](std::unique_ptr<mysqlx::Session> &session) -> int {
+          std::string f =
+              R"(SELECT 1 FROM `groupApplys` WHERE requestor = ? AND gid = ?)";
+          auto result = session->sql(f).bind(requestor).bind(gid).execute();
+          return (result.fetchOne() != 0);
+        });
+  }
+
+  int deleteGroupApply(long requestor, long gid) {
+    return executeTemplate(
+        [&](std::unique_ptr<mysqlx::Session> &session) -> int {
+          std::string f =
+              R"(DELETE FROM `groupApplys` WHERE requestor = ? AND gid = ?)";
+          auto result = session->sql(f).bind(requestor).bind(gid).execute();
+          return 0;
+        });
+  }
+
+  int updateGroupApply(GroupApply::Ptr apply) {
+    return executeTemplate([&](std::unique_ptr<mysqlx::Session> &session) {
+      std::string f =
+          R"(UPDATE `groupApplys` SET handler = ?, status = ?, type = ?, message = ?, updateTime = ? WHERE requestor = ? AND gid = ?)";
+      auto result = session->sql(f)
+                        .bind(apply->handler)
+                        .bind(apply->status)
+                        .bind(apply->type)
+                        .bind(apply->message)
+                        .bind(apply->updateTime)
+                        .bind(apply->requestor)
+                        .bind(apply->gid)
+                        .execute();
+      return 0;
+    });
+  }
+
+  GroupApply::GroupApplyList pullGroupApply(long requestor) {
+    return executeTemplate([&](std::unique_ptr<mysqlx::Session> &session)
+                               -> GroupApply::GroupApplyList {
+      std::string f = R"(SELECT * FROM `groupApplys` WHERE requestor = ?)";
+      auto result = session->sql(f).bind(requestor).execute();
+      if (!(result.count() > 0)) {
+        LOG_INFO(dbLogger, "Mysql指令调用的结果集为空");
+        return nullptr;
+      }
+      GroupApply::GroupApplyList applyList(new std::vector<GroupApply::Ptr>());
+      for (auto row : result.fetchAll()) {
+        size_t requestor = row[0].get<size_t>();
+        size_t handler = row[1].get<size_t>();
+        size_t gid = row[2].get<size_t>();
+        short type = row[3].get<int>();
+        short status = row[4].get<int>();
+        std::string message = row[5].get<std::string>();
+        std::string updateTime = row[6].get<std::string>();
+        GroupApply::Ptr apply(new GroupApply(requestor, handler, gid, type,
+                                             status, message, updateTime));
+        applyList->push_back(apply);
+      }
+      return applyList;
+    });
+  }
+};
 }; // namespace wim::db

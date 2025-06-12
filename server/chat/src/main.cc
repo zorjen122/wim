@@ -42,8 +42,7 @@ int main(int argc, char *argv[]) {
     LOG_INFO(wim::businessLogger,
              "ImServiceRunner 启动, 模式: normal, 日志等级: {}",
              wim::getLogLevelStr());
-    wim::ImServiceRunner::GetInstance()->Activate(
-        wim::ImServiceRunner::ModeType::NORMAL_ACTIVE);
+    wim::ImServiceRunner::GetInstance()->Activate();
   }
 
   return 0;

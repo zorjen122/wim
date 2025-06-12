@@ -18,40 +18,34 @@ namespace wim {
 class ImServiceRunner : public Singleton<ImServiceRunner> {
 private:
   void ClearUp() {
-    size_t useCount;
-    useCount = IocPool::GetInstance().use_count();
-    if (useCount > 2) {
-      LOG_ERROR(wim::businessLogger, "IocPool资源池状态异常, useCount: {}",
-                useCount);
+    size_t refCount;
+    // 减去instance实例拷贝的一份引用
+    refCount = IocPool::GetInstance().use_count() - 1;
+    if (refCount > 1) {
+      LOG_ERROR(wim::businessLogger, "IocPool资源池状态异常, 引用计数: {}",
+                refCount);
     }
     IocPool::GetInstance()->Stop();
 
-    useCount = db::MysqlDao::GetInstance().use_count();
+    refCount = db::MysqlDao::GetInstance().use_count() - 1;
     db::MysqlDao::GetInstance()->Close();
-    if (useCount > 2)
-      LOG_ERROR(wim::businessLogger, "MysqlDa资源池状态异常, useCount: {}",
-                useCount);
+    if (refCount > 1)
+      LOG_ERROR(wim::dbLogger, "MysqlDao资源池状态异常, 引用计数", refCount);
 
-    useCount = db::RedisDao::GetInstance().use_count();
-    if (useCount > 2)
-      LOG_ERROR(wim::businessLogger, "RedisDa资源池状态异常, useCount: {}",
-                useCount);
+    refCount = db::RedisDao::GetInstance().use_count() - 1;
+    if (refCount > 1)
+      LOG_ERROR(wim::dbLogger, "RedisDao资源池状态异常, 引用计数", refCount);
     db::RedisDao::GetInstance()->Close();
 
     rpcServer->Shutdown();
-    if (rpcThread.joinable()) {
-      rpcThread.join();
+    if (rpcRunThread.joinable()) {
+      rpcRunThread.join();
       LOG_INFO(wim::businessLogger, "IM RPC服务线程退出成功");
     }
   }
 
 public:
-  enum ModeType { NORMAL_ACTIVE, BACKUP_ACTIVE };
-
-  bool Activate(ModeType type) {
-    if (isActive)
-      return true;
-
+  bool Activate() {
     try {
       auto config = Configer::getNode("server");
       unsigned short port = config["self"]["port"].as<int>();
@@ -77,11 +71,11 @@ public:
 
       net::io_context &ioc = wim::IocPool::GetInstance()->GetContext();
 
-      isActive = true;
+      // 通讯服务
       imServer = std::make_unique<ChatServer>(ioc, port);
       imServer->Start();
 
-      rpcThread = std::thread([&]() { rpcServer->Wait(); });
+      rpcRunThread = std::thread([&]() { rpcServer->Wait(); });
 
       boost::asio::signal_set signals(ioc, SIGINT, SIGTERM);
       signals.async_wait(
@@ -96,29 +90,20 @@ public:
       return true;
     } catch (const std::exception &e) {
       ClearUp();
-      LOG_ERROR(businessLogger, "Failed to activate chat service: {}",
-                e.what());
+      LOG_ERROR(businessLogger, "通讯服务启动失败, 错误信息: {}", e.what());
       return false;
     }
   }
 
-  void Deactivate() {
-    isActive = false;
-    ClearUp();
-  }
-
-  bool IsActive() const { return isActive; }
-
   ImServiceRunner() = default;
   ~ImServiceRunner() {
-    Deactivate();
+    ClearUp();
     LOG_INFO(businessLogger, "ImServiceRunner::~ImServiceRunner");
   }
 
 private:
   std::unique_ptr<grpc::Server> rpcServer;
   std::shared_ptr<ChatServer> imServer;
-  std::thread rpcThread;
-  bool isActive = false;
+  std::thread rpcRunThread;
 };
 }; // namespace wim

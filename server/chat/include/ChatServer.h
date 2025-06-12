@@ -1,13 +1,9 @@
 #pragma once
-#include <memory.h>
-
-#include <boost/asio.hpp>
-#include <map>
-#include <mutex>
 
 #include "ChatSession.h"
 
-#include <memory>
+#include <boost/asio.hpp>
+#include <memory.h>
 #include <mutex>
 #include <unordered_map>
 
@@ -20,26 +16,30 @@ using boost::system::error_code;
 } // namespace net
 
 namespace wim {
+
+// ChatServer类用于受理连接和管理连接资源
+// Start()在受理新连接的同时将开启该连接的会话
 class ChatServer {
 public:
   ChatServer() = delete;
-  ChatServer(net::io_context &ioContext, unsigned short port);
+  ChatServer(net::io_context &ioContext, uint16_t port);
   ~ChatServer();
 
-  size_t GetSessionID();
+  uint64_t GetSessionID();
 
-  void ClearSession(size_t id);
+  void ClearSession(uint64_t id);
   void Start();
 
 private:
   void HandleAccept(ChatSession::Ptr, const net::error_code &error);
 
 private:
-  net::io_context &Ioc;
-  unsigned short Port;
+  net::io_context &acceptContext;
+  uint16_t Port;
   tcp::acceptor Acceptor;
   std::mutex Mutex;
-  std::atomic<size_t> sessionID;
-  std::unordered_map<size_t, ChatSession::Ptr> sessionGroup;
+  std::atomic<uint64_t> sessionID;
+  std::unordered_map<uint64_t, ChatSession::Ptr> sessionGroup;
 };
+
 }; // namespace wim

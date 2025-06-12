@@ -42,6 +42,7 @@ private:
 
 #define PROTOCOL_RECV_MSS (10 * 1024 * 1024) // 10MB
 #define PROTOCOL_SEND_MSS (10 * 1024 * 1024) // 10MB
+#define PROTOCOL_QUEUE_MAX_SIZE (10240)
 
 #include <string>
 #include <unordered_map>
@@ -69,11 +70,12 @@ enum ErrorCodes {
   FileTypeError,
   InternalError,
   GroupAlreadyExists,
-  GroupNotExists
+  GroupNotExists,
+  GroupNotifyFailed,
+  GroupReplyFailed
 };
 
-enum ServiceID {
-
+enum ServiceID {  
   /* 拉取 */
   ID_PULL_FRIEND_LIST_REQ = 1001, // 拉取好友列表
   ID_PULL_FRIEND_LIST_RSP,
@@ -81,7 +83,10 @@ enum ServiceID {
   ID_PULL_FRIEND_APPLY_LIST_REQ, // 拉取好友申请列表
   ID_PULL_FRIEND_APPLY_LIST_RSP,
 
-  ID_PULL_MESSAGE_LIST_REQ, // 拉取消息列表
+  ID_PULL_SESSION_MESSAGE_LIST_REQ, // 拉取单个会话消息列表
+  ID_PULL_SESSION_MESSAGE_LIST_RSP,
+
+  ID_PULL_MESSAGE_LIST_REQ, // 拉取所有会话消息
   ID_PULL_MESSAGE_LIST_RSP,
 
   ID_GROUP_PULL_MEMBER_REQ, // 拉取群组成员列表
@@ -96,6 +101,9 @@ enum ServiceID {
 
   ID_USER_QUIT_REQ, // 登出
   ID_USER_QUIT_RSP,
+
+  ID_INIT_USER_INFO_REQ, // 初始化用户信息
+  ID_INIT_USER_INFO_RSP,
 
   /* 好友 */
   ID_SEARCH_USER_REQ, // 查找用户
@@ -120,8 +128,8 @@ enum ServiceID {
   ID_FILE_UPLOAD_REQ,
   ID_FILE_UPLOAD_RSP,
 
-  ID_ACK,  // 确认消息
-  ID_NULL, // ACK确认的响应包无用，仅因Service::Run回包将自动发送，此待修整
+  ID_ACK, // 确认消息
+  ID_NULL, // ACK确认的响应包无用，仅因Service::Run回包将自动发送
 
   /* 群组 */
   ID_GROUP_CREATE_REQ, // 创建群组
@@ -140,6 +148,90 @@ enum ServiceID {
   ID_GROUP_TEXT_SEND_RSP,
 
 };
+
+static std::unordered_map<int, std::string> errorCodesMap = {
+    {Success, "Success"},
+    {JsonParser, "JsonParser"},
+    {RPCFailed, "RPCFailed"},
+    {VarifyExpired, "VarifyExpired"},
+    {VarifyCodeErr, "VarifyCodeErr"},
+    {UserExist, "UserExist"},
+    {PasswdErr, "PasswdErr"},
+    {EmailNotMatch, "EmailNotMatch"},
+    {PasswdUpFailed, "PasswdUpFailed"},
+    {PasswdInvalid, "PasswdInvalid"},
+    {TokenInvalid, "TokenInvalid"},
+    {UidInvalid, "UidInvalid"},
+    {UserNotOnline, "UserNotOnline"},
+    {UserNotFriend, "UserNotFriend"},
+    {UserOnline, "UserOnline"},
+    {UserOffline, "UserOffline"},
+    {NotFound, "NotFound"},
+    {RepeatMessage, "RepeatMessage"},
+    {MysqlFailed, "MysqlFailed"},
+    {FileTypeError, "FileTypeError"},
+    {InternalError, "InternalError"},
+    {GroupAlreadyExists, "GroupAlreadyExists"},
+    {GroupNotExists, "GroupNotExists"}};
+
+inline std::string getErrorCodeMsg(int code) {
+  if (errorCodesMap.find(code) != errorCodesMap.end()) {
+    return errorCodesMap[code];
+  }
+  return "";
+}
+static std::unordered_map<int, std::string> serviceIDMap = {
+    {ID_PULL_FRIEND_LIST_REQ, "ID_PULL_FRIEND_LIST_REQ"},
+    {ID_PULL_FRIEND_LIST_RSP, "ID_PULL_FRIEND_LIST_RSP"},
+    {ID_PULL_FRIEND_APPLY_LIST_REQ, "ID_PULL_FRIEND_APPLY_LIST_REQ"},
+    {ID_PULL_FRIEND_APPLY_LIST_RSP, "ID_PULL_FRIEND_APPLY_LIST_RSP"},
+    {ID_PULL_SESSION_MESSAGE_LIST_REQ, "ID_PULL_SESSION_MESSAGE_LIST_REQ"},
+    {ID_PULL_SESSION_MESSAGE_LIST_RSP, "ID_PULL_SESSION_MESSAGE_LIST_RSP"},
+    {ID_PULL_MESSAGE_LIST_REQ,"ID_PULL_MESSAGE_LIST_REQ",},
+    {ID_PULL_MESSAGE_LIST_RSP, "ID_PULL_MESSAGE_LIST_RSP"},
+    {ID_GROUP_PULL_MEMBER_REQ, "ID_GROUP_PULL_MEMBER_REQ"},
+    {ID_GROUP_PULL_MEMBER_RSP, "ID_GROUP_PULL_MEMBER_RSP"},
+    {ID_PING_REQ, "ID_PING_REQ"},
+    {ID_PING_RSP, "ID_PING_RSP"},
+    {ID_LOGIN_INIT_REQ, "ID_LOGIN_INIT_REQ"},
+    {ID_LOGIN_INIT_RSP, "ID_LOGIN_INIT_RSP"},
+    {ID_USER_QUIT_REQ, "ID_USER_QUIT_REQ"},
+    {ID_USER_QUIT_RSP, "ID_USER_QUIT_RSP"},
+    {ID_INIT_USER_INFO_REQ, "ID_INIT_USER_INFO_REQ"},
+    {ID_INIT_USER_INFO_RSP, "ID_INIT_USER_INFO_RSP"},
+    {ID_SEARCH_USER_REQ, "ID_SEARCH_USER_REQ"},
+    {ID_SEARCH_USER_RSP, "ID_SEARCH_USER_RSP"},
+    {ID_NOTIFY_ADD_FRIEND_REQ, "ID_NOTIFY_ADD_FRIEND_REQ"},
+    {ID_NOTIFY_ADD_FRIEND_RSP, "ID_NOTIFY_ADD_FRIEND_RSP"},
+    {ID_REPLY_ADD_FRIEND_REQ, "ID_REPLY_ADD_FRIEND_REQ"},
+    {ID_REPLY_ADD_FRIEND_RSP, "ID_REPLY_ADD_FRIEND_RSP"},
+    {ID_REMOVE_FRIEND_REQ, "ID_REMOVE_FRIEND_REQ"},
+    {ID_REMOVE_FRIEND_RSP, "ID_REMOVE_FRIEND_RSP"},
+    {ID_TEXT_SEND_REQ, "ID_TEXT_SEND_REQ"},
+    {ID_TEXT_SEND_RSP, "ID_TEXT_SEND_RSP"},
+    {ID_FILE_SEND_REQ, "ID_FILE_SEND_REQ"},
+    {ID_FILE_SEND_RSP, "ID_FILE_SEND_RSP"},
+    {ID_FILE_UPLOAD_REQ, "ID_FILE_UPLOAD_REQ"},
+    {ID_FILE_UPLOAD_RSP, "ID_FILE_UPLOAD_RSP"},
+    {ID_ACK, "ID_ACK"},
+    {ID_NULL, "ID_NULL"},
+    {ID_GROUP_CREATE_REQ, "ID_GROUP_CREATE_REQ"},
+    {ID_GROUP_CREATE_RSP, "ID_GROUP_CREATE_RSP"},
+    {ID_GROUP_NOTIFY_JOIN_REQ, "ID_GROUP_NOTIFY_JOIN_REQ"},
+    {ID_GROUP_NOTIFY_JOIN_RSP, "ID_GROUP_NOTIFY_JOIN_RSP"},
+    {ID_GROUP_REPLY_JOIN_REQ, "ID_GROUP_REPLY_JOIN_REQ"},
+    {ID_GROUP_REPLY_JOIN_RSP, "ID_GROUP_REPLY_JOIN_RSP"},
+    {ID_GROUP_QUIT_REQ, "ID_GROUP_QUIT_REQ"},
+    {ID_GROUP_QUIT_RSP, "ID_GROUP_QUIT_RSP"},
+    {ID_GROUP_TEXT_SEND_REQ, "ID_GROUP_TEXT_SEND_REQ"},
+    {ID_GROUP_TEXT_SEND_RSP, "ID_GROUP_TEXT_SEND_RSP"}};
+
+inline std::string getServiceIdString(int id) {
+  if (serviceIDMap.find(id) != serviceIDMap.end()) {
+    return serviceIDMap[id];
+  }
+  return "";
+}
 
 inline int __getServiceResponseId(ServiceID id) { return id + 1; }
 
@@ -161,3 +253,6 @@ inline std::string getCurrentDateTime() {
   std::string dateTime(buffer);
   return dateTime;
 }
+
+// 缓存消息的过期时间，避免重复消息
+#define MESSAGE_CACHE_EXPIRE_TIME_SECONDS (10)

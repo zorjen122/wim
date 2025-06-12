@@ -27,13 +27,13 @@ grpc::Status
 ImRpcService::NotifyAddFriend(ServerContext *context,
                               const NotifyAddFriendRequest *request,
                               NotifyAddFriendResponse *response) {
-  long fromUid = request->fromuid();
-  long toUid = request->touid();
+  long from = request->from();
+  long to = request->to();
   std::string message = request->requestmessage();
 
   Json::Value requestJsonData;
-  requestJsonData["fromUid"] = Json::Value::Int64(fromUid);
-  requestJsonData["toUid"] = Json::Value::Int64(toUid);
+  requestJsonData["from"] = Json::Value::Int64(from);
+  requestJsonData["to"] = Json::Value::Int64(to);
   requestJsonData["requestMessage"] = Json::Value(message);
 
   auto localServiceResponse =
@@ -50,14 +50,14 @@ ImRpcService::NotifyAddFriend(ServerContext *context,
 grpc::Status ImRpcService::ReplyAddFriend(ServerContext *context,
                                           const ReplyAddFriendRequest *request,
                                           ReplyAddFriendResponse *response) {
-  long fromUid = request->fromuid();
-  long toUid = request->touid();
+  long from = request->from();
+  long to = request->to();
   bool accept = request->accept();
   std::string message = request->replymessage();
 
   Json::Value requestJsonData;
-  requestJsonData["fromUid"] = Json::Value::Int64(fromUid);
-  requestJsonData["toUid"] = Json::Value::Int64(toUid);
+  requestJsonData["from"] = Json::Value::Int64(from);
+  requestJsonData["to"] = Json::Value::Int64(to);
   requestJsonData["accept"] = Json::Value(accept);
   requestJsonData["replyMessage"] = Json::Value(message);
 
@@ -77,12 +77,12 @@ ImRpcService::TextSendMessage(ServerContext *context,
                               const TextSendMessageRequest *request,
                               TextSendMessageResponse *response) {
 
-  long fromUid = request->fromuid();
-  long toUid = request->touid();
+  long from = request->from();
+  long to = request->to();
   std::string text = request->text();
   Json::Value requestJsonData;
-  requestJsonData["fromUid"] = Json::Value::Int64(fromUid);
-  requestJsonData["toUid"] = Json::Value::Int64(toUid);
+  requestJsonData["from"] = Json::Value::Int64(from);
+  requestJsonData["to"] = Json::Value::Int64(to);
   requestJsonData["text"] = Json::Value(text);
   requestJsonData["sessionKey"] = Json::Value::Int64(0);
 

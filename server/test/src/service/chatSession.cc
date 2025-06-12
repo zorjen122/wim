@@ -18,32 +18,32 @@
 #include <climits>
 
 namespace wim {
-Tlv::Tlv(unsigned int maxLen, unsigned int msgID) {
+Tlv::Tlv(uint32_t maxLen, uint32_t msgID) {
 
-  unsigned int tmp = ntohl(maxLen);
+  uint32_t tmp = ntohl(maxLen);
   id = ntohl(msgID);
   length = tmp + PROTOCOL_HEADER_TOTAL;
 
   data = new char[tmp + 1];
 }
 
-Tlv::Tlv(unsigned int msgID, unsigned int maxLength, char *msg) {
+Tlv::Tlv(uint32_t msgID, uint32_t maxLength, char *msg) {
 
   id = msgID;
 
   length = maxLength + PROTOCOL_HEADER_TOTAL;
   data = new char[length];
 
-  unsigned int tmpID = htonl(id);
-  unsigned int tmpLen = htonl(maxLength);
+  uint32_t tmpID = htonl(id);
+  uint32_t tmpLen = htonl(maxLength);
 
   memcpy(data, &tmpID, PROTOCOL_ID_LEN);
   memcpy(data + PROTOCOL_ID_LEN, &tmpLen, PROTOCOL_DATA_SIZE_LEN);
   memcpy(data + PROTOCOL_ID_LEN + PROTOCOL_DATA_SIZE_LEN, msg, maxLength);
 }
 
-unsigned int Tlv::getDataSize() { return length - PROTOCOL_HEADER_TOTAL; }
-unsigned int Tlv::getTotal() { return length; }
+uint32_t Tlv::getDataSize() { return length - PROTOCOL_HEADER_TOTAL; }
+uint32_t Tlv::getTotal() { return length; }
 
 std::string Tlv::getDataString() { return std::string(data, length); }
 char *Tlv::getData() { return data; }
@@ -177,10 +177,12 @@ void ChatSession::HandleError(net::error_code ec) {
   Close();
 }
 
-void ChatSession::Send(char *msgData, unsigned int maxSize,
-                       unsigned int msgID) {
-  // 写入操作会发送完整的包数据
+void ChatSession::Send(char *msgData, uint32_t maxSize, uint32_t msgID) {
+  LOG_INFO(netLogger, "预发送大小为：{}, 请求服务ID：{}", maxSize,
+           getServiceIdString(msgID));
   sendProtocolData.reset(new Tlv(msgID, maxSize, msgData));
+
+  // 写入操作会发送完整的包数据
   boost::asio::async_write(
       *chat,
       boost::asio::buffer(sendProtocolData->data, sendProtocolData->length),
@@ -191,7 +193,7 @@ void ChatSession::Send(char *msgData, unsigned int maxSize,
       });
 }
 
-void ChatSession::Send(std::string msgData, unsigned int msgID) {
+void ChatSession::Send(std::string msgData, uint32_t msgID) {
   ChatSession::Send(msgData.data(), msgData.length(), msgID);
 }
 

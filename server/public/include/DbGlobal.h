@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Logger.h"
+#include "RpcPool.h"
 #include <memory>
 #include <string>
 #include <vector>
@@ -65,7 +66,7 @@ struct FriendApply {
   FriendApply(size_t fromUid, size_t toUId, short status = 0,
               const std::string &content = "",
               const std::string &createTime = "")
-      : fromUid(fromUid), toUid(toUId), status(status), content(content),
+      : from(fromUid), to(toUId), status(status), content(content),
         createTime(createTime) {}
 
   std::string formatStatus(short status) {
@@ -80,8 +81,8 @@ struct FriendApply {
       return "unknown";
     }
   }
-  size_t fromUid;
-  size_t toUid;
+  size_t from;
+  size_t to;
   short status;
 
   // 用于发起申请和回应时附带的消息内容
@@ -102,7 +103,7 @@ struct Message {
   Message(long messageId, long fromUid, long toUid, std::string sessionKey,
           short type, std::string content, short status,
           std::string sendDateTime = "", std::string readDateTime = "")
-      : messageId(messageId), fromUid(fromUid), toUid(toUid), type(type),
+      : messageId(messageId), from(fromUid), to(toUid), type(type),
         content(std::move(content)), status(status),
         sendDateTime(std::move(sendDateTime)),
         readDateTime(std::move(readDateTime)) {}
@@ -138,8 +139,8 @@ struct Message {
     }
   }
   long messageId;
-  long fromUid;
-  long toUid;
+  long from;
+  long to;
   std::string sessionKey;
   short type;
   std::string content;
@@ -198,6 +199,35 @@ struct File {
   std::string name;
   std::string savePath;
   std::string createTime;
+};
+
+struct GroupApply {
+  using Ptr = std::shared_ptr<GroupApply>;
+  using GroupApplyList = std::shared_ptr<std::vector<GroupApply::Ptr>>;
+  GroupApply(long requestor, long handler, long gid, short type, short status,
+             std::string message, std::string updateTime)
+      : requestor(requestor), handler(handler), gid(gid), type(type),
+        status(status), message(message), updateTime(updateTime) {}
+
+  // Type: 1.加群、2.退群、3.升权、4.降权、5、邀群、6.踢出
+  enum Type {
+    Add = 1,
+    Delete = 2,
+    Promote = 3,
+    Demote = 4,
+    Invite = 5,
+    Kick = 6
+  };
+
+  enum Status { Wait = 0, Agree = 1, Refuse = 2 };
+
+  long requestor;
+  long handler;
+  long gid;
+  short type;
+  short status;
+  std::string message;
+  std::string updateTime;
 };
 
 } // namespace wim::db

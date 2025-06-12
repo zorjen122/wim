@@ -24,55 +24,56 @@ using boost::system::error_code;
 
 namespace wim {
 
-class NetworkMessage;
+class Channel;
 
 class ChatSession;
 
 class Service;
 
 class Tlv {
-  friend class NetworkMessage;
+  friend class Channel;
   friend class ChatSession;
   friend class Service;
 
 public:
   using Ptr = std::shared_ptr<Tlv>;
 
-  Tlv(unsigned int packageLength, unsigned int msgID);
-  Tlv(unsigned int msgID, unsigned int maxLength, char *msg);
+  // 从网络字节序数据转换到本地字节序
+  Tlv(uint32_t packageLength, uint32_t msgID);
+
+  // 从本地字节序数据转换到网络字节序
+  Tlv(uint32_t msgID, uint32_t maxLength, char *msg);
   ~Tlv();
 
+  void setData(const char *msg, uint32_t msgLength);
   std::string getData();
-  unsigned int getTotal();
-  unsigned int getDataSize();
+  uint32_t getTotal();
+  uint32_t getDataSize();
 
 private:
-  unsigned int id;
-  unsigned int total;
-  char *data;
+  uint32_t id = 0;
+  uint32_t total = 0;
+  char *data = nullptr;
 };
 
 class ChatServer;
 
 class ChatSession : public std::enable_shared_from_this<ChatSession> {
-private:
-  friend class TestChatSession;
-
 public:
   using Protocol = Tlv;
   using Ptr = std::shared_ptr<ChatSession>;
 
   ChatSession(boost::asio::io_context &ioContext, ChatServer *server,
-              size_t id);
+              uint64_t sessionId);
   ~ChatSession();
 
   tcp::socket &GetSocket();
-  size_t GetSessionID();
+  uint64_t GetSessionID();
   net::io_context &GetIoc();
 
   void Start();
-  void Send(char *msgData, unsigned int msgLength, unsigned int msgID);
-  void Send(std::string msgData, unsigned int msgID);
+  void Send(char *msgData, uint32_t msgLength, uint32_t msgID);
+  void Send(std::string msgData, uint32_t msgID);
   void Close();
   void ClearSession();
   Ptr GetSharedSelf();
@@ -86,7 +87,7 @@ private:
   void HandleError(net::error_code ec);
 
 private:
-  size_t id;
+  uint64_t sessionId;
   tcp::socket socket;
 
   char recvBuffer[PROTOCOL_DATA_MTU];
@@ -104,14 +105,14 @@ private:
   net::io_context &ioContext;
 };
 
-class NetworkMessage {
+class Channel {
   friend class ChatSession;
   friend class Service;
 
 public:
-  using Ptr = std::shared_ptr<NetworkMessage>;
+  using Ptr = std::shared_ptr<Channel>;
 
-  NetworkMessage(ChatSession::Ptr, Tlv::Ptr);
+  Channel(ChatSession::Ptr, Tlv::Ptr);
   std::string getData();
 
 private:

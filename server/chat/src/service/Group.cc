@@ -3,9 +3,11 @@
 #include "Const.h"
 #include "DbGlobal.h"
 #include "ImRpc.h"
+#include "Logger.h"
 #include "Mysql.h"
 #include "OnlineUser.h"
 #include "Redis.h"
+#include <cstdint>
 #include <jsoncpp/json/value.h>
 #include <spdlog/spdlog.h>
 namespace wim {
@@ -15,28 +17,16 @@ Json::Value GroupCreate(ChatSession::Ptr session, unsigned int msgID,
 
   Json::Value rsp;
 
-  Defer _([&rsp, session]() {
-    std::string rt = rsp.toStyledString();
-    session->Send(rt, ID_GROUP_CREATE_RSP);
-  });
+  int ret{};
 
   // gid should by server generate, todo...
-  long gid = request["gid"].asInt64();
-  long uid = request["uid"].asInt64();
-  std::string groupName = request["name"].asString();
-  int ret = db::MysqlDao::GetInstance()->hasGroup(gid);
+  int64_t uid = request["uid"].asInt64();
+  std::string groupName = request["groupName"].asString();
 
-  rsp["gid"] = request["gid"];
-  if (ret == true) {
-    rsp["error"] = ErrorCodes::GroupAlreadyExists;
-    rsp["message"] = "群组已经存在";
-    return rsp;
-  } else if (ret == -1) {
-    rsp["error"] = ErrorCodes::MysqlFailed;
-    rsp["message"] = "数据库操作失败";
-  }
+  int64_t gid = db::RedisDao::GetInstance()->generateMsgId();
+  rsp["gid"] = Json::Value::Int64(gid);
 
-  long sessionKey = db::RedisDao::GetInstance()->generateSessionId();
+  int64_t sessionKey = db::RedisDao::GetInstance()->generateSessionId();
   std::string createTime = getCurrentDateTime();
   db::GroupManager::Ptr group(
       new db::GroupManager(gid, sessionKey, groupName, createTime));
@@ -54,6 +44,7 @@ Json::Value GroupCreate(ChatSession::Ptr session, unsigned int msgID,
   if (ret == -1) {
     rsp["error"] = ErrorCodes::MysqlFailed;
     rsp["message"] = "数据库操作失败";
+    return rsp;
   }
 
   rsp["error"] = ErrorCodes::Success;
@@ -61,61 +52,86 @@ Json::Value GroupCreate(ChatSession::Ptr session, unsigned int msgID,
   return rsp;
 }
 
-Json::Value GroupNotifyJoin(ChatSession::Ptr session, unsigned int msgID,
-                            Json::Value &request) {
-  Json::Value rsp;
-
-  long uid = request["uid"].asInt64();
-  long gid = request["gid"].asInt64();
-  std::string requestMessage = request["requestMessage"].asString();
-  // 搜索群聊时存在，但加入群聊时未必存在
-  int ret = db::MysqlDao::GetInstance()->hasGroup(gid);
-  if (ret == false) {
-    rsp["error"] = ErrorCodes::GroupNotExists;
-    rsp["message"] = "群组不存在";
-  }
-
-  // 暂用好友相关表，消息将通知所有群管理
-  std::string createTime = getCurrentDateTime();
-  db::FriendApply::Ptr apply(new db::FriendApply(
-      gid, uid, db::FriendApply::Status::Wait, requestMessage, createTime));
-
-  ret = db::MysqlDao::GetInstance()->insertFriendApply(apply);
-  if (ret == -1) {
-    rsp["error"] = ErrorCodes::MysqlFailed;
-    rsp["message"] = "数据库操作失败";
-  }
-
+int NotifyMemberJoin(int64_t uid, int64_t gid,
+                     const std::string &requestMessage) {
   db::GroupMember::MemberList managerList =
       db::MysqlDao::GetInstance()->getGroupRoleMemberList(
           gid, db::GroupMember::Role::Manager);
   for (auto manager : managerList) {
-    Json::Value notifyInfo;
+    Json::Value notifyRequest;
     bool isLocalMachineOnline =
         OnlineUser::GetInstance()->isOnline(manager->uid);
-    if (isLocalMachineOnline) {
-      auto user = OnlineUser::GetInstance()->GetUserSession(manager->uid);
-      notifyInfo["fromUid"] = Json::Value::Int64(uid);
-      notifyInfo["toId"] = Json::Value::Int64(manager->gid);
-      notifyInfo["type"]; // todo
-      notifyInfo["content"] = requestMessage;
 
-      // 同好友申请一样，通知REQ发送到客户端则表示通知接收者
-      long serverSeq = db::RedisDao::GetInstance()->generateMsgId();
-      OnlineUser::GetInstance()->onReWrite(
-          OnlineUser::ReWriteType::Message, serverSeq, manager->uid,
-          notifyInfo.toStyledString(), ID_GROUP_NOTIFY_JOIN_REQ);
-    }
     Json::Value userInfo =
         db::RedisDao::GetInstance()->getOnlineUserInfoObject(manager->uid);
-    bool isOtherMachineOnline = !userInfo.empty();
+    bool isOtherMachineOnline =
+        isLocalMachineOnline == false && !userInfo.empty();
     if (isOtherMachineOnline) {
       // rpc
-      ///  ...
+      LOG_INFO(businessLogger, "RPC转发通知群成员加入请求，待实现");
+      continue;
     }
+    if (isLocalMachineOnline) {
+      auto user = OnlineUser::GetInstance()->GetUserSession(manager->uid);
+      int64_t serverSeq = db::RedisDao::GetInstance()->generateMsgId();
+      notifyRequest["uid"] = Json::Value::Int64(uid);
+      notifyRequest["gid"] = Json::Value::Int64(gid);
+      notifyRequest["type"]; // todo
+      notifyRequest["content"] = requestMessage;
+      notifyRequest["seq"] = Json::Value::Int64(serverSeq);
+      notifyRequest["error"] = ErrorCodes::Success;
+
+      // 同好友申请一样，通知REQ发送到客户端则表示通知接收者
+      OnlineUser::GetInstance()->onReWrite(
+          OnlineUser::ReWriteType::Message, serverSeq, manager->uid,
+          notifyRequest.toStyledString(), ID_GROUP_NOTIFY_JOIN_REQ);
+    }
+  }
+  return 0;
+}
+
+Json::Value GroupNotifyJoin(ChatSession::Ptr session, unsigned int msgID,
+                            Json::Value &request) {
+  Json::Value rsp;
+
+  int64_t uid = request["uid"].asInt64();
+  int64_t gid = request["gid"].asInt64();
+  std::string requestMessage = request["requestMessage"].asString();
+  // 搜索群聊时存在，但加入群聊时未必存在，此处仍有一致性问题，后续待拟
+  int ret = db::MysqlDao::GetInstance()->hasGroup(gid);
+  if (ret == 0) {
+    rsp["error"] = ErrorCodes::GroupNotExists;
+    rsp["message"] = "群组不存在";
+    return rsp;
+  } else if (ret == -1) {
+    rsp["error"] = ErrorCodes::MysqlFailed;
+    rsp["message"] = "数据库操作失败";
+    return rsp;
+  }
+
+  // 暂用好友相关表，消息将通知所有群管理
+  std::string createTime = getCurrentDateTime();
+  db::GroupApply::Ptr apply(new db::GroupApply(
+      uid, 0, gid, db::GroupApply::Type::Add, db::GroupApply::Status::Wait,
+      requestMessage, createTime));
+
+  ret = db::MysqlDao::GetInstance()->insertGroupApply(apply);
+  if (ret == -1) {
+    rsp["error"] = ErrorCodes::MysqlFailed;
+    rsp["message"] = "数据库操作失败";
+    return rsp;
+  }
+
+  ret = NotifyMemberJoin(uid, gid, requestMessage);
+  if (ret == -1) {
+    rsp["error"] = ErrorCodes::GroupNotExists;
+    rsp["message"] = "通知群成员失败";
+    return rsp;
   }
 
   rsp["error"] = ErrorCodes::Success;
+  rsp["message"] = "通知群成员成功";
+
   return rsp;
 }
 
@@ -124,7 +140,7 @@ Json::Value GroupPullNotify(ChatSession::Ptr session, unsigned int msgID,
   Json::Value rsp;
   rsp["gid"] = request["gid"];
 
-  long gid = request["gid"].asInt64();
+  int64_t gid = request["gid"].asInt64();
 
   int ret = db::MysqlDao::GetInstance()->hasGroup(gid);
   if (ret == false) {
@@ -139,92 +155,129 @@ Json::Value GroupPullNotify(ChatSession::Ptr session, unsigned int msgID,
     rsp["message"] = "数据库操作失败";
     return rsp;
   }
+
   for (auto apply : *applyList) {
     Json::Value notifyInfo;
-    long requestUid = apply->toUid;
-    notifyInfo["uid"] = Json::Value::Int64(requestUid);
-    //...
+    notifyInfo["requestor"] = Json::Value::Int64(apply->to);
     rsp["applyList"].append(notifyInfo);
   }
 
   rsp["error"] = ErrorCodes::Success;
   return rsp;
 }
+int NotifyMemberReply(int64_t gid, int64_t managerUid, int64_t requestorUid,
+                      bool accept) {
+  db::GroupMember::MemberList memberList =
+      db::MysqlDao::GetInstance()->getGroupMemberList(gid);
+  for (auto member : memberList) {
+    bool isLocalMachineOnline =
+        OnlineUser::GetInstance()->isOnline(member->uid);
 
+    Json::Value userInfo =
+        db::RedisDao::GetInstance()->getOnlineUserInfoObject(member->uid);
+    bool isOtherMachineOnline =
+        isLocalMachineOnline == false && !userInfo.empty();
+    if (isOtherMachineOnline) {
+      // rpc
+      LOG_INFO(businessLogger, "RPC转发通知群成员加入请求，待实现");
+      continue;
+    }
+    if (isLocalMachineOnline) {
+      Json::Value notifyRequest;
+      auto user = OnlineUser::GetInstance()->GetUserSession(member->uid);
+      int64_t serverSeq = db::RedisDao::GetInstance()->generateMsgId();
+      notifyRequest["requestorUid"] = Json::Value::Int64(requestorUid);
+      notifyRequest["replyorUid"] = Json::Value::Int64(managerUid);
+      notifyRequest["gid"] = Json::Value::Int64(gid);
+      notifyRequest["accept"] = accept;
+      notifyRequest["type"];
+      notifyRequest["content"];
+      notifyRequest["seq"] = Json::Value::Int64(serverSeq);
+
+      // 同好友申请一样，通知REQ发送到客户端则表示通知接收者
+      OnlineUser::GetInstance()->onReWrite(
+          OnlineUser::ReWriteType::Message, serverSeq, member->uid,
+          notifyRequest.toStyledString(), ID_GROUP_REPLY_JOIN_REQ);
+    }
+  }
+
+  return 0;
+}
 Json::Value GroupReplyJoin(ChatSession::Ptr session, unsigned int msgID,
                            Json::Value &request) {
   Json::Value rsp;
   rsp["gid"] = request["gid"];
 
-  long gid = request["gid"].asInt64();
-  long managerUid = request["managerUid"].asInt64();
-  long requestorUid = request["requestorUid"].asInt64();
+  int64_t gid = request["gid"].asInt64();
+  int64_t managerUid = request["managerUid"].asInt64();
+  int64_t requestorUid = request["requestorUid"].asInt64();
   bool accept = request["accept"].asBool();
 
   // 搜索群聊时存在，但加入群聊时未必存在
   int ret = db::MysqlDao::GetInstance()->hasGroup(gid);
-  if (ret == false) {
+  if (ret == 0) {
     rsp["error"] = ErrorCodes::GroupNotExists;
     rsp["message"] = "群组不存在";
+    return rsp;
   }
 
   // 暂用好友相关表，消息将通知所有群管理
   std::string createTime = getCurrentDateTime();
-  db::FriendApply::Ptr apply(new db::FriendApply(
-      gid, requestorUid, db::FriendApply::Status::Wait, "", createTime));
+  db::GroupApply::Ptr apply(new db::GroupApply(
+      requestorUid, managerUid, gid, db::GroupApply::Type::Add,
+      db::GroupApply::Status::Agree, "", createTime));
 
-  ret = db::MysqlDao::GetInstance()->updateFriendApplyStatus(apply);
+  // 在之前应有检查是否已经同意过，待实现
+  ret = db::MysqlDao::GetInstance()->updateGroupApply(apply);
   if (ret == -1) {
     rsp["error"] = ErrorCodes::MysqlFailed;
     rsp["message"] = "数据库操作失败";
+    return rsp;
   }
 
-  db::GroupMember::MemberList managerList =
-      db::MysqlDao::GetInstance()->getGroupRoleMemberList(
-          gid, db::GroupMember::Role::Manager);
-  for (auto manager : managerList) {
-    Json::Value notifyInfo;
-    bool isLocalMachineOnline =
-        OnlineUser::GetInstance()->isOnline(manager->uid);
-    // 处理加入请求的管理者默认有通知，故忽略
-    if (manager->uid == managerUid)
-      continue;
+  db::GroupMember::Ptr member(new db::GroupMember(
+      gid, requestorUid, db::GroupMember::Role::Member, createTime));
+  ret = db::MysqlDao::GetInstance()->insertGroupMember(member);
+  if (ret == -1) {
+    rsp["error"] = ErrorCodes::MysqlFailed;
+    rsp["message"] = "数据库操作失败";
+    return rsp;
+  }
 
-    if (isLocalMachineOnline) {
-      auto user = OnlineUser::GetInstance()->GetUserSession(manager->uid);
-      notifyInfo["fromUid"] = Json::Value::Int64(requestorUid);
-      notifyInfo["toId"] = Json::Value::Int64(manager->gid);
-      notifyInfo["type"]; // todo
-      notifyInfo["content"] = "";
+  // 此时请求者已成为群成员，通知所有群成员中包含请求者
+  ret = NotifyMemberReply(gid, managerUid, requestorUid, accept);
+  if (ret == -1) {
+    rsp["error"] = ErrorCodes::GroupReplyFailed;
+    rsp["message"] = "通知群成员失败";
+    return rsp;
+  }
 
-      // 同好友申请一样，通知REQ发送到客户端则表示通知接收者
-      long serverSeq = db::RedisDao::GetInstance()->generateMsgId();
-      OnlineUser::GetInstance()->onReWrite(
-          OnlineUser::ReWriteType::Message, serverSeq, manager->uid,
-          notifyInfo.toStyledString(), ID_GROUP_NOTIFY_JOIN_REQ);
-    }
-    Json::Value userInfo =
-        db::RedisDao::GetInstance()->getOnlineUserInfoObject(manager->uid);
-    bool isOtherMachineOnline = !userInfo.empty();
-    if (isOtherMachineOnline) {
-      // rpc
-      ///  ...
-    }
+  if (!accept) {
+    rsp["error"] = ErrorCodes::Success;
+    rsp["message"] = "拒绝该用户加入群组请求";
+    return rsp;
   }
 
   rsp["error"] = ErrorCodes::Success;
+  rsp["message"] = "同意加入群组";
   return rsp;
 }
+
 Json::Value GroupQuit(ChatSession::Ptr session, unsigned int msgID,
                       Json::Value &request) {
   Json::Value rsp;
   return rsp;
 }
 
+/*
+  1.检查群聊
+  2.建立<seq, [member1, member2,
+  ...]>映射，一条消息对应一个seq，一个seq对应多个成员
+  3.转发到群聊所分配的会话服务器，由其生成seq，得到所有成员并按在线离线状态分发消息
+*/
 Json::Value GroupTextSend(ChatSession::Ptr session, unsigned int msgID,
                           Json::Value &request) {
   Json::Value rsp;
   return rsp;
 }
-
 }; // namespace wim
