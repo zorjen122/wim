@@ -12,11 +12,12 @@ find_package(gRPC REQUIRED)
 
 set(protobuf_MODULE_COMPATIBLE TRUE)
 file(GLOB SOURCE src/**/*.cc)
-file(GLOB RPC_SOURCE rpc/*.cc)
+file(GLOB RPC_SOURCE ../public/rpc/state/*.cc ../public/rpc/chat/*.cc)
 add_library(imState ${SOURCE} ${RPC_SOURCE})
 add_executable(state src/main.cc)
 
-target_include_directories(imState PUBLIC ./include ./rpc ../public/include)
+target_include_directories(imState PUBLIC ./include ../public/rpc/state
+                                          ../public/rpc/chat ../public/include)
 target_link_directories(imState PUBLIC ../public/build)
 
 target_link_libraries(

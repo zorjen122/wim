@@ -1,46 +1,41 @@
 #pragma once
-#include <boost/beast/http/verb.hpp>
 #include <functional>
+#include <jsoncpp/json/json.h>
 #include <jsoncpp/json/value.h>
 #include <map>
-#include <memory>
+#include <queue>
+#include <spdlog/spdlog.h>
+#include <thread>
 
 #include "Const.h"
-#include "HttpSession.h"
-#include <boost/beast.hpp>
+#include "ImSession.h"
+#include "Session.h"
 
 namespace wim {
-
-namespace http = boost::beast::http;
-
-typedef std::function<bool(HttpSession::ResponsePtr, Json::Value &)>
-    HttpHandler;
 
 class Service : public Singleton<Service> {
   friend class Singleton<Service>;
 
 public:
+  using HandleType = std::function<int(Json::Value &)>;
+
   ~Service();
-  bool Handle(std::shared_ptr<HttpSession> connection, std::string path,
-              http::verb method);
-  void OnGetHandle(std::string, HttpHandler);
-  void OnPostHandle(std::string, HttpHandler);
-
-private:
-  bool verifycode(HttpSession::ResponsePtr, Json::Value &);
-  bool signUp(HttpSession::ResponsePtr, Json::Value &);
-  bool signIn(HttpSession::ResponsePtr, Json::Value &);
-  bool logoutHandle(HttpSession::ResponsePtr, Json::Value &);
-  bool forgetPassword(HttpSession::ResponsePtr, Json::Value &);
-  bool chatArrhythmia(HttpSession::ResponsePtr, Json::Value &);
-  bool initUserinfo(HttpSession::ResponsePtr, Json::Value &);
-
-  void responseWrite(HttpSession::ResponsePtr, const std::string &);
-  Json::Value parseRequest(std::shared_ptr<HttpSession> connection);
+  void PushService(Session::ptr channel);
 
 private:
   Service();
-  std::map<std::string, HttpHandler> postHandlers;
-  std::map<std::string, HttpHandler> getHandlers;
+  void Run();
+  void Init();
+  void RegisterHandle(uint32_t msgID, HandleType handle);
+  void RouteForward(Session::ptr channel);
+
+  std::thread worker;
+  std::queue<Session::ptr> messageQueue;
+  std::mutex _mutex;
+  std::condition_variable consume;
+  bool stopEnable;
+  std::map<uint32_t, HandleType> forwardServiceGroup;
+  ImSessionManager::Ptr imSessionManager;
 };
+
 }; // namespace wim

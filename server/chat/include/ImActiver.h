@@ -69,7 +69,7 @@ public:
       LOG_INFO(wim::businessLogger, "IM RPC服务启动成功, 监听端口: {}",
                rpcPort);
 
-      net::io_context &ioc = wim::IocPool::GetInstance()->GetContext();
+      io_context &ioc = wim::IocPool::GetInstance()->GetContext();
 
       // 通讯服务
       imServer = std::make_unique<ChatServer>(ioc, port);

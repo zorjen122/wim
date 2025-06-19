@@ -1,0 +1,45 @@
+server:
+  self:
+    name : hunan-im
+    host: 0.0.0.0
+    port: 8090
+    rpcPort: 50055
+  im:
+    s1:
+      name: beijing-im
+      host: 127.0.0.1
+      port: 8091
+      rpcPort: 50056
+      rpcCount: 1
+    im-total: 1
+  file:
+    host: 127.0.0.1
+    rpcPort: 51000
+    rpcCount: 1
+  gateway:
+    host: 127.0.0.1
+    port: 8080
+  verify:
+    host: 127.0.0.1
+    port: 50051
+  state:
+    host: 127.0.0.1
+    port: 50052
+  mysql:
+    host: 127.0.0.1
+    port: 33060
+    user: zorjen
+    password: root
+    schema: chatServ
+    clientCount: 2
+    machineId: 1
+  redis:
+    host: 127.0.0.1
+    port: 6380
+    password: root
+    clientCount: 1
+    machineId: 1
+  kafka:
+    broker: bootstrap.servers
+    host: 127.0.0.1
+    port: 9092

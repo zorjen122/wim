@@ -7,102 +7,92 @@
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <queue>
+#include <sys/types.h>
 #include <unistd.h>
 
 #include "Const.h"
 
-namespace beast = boost::beast;   // from <boost/beast.hpp>
-namespace http = beast::http;     // from <boost/beast/http.hpp>
-using tcp = boost::asio::ip::tcp; // from <boost/asio/ip/tcp.hpp>
-namespace net {
-using namespace boost::asio;
-using boost::system::error_code;
-} // namespace net
-
 namespace wim {
 
-class Channel;
-
-class ChatSession;
-
-class Service;
-
-class Tlv {
-  friend class Channel;
-  friend class ChatSession;
-  friend class Service;
-
-public:
-  using Ptr = std::shared_ptr<Tlv>;
-
-  // 从网络字节序数据转换到本地字节序
-  Tlv(uint32_t packageLength, uint32_t msgID);
-
-  // 从本地字节序数据转换到网络字节序
-  Tlv(uint32_t msgID, uint32_t maxLength, char *msg);
-  ~Tlv();
-
-  void setData(const char *msg, uint32_t msgLength);
-  std::string getData();
-  uint32_t getTotal();
-  uint32_t getDataSize();
-
-private:
-  uint32_t id = 0;
-  uint32_t total = 0;
-  char *data = nullptr;
-};
+using namespace boost::asio;
 
 class ChatServer;
-
 class ChatSession : public std::enable_shared_from_this<ChatSession> {
 public:
-  using Protocol = Tlv;
-  using Ptr = std::shared_ptr<ChatSession>;
+  using ptr = std::shared_ptr<ChatSession>;
+  using tcp = ip::tcp;
+  using error_code = boost::system::error_code;
+  using endpoint = ip::tcp::endpoint;
 
-  ChatSession(boost::asio::io_context &ioContext, ChatServer *server,
-              uint64_t sessionId);
+  struct protocol;
+
+  ChatSession(io_context &ioContext, ChatServer *server, uint64_t sessionId);
   ~ChatSession();
 
   tcp::socket &GetSocket();
   uint64_t GetSessionID();
-  net::io_context &GetIoc();
+  io_context &GetIoc();
+  ptr GetSharedSelf();
+  bool IsConnected();
+  std::string GetEndpointToString();
+  endpoint GetEndpoint();
 
   void Start();
-  void Send(char *msgData, uint32_t msgLength, uint32_t msgID);
-  void Send(std::string msgData, uint32_t msgID);
+  enum OrderType { NETWORK, HOST };
+  void Send(std::shared_ptr<protocol> packet,
+            OrderType flag = OrderType::NETWORK);
+  void Send(const std::string &data, uint32_t serviceId) {}
   void Close();
   void ClearSession();
-  Ptr GetSharedSelf();
-
-  bool IsConnected();
 
 private:
-  enum ParseState { WAIT_HEADER, WAIT_BODY };
-
-  void HandleWrite(const net::error_code &ec, ChatSession::Ptr sharedSelf);
-  void HandleError(net::error_code ec);
+  void HandleWrite(const error_code &ec, ChatSession::ptr sharedSelf);
+  void HandleError(error_code ec);
 
 private:
   uint64_t sessionId;
   tcp::socket socket;
 
-  char recvBuffer[PROTOCOL_DATA_MTU];
-  net::streambuf recvStreamBuffer;
+  char recvBuffer[PROTOCOL_HEADER_TOTAL + 1];
 
   ChatServer *chatServer;
   bool closeEnable;
 
-  ParseState parseState;
-
-  std::queue<Tlv::Ptr> sendQueue;
+  std::queue<std::shared_ptr<protocol>> sendQueue;
   std::mutex sendMutex;
 
-  Tlv::Ptr protocolData;
-  net::io_context &ioContext;
+  std::shared_ptr<protocol> protocolData;
+  io_context &ioContext;
+};
+
+struct ChatSession::protocol {
+  using ptr = std::shared_ptr<ChatSession::protocol>;
+
+  void hton();
+  void ntoh();
+  ~protocol();
+  std::string to_string();
+  std::size_t capacity();
+
+  protocol(uint64_t from, uint16_t device, uint32_t id,
+           const std::string &data);
+  static ChatSession::protocol::ptr to_packet(uint64_t from, uint16_t device,
+                                              uint32_t id,
+                                              const std::string &data);
+
+  protocol() = default;
+  protocol(const protocol &) = delete;
+  protocol &operator=(const protocol &) = delete;
+
+  uint64_t from{};
+  uint16_t device{};
+  uint32_t id{};
+  uint32_t total{};
+  char *data{};
 };
 
 class Channel {
@@ -112,12 +102,11 @@ class Channel {
 public:
   using Ptr = std::shared_ptr<Channel>;
 
-  Channel(ChatSession::Ptr, Tlv::Ptr);
-  std::string getData();
+  Channel(ChatSession::ptr, ChatSession::protocol::ptr);
 
 private:
-  ChatSession::Ptr contextSession;
-  Tlv::Ptr protocolData;
+  ChatSession::ptr contextSession;
+  ChatSession::protocol::ptr packet;
 };
 
 }; // namespace wim

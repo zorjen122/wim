@@ -62,7 +62,7 @@ int main(int argc, char *argv[]) {
   LOG_INFO(wim::businessLogger, "uid: {}, username: {}, password: {}",
            user->uid, user->username, user->password);
 
-  wim::ChatSession::Ptr session = nullptr;
+  wim::ChatSession::ptr session = nullptr;
   std::thread t([&]() {
     LOG_INFO(wim::netLogger, "iocontext.run() started!");
     ioContext.run();

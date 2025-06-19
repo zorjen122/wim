@@ -26,7 +26,7 @@ int StoreageNotifyAddFriend(Json::Value &request) {
   return ret;
 }
 
-Json::Value NotifyAddFriend(ChatSession::Ptr session, unsigned int msgID,
+Json::Value NotifyAddFriend(ChatSession::ptr session, unsigned int msgID,
                             Json::Value &request) {
   Json::Value rsp;
 
@@ -102,7 +102,7 @@ Json::Value NotifyAddFriend(ChatSession::Ptr session, unsigned int msgID,
   }
 }
 
-Json::Value ReplyAddFriend(ChatSession::Ptr session, unsigned int msgID,
+Json::Value ReplyAddFriend(ChatSession::ptr session, unsigned int msgID,
                            Json::Value &request) {
   Json::Value rsp;
 

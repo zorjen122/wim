@@ -5,21 +5,21 @@
 #include "state.pb.h"
 
 namespace wim::rpc {
-using state::ConnectUser;
-using state::ConnectUserRsp;
+using state::Empty;
+using state::EndPoint;
+using state::EndPointList;
 using state::StateService;
 using state::TestNetwork;
+using state::UserId;
 
 class StateServiceImpl final : public StateService::Service {
 public:
   StateServiceImpl();
-  grpc::Status GetImServer(grpc::ServerContext *context,
-                           const ConnectUser *request,
-                           ConnectUserRsp *response) override;
-
-  grpc::Status ActiveImBackupServer(grpc::ServerContext *context,
-                                    const ConnectUser *request,
-                                    ConnectUserRsp *response) override;
+  grpc::Status GetImNode(grpc::ServerContext *context, const UserId *request,
+                         EndPoint *response) override;
+  grpc::Status PullImNodeList(grpc::ServerContext *context,
+                              const Empty *request,
+                              EndPointList *response) override;
 
   grpc::Status TestNetworkPing(grpc::ServerContext *context,
                                const TestNetwork *request,

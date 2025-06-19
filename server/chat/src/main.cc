@@ -1,5 +1,4 @@
-﻿
-#include "ImActiver.h"
+﻿#include "ImActiver.h"
 #include "Logger.h"
 #include <boost/asio/signal_set.hpp>
 #include <spdlog/common.h>

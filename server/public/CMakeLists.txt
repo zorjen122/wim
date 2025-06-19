@@ -18,7 +18,7 @@ file(GLOB SOURCES src/*.cc)
 
 add_library(imPublic SHARED ${SOURCES})
 
-#add_library(imPublicStatic STATIC ${SOURCES})
+# add_library(imPublicStatic STATIC ${SOURCES})
 
 target_include_directories(imPublic PUBLIC ./include)
 target_link_libraries(
@@ -31,6 +31,7 @@ target_link_libraries(
          gRPC::grpc++_reflection
          yaml-cpp
          spdlog
+         jsoncpp
          hiredis
          redis++
          mysqlcppconn8)

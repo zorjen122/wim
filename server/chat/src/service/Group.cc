@@ -12,7 +12,7 @@
 #include <spdlog/spdlog.h>
 namespace wim {
 
-Json::Value GroupCreate(ChatSession::Ptr session, unsigned int msgID,
+Json::Value GroupCreate(ChatSession::ptr session, unsigned int msgID,
                         Json::Value &request) {
 
   Json::Value rsp;
@@ -90,7 +90,7 @@ int NotifyMemberJoin(int64_t uid, int64_t gid,
   return 0;
 }
 
-Json::Value GroupNotifyJoin(ChatSession::Ptr session, unsigned int msgID,
+Json::Value GroupNotifyJoin(ChatSession::ptr session, unsigned int msgID,
                             Json::Value &request) {
   Json::Value rsp;
 
@@ -135,7 +135,7 @@ Json::Value GroupNotifyJoin(ChatSession::Ptr session, unsigned int msgID,
   return rsp;
 }
 
-Json::Value GroupPullNotify(ChatSession::Ptr session, unsigned int msgID,
+Json::Value GroupPullNotify(ChatSession::ptr session, unsigned int msgID,
                             Json::Value &request) {
   Json::Value rsp;
   rsp["gid"] = request["gid"];
@@ -203,7 +203,7 @@ int NotifyMemberReply(int64_t gid, int64_t managerUid, int64_t requestorUid,
 
   return 0;
 }
-Json::Value GroupReplyJoin(ChatSession::Ptr session, unsigned int msgID,
+Json::Value GroupReplyJoin(ChatSession::ptr session, unsigned int msgID,
                            Json::Value &request) {
   Json::Value rsp;
   rsp["gid"] = request["gid"];
@@ -263,7 +263,7 @@ Json::Value GroupReplyJoin(ChatSession::Ptr session, unsigned int msgID,
   return rsp;
 }
 
-Json::Value GroupQuit(ChatSession::Ptr session, unsigned int msgID,
+Json::Value GroupQuit(ChatSession::ptr session, unsigned int msgID,
                       Json::Value &request) {
   Json::Value rsp;
   return rsp;
@@ -275,7 +275,7 @@ Json::Value GroupQuit(ChatSession::Ptr session, unsigned int msgID,
   ...]>映射，一条消息对应一个seq，一个seq对应多个成员
   3.转发到群聊所分配的会话服务器，由其生成seq，得到所有成员并按在线离线状态分发消息
 */
-Json::Value GroupTextSend(ChatSession::Ptr session, unsigned int msgID,
+Json::Value GroupTextSend(ChatSession::ptr session, unsigned int msgID,
                           Json::Value &request) {
   Json::Value rsp;
   return rsp;

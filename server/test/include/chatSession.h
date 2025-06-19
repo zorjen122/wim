@@ -52,7 +52,7 @@ private:
 
 public:
   using Protocol = Tlv;
-  using Ptr = std::shared_ptr<ChatSession>;
+  using ptr = std::shared_ptr<ChatSession>;
 
   ChatSession(net::io_context &iocontext, Endpoint endpoint);
   ~ChatSession();
@@ -64,7 +64,7 @@ public:
   void Send(std::string msgData, unsigned int msgID);
   void Close();
   void ClearSession();
-  Ptr GetSharedSelf() { return shared_from_this(); }
+  ptr GetSharedSelf() { return shared_from_this(); }
   net::io_context &getIoContext() { return iocontext; }
 
   enum ParseState { WAIT_HEADER, WAIT_BODY };

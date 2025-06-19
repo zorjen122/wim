@@ -16,6 +16,8 @@ public:
   ~IocPool();
   IocPool(const IocPool &) = delete;
   IocPool &operator=(const IocPool &) = delete;
+
+  // 禁止在其他线程执行ioc.run(), 因为该池未在各事件调度中使用strand同步执行次序
   boost::asio::io_context &GetContext();
   void Stop();
 

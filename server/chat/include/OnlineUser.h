@@ -16,9 +16,9 @@ class OnlineUser : public Singleton<OnlineUser> {
 
 public:
   ~OnlineUser();
-  ChatSession::Ptr GetUserSession(long uid);
+  ChatSession::ptr GetUserSession(long uid);
 
-  bool MapUser(db::UserInfo::Ptr userInfo, ChatSession::Ptr session);
+  bool MapUser(db::UserInfo::Ptr userInfo, ChatSession::ptr session);
   void ClearUser(long seq, long uid);
   bool isOnline(long uid);
 
@@ -42,16 +42,16 @@ public:
 private:
   OnlineUser();
   std::mutex sessionMutex;
-  std::unordered_map<long, ChatSession::Ptr> sessionMap;
+  std::unordered_map<long, ChatSession::ptr> sessionMap;
 
   /*
-    此字段是通用的，作用于好友、群聊、心跳。
-    一对一好友通讯时，表示为：<seq, uid->timer>；
-    群聊通讯时，表示为：<seq, <member1 -> timer, member2->timer, ...,
+    1、此字段是通用的，作用于好友、群聊、心跳。
+    2、对于一对一好友通讯，表示为：<seq, uid->timer>。
+    3、对于群聊通讯，表示为：<seq, <member1 -> timer, member2->timer, ...,
     memberN->timer>>； 心跳时，表示为：<uid, uid->timer>。
   */
-  std::unordered_map<
-      long, std::unordered_map<long, std::shared_ptr<net::steady_timer>>>
+  std::unordered_map<long,
+                     std::unordered_map<long, std::shared_ptr<steady_timer>>>
       waitAckTimerMap;
 };
 }; // namespace wim

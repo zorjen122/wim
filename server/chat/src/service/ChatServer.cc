@@ -25,12 +25,15 @@ void ChatServer::Start() {
                                   std::placeholders::_1));
 }
 
-void ChatServer::HandleAccept(ChatSession::Ptr session,
+void ChatServer::HandleAccept(ChatSession::ptr session,
                               const boost::system::error_code &error) {
   if (!error) {
     session->Start();
     std::lock_guard<std::mutex> lock(Mutex);
     sessionGroup[sessionID] = session;
+
+    LOG_INFO(netLogger, "连接成功，客户端主机地址: {}",
+             session->GetEndpointToString());
   } else {
     LOG_WARN(netLogger, "连接发生错误，错误信息为: {}", error.message());
   }

@@ -1,7 +1,7 @@
 #include "OnlineUser.h"
+#include "Configer.h"
 #include "DbGlobal.h"
 #include "Logger.h"
-#include "Mysql.h"
 #include "Redis.h"
 
 namespace wim {
@@ -10,7 +10,7 @@ OnlineUser::~OnlineUser() { sessionMap.clear(); }
 // userId:machineId
 // machineId -> machine IP
 
-ChatSession::Ptr OnlineUser::GetUserSession(long uid) {
+ChatSession::ptr OnlineUser::GetUserSession(long uid) {
   std::lock_guard<std::mutex> lock(sessionMutex);
   auto iter = sessionMap.find(uid);
   if (iter == sessionMap.end()) {
@@ -20,7 +20,7 @@ ChatSession::Ptr OnlineUser::GetUserSession(long uid) {
   return iter->second;
 }
 
-bool OnlineUser::MapUser(db::UserInfo::Ptr userInfo, ChatSession::Ptr session) {
+bool OnlineUser::MapUser(db::UserInfo::Ptr userInfo, ChatSession::ptr session) {
   YAML::Node config = Configer::getNode("server");
   std::string selfMachineId = config["self"]["name"].as<std::string>();
 
@@ -76,8 +76,7 @@ void OnlineUser::onReWrite(OnlineUser::ReWriteType type, long seq, long uid,
   sessionMap[uid]->Send(packet, rsp);
 
   // 此负载到用户会话上下文
-  auto waitAckTimer =
-      std::make_shared<net::steady_timer>(sessionMap[uid]->GetIoc());
+  auto waitAckTimer = std::make_shared<steady_timer>(sessionMap[uid]->GetIoc());
   waitAckTimerMap[seq][uid] = waitAckTimer;
   waitAckTimer->expires_after(std::chrono::seconds(5));
 

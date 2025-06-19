@@ -8,7 +8,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(Threads REQUIRED)
 find_package(Protobuf CONFIG REQUIRED)
-find_package(Boost REQUIRED COMPONENTS system filesystem)
+find_package(Boost REQUIRED COMPONENTS system filesystem coroutine)
 find_package(gRPC REQUIRED)
 
 set(protobuf_MODULE_COMPATIBLE TRUE)
@@ -28,6 +28,7 @@ target_link_libraries(
          protobuf::libprotobuf
          Boost::system
          Boost::filesystem
+         Boost::coroutine
          gRPC::grpc++
          gRPC::grpc++_reflection
          yaml-cpp
@@ -43,7 +44,7 @@ target_compile_options(imChat PRIVATE -Wall -g)
 
 target_link_libraries(chat PRIVATE imChat)
 
-target_compile_options(chat PRIVATE -Wall)
+target_compile_options(chat PRIVATE -Wall -g)
 
 if(BUILD_TESTING)
   add_subdirectory(test)

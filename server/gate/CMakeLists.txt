@@ -8,16 +8,18 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(Threads REQUIRED)
 find_package(Protobuf CONFIG REQUIRED)
-find_package(Boost REQUIRED COMPONENTS system filesystem)
+find_package(Boost REQUIRED COMPONENTS system filesystem coroutine)
 find_package(gRPC REQUIRED)
 
 set(protobuf_MODULE_COMPATIBLE TRUE)
-file(GLOB SOURCE src/**/*.cc)
-file(GLOB RPC_SOURCE rpc/*.cc)
-add_library(imGate ${SOURCE} ${RPC_SOURCE})
+file(GLOB SOURCE src/*.cc)
+file(GLOB RPC_SOURCE ../public/rpc/state/*.cc)
 add_executable(gate src/main.cc)
 
-target_include_directories(imGate PUBLIC ./include ./rpc ../public/include)
+add_library(imGate ${SOURCE} ${RPC_SOURCE})
+
+target_include_directories(imGate PUBLIC ./include ../public/rpc/state
+                                         ../public/include)
 target_link_directories(imGate PUBLIC ../public/build)
 
 target_link_libraries(
@@ -26,6 +28,7 @@ target_link_libraries(
          Threads::Threads
          protobuf::libprotobuf
          Boost::system
+         Boost::coroutine
          Boost::filesystem
          gRPC::grpc++
          gRPC::grpc++_reflection
@@ -34,7 +37,9 @@ target_link_libraries(
          hiredis
          redis++
          mysqlcppconn8
-         jsoncpp)
+         jsoncpp
+         rdkafka
+         rdkafka++)
 
 target_compile_options(imGate PRIVATE -Wall -g)
 

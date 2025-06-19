@@ -16,6 +16,13 @@ public:
     std::call_once(s_flag, [&]() { instance = std::shared_ptr<T>(new T); });
     return instance;
   }
+
+  template <class... Args>
+  static std::shared_ptr<T> GetInstance(Args &&... args) {
+    static std::shared_ptr<T> instance(new T(std::forward<Args>(args)...));
+    return instance;
+  }
+
   ~Singleton() {}
 };
 class Defer {
@@ -34,11 +41,24 @@ private:
   IPv4 最小重组缓冲区：576 字节（RFC 791）
   IPv6 MTU：1280 字节（RFC 8200）
 */
+/*
+协议头格式：
+  | 字段名 |长度|
+  | 用户ID | 8  |
+  | 设备ID | 2  |
+  | 请求ID | 4  |
+  | 数据长度 | 4 |
+*/
 
 #define PROTOCOL_DATA_MTU 1500
-#define PROTOCOL_HEADER_TOTAL 8
+
+#define PROTOCOL_FROM_LEN 8
+#define PROTOCOL_DEVICE_LEN 2
 #define PROTOCOL_ID_LEN 4
 #define PROTOCOL_DATA_SIZE_LEN 4
+#define PROTOCOL_HEADER_TOTAL                                                  \
+  (PROTOCOL_FROM_LEN + PROTOCOL_DEVICE_LEN + PROTOCOL_ID_LEN +                 \
+   PROTOCOL_DATA_SIZE_LEN)
 
 #define PROTOCOL_RECV_MSS (10 * 1024 * 1024) // 10MB
 #define PROTOCOL_SEND_MSS (10 * 1024 * 1024) // 10MB
@@ -75,7 +95,7 @@ enum ErrorCodes {
   GroupReplyFailed
 };
 
-enum ServiceID {  
+enum ServiceID {
   /* 拉取 */
   ID_PULL_FRIEND_LIST_REQ = 1001, // 拉取好友列表
   ID_PULL_FRIEND_LIST_RSP,
@@ -149,6 +169,8 @@ enum ServiceID {
 
 };
 
+// 带有转发属性的服务：
+
 static std::unordered_map<int, std::string> errorCodesMap = {
     {Success, "Success"},
     {JsonParser, "JsonParser"},
@@ -187,7 +209,10 @@ static std::unordered_map<int, std::string> serviceIDMap = {
     {ID_PULL_FRIEND_APPLY_LIST_RSP, "ID_PULL_FRIEND_APPLY_LIST_RSP"},
     {ID_PULL_SESSION_MESSAGE_LIST_REQ, "ID_PULL_SESSION_MESSAGE_LIST_REQ"},
     {ID_PULL_SESSION_MESSAGE_LIST_RSP, "ID_PULL_SESSION_MESSAGE_LIST_RSP"},
-    {ID_PULL_MESSAGE_LIST_REQ,"ID_PULL_MESSAGE_LIST_REQ",},
+    {
+        ID_PULL_MESSAGE_LIST_REQ,
+        "ID_PULL_MESSAGE_LIST_REQ",
+    },
     {ID_PULL_MESSAGE_LIST_RSP, "ID_PULL_MESSAGE_LIST_RSP"},
     {ID_GROUP_PULL_MEMBER_REQ, "ID_GROUP_PULL_MEMBER_REQ"},
     {ID_GROUP_PULL_MEMBER_RSP, "ID_GROUP_PULL_MEMBER_RSP"},

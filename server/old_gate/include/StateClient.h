@@ -11,7 +11,7 @@ using ::grpc::ClientContext;
 using ::grpc::Status;
 
 namespace wim::rpc {
-using ::state::ConnectUser;
+using ::state::UserId;
 
 using ::state::ConnectUserRsp;
 using ::state::StateService;

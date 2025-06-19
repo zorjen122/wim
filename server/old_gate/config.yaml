@@ -1,0 +1,29 @@
+server:
+  gateway:
+    host: 127.0.0.1
+    port: 8080
+  verifyRPC:
+    host: 127.0.0.1
+    port: 50051
+  stateRPC:
+    host: 127.0.0.1
+    port: 50052
+    rpcCount: 2
+  mysql:
+    host: 127.0.0.1
+    port: 33060
+    user: zorjen
+    password: root
+    schema: chatServ
+    clientCount: 2
+    machineId: 1
+  redis:
+    host: 127.0.0.1
+    port: 6380
+    password: root
+    clientCount: 2
+    machineId: 1
+  kafka:
+    broker: bootstrap.servers
+    host: 127.0.0.1
+    port: 9092

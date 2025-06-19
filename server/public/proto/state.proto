@@ -1,17 +1,24 @@
 syntax = "proto3";
-package state;
+package state; // 建议改为类似 com.example.state
 
-message ConnectUser { int32 id = 1; }
+// 空消息定义用于无参数方法
+message Empty {}
 
-message ConnectUserRsp {
+message UserId { uint64 uid = 1; }
+
+message EndPoint {
   string ip = 1;
-  int32 port = 2;
+  uint32 port = 2;
+  string name = 3;
 }
+
+message EndPointList { repeated EndPoint endpoints = 1; }
 
 message TestNetwork { string msg = 1; }
 
 service StateService {
-  rpc GetImServer(ConnectUser) returns (ConnectUserRsp) {}
-  rpc ActiveImBackupServer(ConnectUser) returns (ConnectUserRsp) {}
+  rpc GetImNode(UserId) returns (EndPoint) {}
+  rpc PullImNodeList(Empty) returns (EndPointList) {} // 使用Empty作为参数
+  rpc ActiveImBackupServer(UserId) returns (EndPoint) {}
   rpc TestNetworkPing(TestNetwork) returns (TestNetwork) {}
 }

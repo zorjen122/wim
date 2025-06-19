@@ -37,7 +37,7 @@ server:
     host: 127.0.0.1
     port: 6380
     password: root
-    clientCount: 1
+    clientCount: 2
     machineId: 1
   kafka:
     broker: bootstrap.servers

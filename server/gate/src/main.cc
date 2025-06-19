@@ -1,54 +1,42 @@
-﻿
 #include "Configer.h"
-#include "GateServer.h"
-#include "IocPool.h"
-#include "StateClient.h"
-
-#include "Mysql.h"
-#include "Redis.h"
+#include "ImGateway.h"
+#include "ImSession.h"
+#include "Logger.h"
+#include <boost/asio/signal_set.hpp>
 #include <iostream>
-#include <jsoncpp/json/json.h>
-#include <jsoncpp/json/reader.h>
-#include <jsoncpp/json/value.h>
+#include <spdlog/common.h>
+#include <string>
+// #include "StateRpc.h"
 
-int main() {
-  try {
-    auto existConfig = Configer::loadConfig("../config.yaml");
-    if (!existConfig) {
-      spdlog::error("Config load failed");
-      return 0;
-    }
+int main(int argc, char *argv[]) {
 
-    auto config = Configer::getNode("server");
-    if (!config || !config["gateway"]) {
-      spdlog::error("gateway config not found");
-      return 0;
-    }
-
-    wim::IocPool::GetInstance();
-    wim::db::MysqlDao::GetInstance();
-    wim::db::RedisDao::GetInstance();
-    wim::rpc::StateClient::GetInstance();
-
-    unsigned short port = config["gateway"]["port"].as<unsigned short>();
-
-    net::io_context ioc;
-    boost::asio::signal_set signals(ioc, SIGINT, SIGTERM);
-    signals.async_wait(
-        [&ioc](const boost::system::error_code &error, int signal_number) {
-          if (error)
-            return;
-
-          ioc.stop();
-        });
-
-    auto gate = std::make_shared<wim::GateServer>(ioc, port);
-    gate->Start();
-    std::cout << "Gate Server listen on port: " << port << "\n";
-
-    ioc.run();
-  } catch (std::exception const &e) {
-    std::cerr << "Error: " << e.what() << "\n";
-    return EXIT_FAILURE;
+  if (argc < 3) {
+    std::cout << "使用: " << argv[0] << " [配置文件]  [日志级别]\n";
+    return -1;
   }
+
+  auto loadSuccess = Configer::loadConfig(argv[1]);
+  auto node = Configer::getNode("server");
+  if (!loadSuccess || node.IsNull())
+    return -1;
+
+  std::cout << "使用: ";
+
+  for (int i = 0; i < argc; i++)
+    std::cout << argv[i] << " ";
+  std::cout << std::endl;
+
+  auto level = std::string(argv[2]);
+  if (level == "--debug") {
+    wim::setLoggerLevel(spdlog::level::debug);
+  } else if (level == "--info") {
+    wim::setLoggerLevel(spdlog::level::info);
+  } else if (level == "--trace") {
+    wim::setLoggerLevel(spdlog::level::trace);
+  } else {
+    std::cout << "Invalid log level: " << level
+              << ". Valid options: --debug, --info, --trace\n";
+  }
+  wim::ImGateway::Ptr gateway(new wim::ImGateway(2020));
+  gateway->start();
 }

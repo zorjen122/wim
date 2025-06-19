@@ -16,7 +16,7 @@ struct Chat : Singleton<Chat> {
              chat.use_count());
   }
 
-  void setSession(ChatSession::Ptr session) { chat = session; }
+  void setSession(ChatSession::ptr session) { chat = session; }
   void setUser(db::User::Ptr user) { this->user = user; }
   bool login(bool isFirstLogin = true);
   void quit();
@@ -67,7 +67,7 @@ struct Chat : Singleton<Chat> {
   db::UserInfo::Ptr userInfo{};
 
   std::queue<Tlv> requestQueue{};
-  ChatSession::Ptr chat{};
+  ChatSession::ptr chat{};
   std::map<int, std::shared_ptr<net::steady_timer>> seqCacheExpireMap{};
   std::shared_ptr<net::steady_timer> messageReadTimer{};
   std::vector<db::Message> messageQueue{};

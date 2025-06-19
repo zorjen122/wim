@@ -1,7 +1,6 @@
 #pragma once
 
 #include "Logger.h"
-#include "RpcPool.h"
 #include <memory>
 #include <string>
 #include <vector>

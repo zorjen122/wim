@@ -97,49 +97,50 @@ void Service::PushService(std::shared_ptr<Channel> msg) {
 void Service::Run() {
   auto lam = [&]() {
     auto channel = messageQueue.front();
-    uint32_t id = channel->protocolData->id;
-    const char *data = channel->protocolData->data;
-    uint32_t dataSize = channel->protocolData->getDataSize();
+    uint32_t from = channel->packet->from;
+    uint32_t device = channel->packet->device;
+    uint32_t requestId = channel->packet->id;
+    const char *data = channel->packet->data;
+    uint32_t dataSize = channel->packet->total;
 
-    auto handleCaller = serviceGroup.find(id);
-    if (handleCaller == serviceGroup.end()) {
-      LOG_INFO(wim::businessLogger, "没有这样的服务，ID： {}, ", id);
+    uint32_t responseId = __getServiceResponseId(ServiceID(requestId));
+    Json::Value responseData{};
 
-      Json::Value rsp;
-      rsp["error"] = ErrorCodes::NotFound;
-      channel->contextSession->Send(rsp.toStyledString(), id);
+    Defer defer([&]() {
+      ChatSession::protocol::ptr responsePacket(new ChatSession::protocol(
+          from, device, responseId, responseData.toStyledString()));
+      channel->contextSession->Send(responsePacket);
       messageQueue.pop();
+    });
+
+    auto handleCaller = serviceGroup.find(requestId);
+    if (handleCaller == serviceGroup.end()) {
+      LOG_INFO(wim::businessLogger, "没有这样的服务，ID： {}, ", requestId);
+      responseData["error"] = ErrorCodes::NotFound;
       return;
     }
 
     std::string msgData{data, dataSize};
     Json::Reader reader;
-    Json::Value request, response;
-    int responseId = __getServiceResponseId(ServiceID(id));
-    std::string requestIdMessage = getServiceIdString(id),
+    Json::Value request;
+    std::string requestIdMessage = getServiceIdString(requestId),
                 responseIdMessage = getServiceIdString(responseId);
 
     bool parserSuccess = reader.parse(msgData, request);
     if (!parserSuccess) {
       LOG_WARN(wim::businessLogger, "消息解析失败, 请求服务: {}，消息：{}",
                requestIdMessage, msgData);
-      Json::Value rsp;
-      rsp["error"] = ErrorCodes::JsonParser;
-      channel->contextSession->Send(rsp.toStyledString(), responseId);
-      messageQueue.pop();
+      responseData["error"] = ErrorCodes::JsonParser;
       return;
     }
     LOG_DEBUG(wim::businessLogger, "解析成功，请求服务: {}, 请求数据: {}",
               requestIdMessage, request.toStyledString());
 
-    response = handleCaller->second(channel->contextSession, id, request);
-    auto ret = response.toStyledString();
-    channel->contextSession->Send(ret, responseId);
+    responseData =
+        handleCaller->second(channel->contextSession, requestId, request);
 
     LOG_DEBUG(wim::businessLogger, "响应服务: {}, 响应数据: {}",
-              responseIdMessage, response.toStyledString());
-
-    messageQueue.pop();
+              responseIdMessage, responseData.toStyledString());
   };
 
   for (;;) {
@@ -147,7 +148,6 @@ void Service::Run() {
     while (messageQueue.empty() && !stopEnable) {
       consume.wait(lock);
     }
-
     if (stopEnable) {
       while (!messageQueue.empty()) {
         lam();
@@ -158,7 +158,7 @@ void Service::Run() {
   }
 }
 
-Json::Value PingHandle(ChatSession::Ptr session, uint32_t msgID,
+Json::Value PingHandle(ChatSession::ptr session, uint32_t msgID,
                        Json::Value &request) {
   Json::Value rsp;
   int64_t uid = request["uid"].asInt64();
@@ -167,7 +167,7 @@ Json::Value PingHandle(ChatSession::Ptr session, uint32_t msgID,
   return rsp;
 }
 
-Json::Value AckHandle(ChatSession::Ptr session, uint32_t msgID,
+Json::Value AckHandle(ChatSession::ptr session, uint32_t msgID,
                       Json::Value &request) {
   Json::Value rsp;
   int64_t seq = request["seq"].asInt64();
@@ -178,7 +178,7 @@ Json::Value AckHandle(ChatSession::Ptr session, uint32_t msgID,
   return rsp;
 }
 
-Json::Value SerachUser(ChatSession::Ptr session, uint32_t msgID,
+Json::Value SerachUser(ChatSession::ptr session, uint32_t msgID,
                        Json::Value &request) {
   Json::Value rsp;
   auto username = request["username"].asString();
@@ -201,7 +201,7 @@ Json::Value SerachUser(ChatSession::Ptr session, uint32_t msgID,
   return rsp;
 }
 
-Json::Value UploadFile(ChatSession::Ptr session, uint32_t msgID,
+Json::Value UploadFile(ChatSession::ptr session, uint32_t msgID,
                        Json::Value &request) {
   Json::Value rsp;
   int64_t clientSeq = request["seq"].asInt64();
@@ -266,7 +266,7 @@ Json::Value UploadFile(ChatSession::Ptr session, uint32_t msgID,
   return rsp;
 }
 
-Json::Value FileSend(ChatSession::Ptr session, uint32_t msgID,
+Json::Value FileSend(ChatSession::ptr session, uint32_t msgID,
                      Json::Value &request) {
   /* 一面推送消息，一面存储消息，其中离线情况，
   message表中的content对文件消息而言无作用，因其存储在文件系统
@@ -275,7 +275,7 @@ Json::Value FileSend(ChatSession::Ptr session, uint32_t msgID,
   return {};
 }
 
-Json::Value TextSend(ChatSession::Ptr session, uint32_t msgID,
+Json::Value TextSend(ChatSession::ptr session, uint32_t msgID,
                      Json::Value &request) {
 
   Json::Value rsp;
@@ -364,7 +364,7 @@ Json::Value TextSend(ChatSession::Ptr session, uint32_t msgID,
   return rsp;
 }
 
-Json::Value UserQuit(ChatSession::Ptr session, uint32_t msgID,
+Json::Value UserQuit(ChatSession::ptr session, uint32_t msgID,
                      Json::Value &request) {
   auto uid = request["uid"].asInt64();
 
@@ -376,14 +376,14 @@ Json::Value UserQuit(ChatSession::Ptr session, uint32_t msgID,
   return {};
 } // namespace wim
 
-Json::Value ReLogin(int64_t uid, ChatSession::Ptr oldSession,
-                    ChatSession::Ptr newSession) {
+Json::Value ReLogin(int64_t uid, ChatSession::ptr oldSession,
+                    ChatSession::ptr newSession) {
   Json::Value rsp;
 
   return rsp;
 }
 
-Json::Value OnLogin(ChatSession::Ptr session, uint32_t msgID,
+Json::Value OnLogin(ChatSession::ptr session, uint32_t msgID,
                     Json::Value &request) {
   Json::Value rsp;
   int64_t uid = request["uid"].asInt64();
@@ -445,7 +445,7 @@ Json::Value OnLogin(ChatSession::Ptr session, uint32_t msgID,
   return rsp;
 }
 
-Json::Value pullFriendApplyList(ChatSession::Ptr session, uint32_t msgID,
+Json::Value pullFriendApplyList(ChatSession::ptr session, uint32_t msgID,
                                 Json::Value &request) {
   Json::Value rsp;
 
@@ -473,7 +473,7 @@ Json::Value pullFriendApplyList(ChatSession::Ptr session, uint32_t msgID,
   return rsp;
 }
 
-Json::Value pullFriendList(ChatSession::Ptr session, uint32_t msgID,
+Json::Value pullFriendList(ChatSession::ptr session, uint32_t msgID,
                            Json::Value &request) {
   Json::Value rsp;
 
@@ -506,7 +506,7 @@ Json::Value pullFriendList(ChatSession::Ptr session, uint32_t msgID,
   rsp["error"] = ErrorCodes::Success;
   return rsp;
 }
-Json::Value pullSessionMessageList(ChatSession::Ptr session, uint32_t msgID,
+Json::Value pullSessionMessageList(ChatSession::ptr session, uint32_t msgID,
                                    Json::Value &request) {
   Json::Value rsp;
 
@@ -544,7 +544,7 @@ Json::Value pullSessionMessageList(ChatSession::Ptr session, uint32_t msgID,
   return rsp;
 }
 
-Json::Value pullMessageList(ChatSession::Ptr session, uint32_t msgID,
+Json::Value pullMessageList(ChatSession::ptr session, uint32_t msgID,
                             Json::Value &request) {
   Json::Value rsp;
 

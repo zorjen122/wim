@@ -4,14 +4,14 @@
 
 namespace wim {
 
-Json::Value NotifyAddFriend(ChatSession::Ptr session, unsigned int msgID,
+Json::Value NotifyAddFriend(ChatSession::ptr session, unsigned int msgID,
                             Json::Value &request);
 int StoreageNotifyAddFriend(Json::Value &request);
 
-Json::Value ReplyAddFriend(ChatSession::Ptr session, unsigned int msgID,
+Json::Value ReplyAddFriend(ChatSession::ptr session, unsigned int msgID,
                            Json::Value &request);
 int StoreageReplyAddFriend(Json::Value &request);
 
-void RemoveFriend(ChatSession::Ptr session, unsigned int msgID,
+void RemoveFriend(ChatSession::ptr session, unsigned int msgID,
                   Json::Value &request);
 }; // namespace wim

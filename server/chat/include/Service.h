@@ -17,7 +17,7 @@ class Service : public Singleton<Service> {
 
 public:
   using HandleType =
-      std::function<Json::Value(ChatSession::Ptr, uint32_t, Json::Value &)>;
+      std::function<Json::Value(ChatSession::ptr, uint32_t, Json::Value &)>;
 
   ~Service();
   void PushService(std::shared_ptr<Channel> package);
@@ -39,36 +39,36 @@ private:
 
 // 已成功
 
-Json::Value OnLogin(ChatSession::Ptr session, uint32_t msgID,
+Json::Value OnLogin(ChatSession::ptr session, uint32_t msgID,
                     Json::Value &request);
 
-Json::Value PingHandle(ChatSession::Ptr session, uint32_t msgID,
+Json::Value PingHandle(ChatSession::ptr session, uint32_t msgID,
                        Json::Value &request);
 
-Json::Value TextSend(ChatSession::Ptr session, uint32_t msgID,
+Json::Value TextSend(ChatSession::ptr session, uint32_t msgID,
                      Json::Value &request);
 
-Json::Value UploadFile(ChatSession::Ptr session, uint32_t msgID,
+Json::Value UploadFile(ChatSession::ptr session, uint32_t msgID,
                        Json::Value &request);
 
-Json::Value FileSend(ChatSession::Ptr session, uint32_t msgID,
+Json::Value FileSend(ChatSession::ptr session, uint32_t msgID,
                      Json::Value &request);
 
-Json::Value pullFriendApplyList(ChatSession::Ptr session, uint32_t msgID,
+Json::Value pullFriendApplyList(ChatSession::ptr session, uint32_t msgID,
                                 Json::Value &request);
-Json::Value pullFriendList(ChatSession::Ptr session, uint32_t msgID,
+Json::Value pullFriendList(ChatSession::ptr session, uint32_t msgID,
                            Json::Value &request);
-Json::Value pullSessionMessageList(ChatSession::Ptr session, uint32_t msgID,
+Json::Value pullSessionMessageList(ChatSession::ptr session, uint32_t msgID,
                                    Json::Value &request);
-Json::Value pullMessageList(ChatSession::Ptr session, uint32_t msgID,
+Json::Value pullMessageList(ChatSession::ptr session, uint32_t msgID,
                             Json::Value &request);
-Json::Value UserQuit(ChatSession::Ptr session, uint32_t msgID,
+Json::Value UserQuit(ChatSession::ptr session, uint32_t msgID,
                      Json::Value &request);
 
-Json::Value SerachUser(ChatSession::Ptr session, uint32_t msgID,
+Json::Value SerachUser(ChatSession::ptr session, uint32_t msgID,
                        Json::Value &request);
 
-Json::Value AckHandle(ChatSession::Ptr session, uint32_t msgID,
+Json::Value AckHandle(ChatSession::ptr session, uint32_t msgID,
                       Json::Value &request);
 
 }; // namespace wim

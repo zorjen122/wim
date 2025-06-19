@@ -35,12 +35,28 @@ StateServiceImpl::StateServiceImpl() {
     }
   }
 }
-grpc::Status StateServiceImpl::GetImServer(grpc::ServerContext *context,
-                                           const ConnectUser *request,
-                                           ConnectUserRsp *response) {
+
+grpc::Status StateServiceImpl::PullImNodeList(grpc::ServerContext *context,
+                                              const Empty *request,
+                                              EndPointList *response) {
+
+  int imTotal = imNodeName.size();
+  for (int i = 0; i < imTotal; ++i) {
+    std::string nodeIndex = imNodeName[i];
+    EndPoint *endpoint = response->add_endpoints();
+    endpoint->set_ip(imNodeMap[nodeIndex]->getIp());
+    endpoint->set_port(atoi(imNodeMap[nodeIndex]->getPort().c_str()));
+    endpoint->set_name(nodeIndex);
+  }
+  return grpc::Status::OK;
+}
+
+grpc::Status StateServiceImpl::GetImNode(grpc::ServerContext *context,
+                                         const UserId *request,
+                                         EndPoint *response) {
   static int routeCount = 0;
 
-  int uid = request->id();
+  int uid = request->uid();
 
   int imTotal = imNodeName.size();
   for (int _ = 0; _ < imTotal; ++_) {
@@ -58,42 +74,6 @@ grpc::Status StateServiceImpl::GetImServer(grpc::ServerContext *context,
   }
 
   return grpc::Status::OK;
-}
-
-grpc::Status
-StateServiceImpl::ActiveImBackupServer(grpc::ServerContext *context,
-                                       const ConnectUser *request,
-                                       ConnectUserRsp *response) {
-  static int routeCount = 0;
-
-  int uid = request->id();
-  int imTotal = imNodeName.size();
-  bool onActive;
-
-  for (int _ = 0; _ < imTotal; ++_) {
-    auto nodeIndex = imNodeName[routeCount++];
-
-    auto &node = imNodeMap[nodeIndex];
-    routeCount = routeCount % imTotal;
-
-    if (node->getStatus() == "backup") {
-      auto &imBackupRpc = imRpcMap[nodeIndex];
-
-      bool rpcSuccess = imBackupRpc->ActiveService();
-      if (!rpcSuccess) {
-        return grpc::Status::CANCELLED;
-      }
-      response->set_ip(node->getIp());
-      response->set_port(atoi(node->getPort().c_str()));
-      node->appendConnection(uid);
-      node->setStatus("active");
-      imRpcMap.erase(nodeIndex);
-      onActive = true;
-      break;
-    }
-  }
-
-  return onActive ? grpc::Status::OK : grpc::Status::CANCELLED;
 }
 
 grpc::Status StateServiceImpl::TestNetworkPing(grpc::ServerContext *context,
