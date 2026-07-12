@@ -19,14 +19,14 @@ typedef std::function<bool(HttpSession::ResponsePtr, Json::Value &)>
 class Service : public Singleton<Service> {
   friend class Singleton<Service>;
 
-public:
+ public:
   ~Service();
   bool Handle(std::shared_ptr<HttpSession> connection, std::string path,
               http::verb method);
   void OnGetHandle(std::string, HttpHandler);
   void OnPostHandle(std::string, HttpHandler);
 
-private:
+ private:
   bool verifycode(HttpSession::ResponsePtr, Json::Value &);
   bool signUp(HttpSession::ResponsePtr, Json::Value &);
   bool signIn(HttpSession::ResponsePtr, Json::Value &);
@@ -38,9 +38,9 @@ private:
   void responseWrite(HttpSession::ResponsePtr, const std::string &);
   Json::Value parseRequest(std::shared_ptr<HttpSession> connection);
 
-private:
+ private:
   Service();
   std::map<std::string, HttpHandler> postHandlers;
   std::map<std::string, HttpHandler> getHandlers;
 };
-}; // namespace wim
+};  // namespace wim

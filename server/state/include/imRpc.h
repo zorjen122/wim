@@ -10,12 +10,12 @@ using im::ActiveResponse;
 using im::ImService;
 namespace wim::rpc {
 class ImRpc {
-public:
+ public:
   ImRpc(ImNode::ptr node, size_t poolSize);
   bool ActiveService();
   size_t getPoolSize() const;
 
-private:
+ private:
   std::unique_ptr<RpcPool<ImService>> pool = nullptr;
 };
-}; // namespace wim::rpc
+};  // namespace wim::rpc

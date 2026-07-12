@@ -26,7 +26,7 @@ inline string generateRandomEmail() {
   // 随机选择邮箱的域名：Gmail 或 QQ
   random_device rd;
   mt19937 gen(rd());
-  uniform_int_distribution<> dis(0, 1); // 0 -> Gmail, 1 -> QQ
+  uniform_int_distribution<> dis(0, 1);  // 0 -> Gmail, 1 -> QQ
   int domainChoice = dis(gen);
 
   string domain;
@@ -37,7 +37,7 @@ inline string generateRandomEmail() {
   }
 
   // 随机生成用户名，长度为8-12个字符
-  int usernameLength = rand() % 5 + 8; // 生成一个8到12之间的随机长度
+  int usernameLength = rand() % 5 + 8;  // 生成一个8到12之间的随机长度
   string username = generateRandomUserName(usernameLength);
 
   return username + domain;
@@ -66,6 +66,6 @@ inline void toNormalString(std::string &str) {
 #include <ctime>
 
 inline int generateGroupId(int min, int max) {
-  std::srand(std::time(0)); // 使用当前时间作为随机数生成器的种子
+  std::srand(std::time(0));  // 使用当前时间作为随机数生成器的种子
   return std::rand() % (max - min + 1) + min;
 }

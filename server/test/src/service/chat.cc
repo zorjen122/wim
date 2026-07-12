@@ -16,12 +16,12 @@ static std::shared_ptr<net::steady_timer> waitPongTimer;
 static std::map<long, std::shared_ptr<net::steady_timer>> waitAckTimerMap;
 
 static long generateRandomId() {
-  static std::random_device rd;  // 使用硬件随机数生成器
-  static std::mt19937 gen(rd()); // Mersenne Twister 作为随机数引擎
+  static std::random_device rd;   // 使用硬件随机数生成器
+  static std::mt19937 gen(rd());  // Mersenne Twister 作为随机数引擎
   static std::uniform_int_distribution<long> dis(1000000000,
-                                                 9999999999); // 随机数范围
+                                                 9999999999);  // 随机数范围
 
-  return dis(gen); // 返回一个随机数
+  return dis(gen);  // 返回一个随机数
 }
 
 static bool hasField(const Json::Value &value, const char *field) {
@@ -166,7 +166,6 @@ void Chat::notifyAddFriendSenderHandle(const Json::Value &response) {
   }
 }
 void Chat::notifyAddFriendRecvierHandle(const Json::Value &response) {
-
   db::FriendApply::Ptr apply(new db::FriendApply());
   apply->from = response["from"].asInt64();
   apply->content = hasField(response, "content")
@@ -198,9 +197,9 @@ void Chat::loginInitHandle(const Json::Value &response) {
 
 bool Chat::waitLoginReady(int timeoutSeconds) {
   std::unique_lock<std::mutex> lock(loginMutex);
-  bool hasResponse = loginCv.wait_for(
-      lock, std::chrono::seconds(timeoutSeconds),
-      [this] { return loginInitDone; });
+  bool hasResponse =
+      loginCv.wait_for(lock, std::chrono::seconds(timeoutSeconds),
+                       [this] { return loginInitDone; });
   return hasResponse && loginInitOk;
 }
 
@@ -223,7 +222,6 @@ void Chat::textSenderHandle(const Json::Value &response) {
   LOG_INFO(businessLogger, "消息成功被接收，序列号为：{}", seq);
 }
 bool Chat::CheckAckCache(int64_t seq) {
-
   Json::Value ack;
   ack["seq"] = Json::Value::Int64(seq);
   ack["uid"] = Json::Value::Int64(user->uid);
@@ -307,7 +305,6 @@ void Chat::textRecvierHandle(const Json::Value &response) {
 void Chat::uploadFileHandle(const Json::Value &response) {}
 
 void Chat::handleRun(Tlv::Ptr protocolData) {
-
   Json::Value response;
   Json::Reader reader;
   if (!reader.parse(protocolData->getDataString(), response)) {
@@ -354,7 +351,6 @@ void Chat::initUserInfoHandle(const Json::Value &response) {
   // pull...
 }
 bool Chat::login(bool isFirstLogin) {
-
   Json::Value loginRequest;
   loginRequest["uid"] = Json::Value::Int64(user->uid);
 
@@ -382,7 +378,6 @@ bool Chat::ping() {
 }
 
 bool Chat::OnheartBeat(int count) {
-
   waitPongTimer.reset(new net::steady_timer(chat->getIoContext()));
   waitPongTimer->expires_after(std::chrono::seconds(2));
   waitPongTimer->async_wait([count, this](boost::system::error_code ec) {
@@ -420,7 +415,6 @@ void Chat::arrhythmiaHandle(long uid) {
 }
 
 void Chat::serachUserHandle(const Json::Value &response) {
-
   long uid = response["uid"].asInt64();
   std::string name = response["name"].asString();
   short age = response["age"].asInt();
@@ -520,7 +514,6 @@ void Chat::pullMessageListHandle(const Json::Value &response) {
 }
 
 bool Chat::notifyAddFriend(long uid, const std::string &requestMessage) {
-
   Json::Value addFriendReq;
   addFriendReq["from"] = Json::Value::Int64(user->uid);
   addFriendReq["to"] = Json::Value::Int64(uid);
@@ -670,7 +663,6 @@ void Chat::joinGroupRecvierHandle(Json::Value &response) {
 }
 void Chat::replyJoinGroupSenderHandle(Json::Value &response) {}
 void Chat::replyJoinGroupRecvierHandle(Json::Value &response) {
-
   long seq = response["seq"].asInt64();
   bool missCache = CheckAckCache(seq);
   if (missCache) {
@@ -685,15 +677,14 @@ void Chat::replyJoinGroupRecvierHandle(Json::Value &response) {
 void Chat::quitGroupHandle(Json::Value &response) {}
 void Chat::sendGroupTextMessageHandle(Json::Value &response) {}
 void Chat::pullGroupMemberHandle(Json::Value &response) {
-
   Json::Value list = response["memberList"];
   long gid = response["groupId"].asInt64();
   groupMemberMap[gid] = {};
 
   for (auto &item : list) {
     db::GroupMember::Ptr member;
-      member = std::make_shared<db::GroupMember>();
-      member->uid = item["uid"].asInt64();
+    member = std::make_shared<db::GroupMember>();
+    member->uid = item["uid"].asInt64();
     member->memberName = item["name"].asString();
     member->joinTime = item["joinTime"].asString();
     member->role = item["role"].asInt();
@@ -713,7 +704,7 @@ bool Chat::uploadFile(const std::string &fileName) {
     LOG_ERROR(businessLogger, "open file failed: {}", fileName);
     return false;
   }
-  static const int chunkSize = 1024 * 1024; // 1MB
+  static const int chunkSize = 1024 * 1024;  // 1MB
   char buffer[chunkSize];
 
   long seq = generateRandomId();
@@ -757,12 +748,12 @@ bool Chat::sendFile(long toId, const std::string &filePath) {
     LOG_ERROR(businessLogger, "open file failed: {}", filePath);
     return false;
   }
-  static const int chunkSize = 1024 * 1024; // 1MB
+  static const int chunkSize = 1024 * 1024;  // 1MB
   char buffer[chunkSize];
 
   db::File::Ptr fileInfo(new db::File());
   fileInfo->seq = generateRandomId();
-  fileInfo->type = db::File::Type::TEXT; // 待调整
+  fileInfo->type = db::File::Type::TEXT;  // 待调整
   fileInfo->name = filePath;
 
   fileMap[filePath] = fileInfo;
@@ -817,4 +808,4 @@ void Chat::recvFileHandle(Json::Value &response) {
 
   // ack todo...
 }
-}; // namespace wim
+};  // namespace wim

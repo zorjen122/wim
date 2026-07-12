@@ -7,10 +7,14 @@
 namespace wim::db {
 
 class MysqlDaoTest : public ::testing::Test {
-protected:
-  void SetUp() override { Configer::loadConfig("../../conf/public-test.yaml"); }
+ protected:
+  void SetUp() override {
+    Configer::loadConfig("../../conf/public-test.yaml");
+  }
 
-  void TearDown() override { cleanupTestData(); }
+  void TearDown() override {
+    cleanupTestData();
+  }
 
   static void cleanupTestData() {
     std::shared_ptr<MysqlDao> dao = MysqlDao::GetInstance();
@@ -128,9 +132,9 @@ TEST_F(MysqlDaoTest, TestMessageOperations) {
 
   Message::Ptr msg(new Message(TEST_MESSAGE_ID, TEST_UID, TEST_FRIEND_UID,
                                "3241",
-                               1, // text
+                               1,  // text
                                "Hello World",
-                               1, // wait
+                               1,  // wait
                                "2023-01-01 00:00:00"));
 
   int msgResult = dao->insertMessage(msg);
@@ -145,11 +149,12 @@ TEST_F(MysqlDaoTest, TestMessageOperations) {
   EXPECT_NE(messages, nullptr) << "No messages found";
   EXPECT_FALSE(messages->empty()) << "Message not retrieved";
 
-  int updateResult = dao->updateMessage(TEST_MESSAGE_ID, 2); // status 2 is done
+  int updateResult =
+      dao->updateMessage(TEST_MESSAGE_ID, 2);  // status 2 is done
   EXPECT_EQ(updateResult, 0) << "Message update failed";
 }
 
-} // namespace wim::db
+}  // namespace wim::db
 
 int main(int argc, char **argv) {
   // ::testing::InitGoogleTest(&argc, argv);

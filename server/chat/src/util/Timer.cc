@@ -24,4 +24,6 @@ void Timer::startTimer(std::function<void(error_code)> resetHandle,
       });
 }
 
-Timer &Timer::getTimer() { return *this; }
+Timer &Timer::getTimer() {
+  return *this;
+}

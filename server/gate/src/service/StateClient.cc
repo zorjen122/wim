@@ -9,7 +9,6 @@
 namespace wim::rpc {
 
 StateClient::StateClient() {
-
   auto conf = Configer::getNode("server");
   auto host = conf["stateRPC"]["host"].as<std::string>();
   auto port = conf["stateRPC"]["port"].as<std::string>();
@@ -84,4 +83,4 @@ std::string StateClient::TestNetworkPing() {
   }
 }
 
-}; // namespace wim::rpc
+};  // namespace wim::rpc

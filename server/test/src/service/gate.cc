@@ -130,8 +130,12 @@ bool Gate::signUp(const std::string &username, const std::string &password,
 
   return true;
 }
-bool Gate::signOut() { return true; }
-bool Gate::fogetPassword(const std::string &username) { return true; }
+bool Gate::signOut() {
+  return true;
+}
+bool Gate::fogetPassword(const std::string &username) {
+  return true;
+}
 
 std::string Gate::__parseResponse() {
   auto bodyBuffer = response.body().data();
@@ -151,4 +155,4 @@ void Gate::__clearStatusMessage() {
   buffer.clear();
 }
 
-} // namespace wim
+}  // namespace wim

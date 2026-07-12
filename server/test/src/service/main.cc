@@ -5,23 +5,21 @@
 #include <iostream>
 
 int main(int argc, char *argv[]) {
-
   if (argc < 6) {
-    spdlog::info(
-        "Usage: [username] [password] [userId] [chatIp] [chatPort]");
+    spdlog::info("Usage: [username] [password] [userId] [chatIp] [chatPort]");
     return -1;
   }
 
   const char *configPath = std::getenv("WIM_CONFIG");
-  bool loadSuccess =
-      Configer::loadConfig(configPath ? configPath : "../conf/test-client.yaml");
+  bool loadSuccess = Configer::loadConfig(
+      configPath ? configPath : "../conf/test-client.yaml");
   YAML::Node node = Configer::getNode("server");
   if (!loadSuccess || node.IsNull())
     return -1;
 
   net::io_context ioContext;
   auto work = net::make_work_guard(ioContext);
-  
+
   // auto gateHost = config["gateway"]["host"].as<std::string>();
   // auto gatePort = config["gateway"]["port"].as<std::string>();
   // spdlog::info("gate host: {}, port: {}", gateHost, gatePort);
@@ -142,8 +140,7 @@ int main(int argc, char *argv[]) {
           std::cout << "[用户ID: " << key << ", 消息: " << it->content << "]\n";
         }
       } else if (command == "replyAddFriend") {
-
-        bool accept = false; // 同意 == true, 拒绝 == false
+        bool accept = false;  // 同意 == true, 拒绝 == false
         std::string uid, replyMessage;
 
         std::cout << "请输入回复消息的用户ID: ";
@@ -208,7 +205,7 @@ int main(int argc, char *argv[]) {
         chat->joinGroup(std::atol(groupId.c_str()), requestMessage);
       } else if (command == "replyJoinGroup") {
         std::string groupId, requestorUid;
-        bool accept = false; // 同意 == true, 拒绝 == false
+        bool accept = false;  // 同意 == true, 拒绝 == false
         std::cout << "请输入群组ID: ";
         std::cin >> groupId;
         std::cout << "请输入申请者ID: ";

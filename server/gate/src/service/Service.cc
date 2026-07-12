@@ -42,7 +42,7 @@ int requestVerifyCode(const std::string &email) {
 
   return rsp.error();
 }
-} // namespace
+}  // namespace
 
 Service::Service() {
   using namespace std::placeholders;
@@ -110,7 +110,6 @@ Service::~Service() {}
 
 bool Service::Handle(std::shared_ptr<HttpSession> connection, std::string path,
                      http::verb method) {
-
   HttpHandler handler;
   bool hasFound = false;
   if (method == http::verb::get) {
@@ -151,10 +150,9 @@ bool Service::Handle(std::shared_ptr<HttpSession> connection, std::string path,
   bool handleSuccess = handler(response, source);
 
   return handleSuccess;
-} // namespace wim
+}  // namespace wim
 bool Service::verifycode(HttpSession::ResponsePtr response,
                          Json::Value &requestData) {
-
   Json::Value rspInfo;
   Defer _([&]() { responseWrite(response, rspInfo.toStyledString()); });
 
@@ -175,7 +173,6 @@ bool Service::verifycode(HttpSession::ResponsePtr response,
 
 bool Service::signUp(HttpSession::ResponsePtr response,
                      Json::Value &requestData) {
-
   businessLogger->info("[signUp]: start, requestData as {}",
                        requestData.toStyledString());
 
@@ -228,7 +225,6 @@ bool Service::signUp(HttpSession::ResponsePtr response,
 
 bool Service::signIn(HttpSession::ResponsePtr response,
                      Json::Value &requestData) {
-
   businessLogger->info("[signIn]: start, requestData as {}",
                        requestData.toStyledString());
   Json::Value rspInfo;
@@ -301,7 +297,6 @@ bool Service::initUserinfo(HttpSession::ResponsePtr response,
 }
 bool Service::chatArrhythmia(HttpSession::ResponsePtr response,
                              Json::Value &requestData) {
-
   Json::Value rspInfo;
   Defer _([&]() { responseWrite(response, rspInfo.toStyledString()); });
 
@@ -323,7 +318,6 @@ bool Service::chatArrhythmia(HttpSession::ResponsePtr response,
 
 bool Service::forgetPassword(HttpSession::ResponsePtr response,
                              Json::Value &requestData) {
-
   Json::Value rspInfo;
   Defer _([&]() { responseWrite(response, rspInfo.toStyledString()); });
 
@@ -360,4 +354,4 @@ bool Service::forgetPassword(HttpSession::ResponsePtr response,
 
   return true;
 }
-}; // namespace wim
+};  // namespace wim

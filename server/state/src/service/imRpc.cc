@@ -9,7 +9,6 @@
 #include <spdlog/spdlog.h>
 namespace wim::rpc {
 ImRpc::ImRpc(ImNode::ptr node, size_t poolSize) {
-
   auto conf = Configer::getNode("server");
 
   pool.reset(
@@ -36,5 +35,7 @@ bool ImRpc::ActiveService() {
   return true;
 }
 
-size_t ImRpc::getPoolSize() const { return pool->getPoolSize(); }
-}; // namespace wim::rpc
+size_t ImRpc::getPoolSize() const {
+  return pool->getPoolSize();
+}
+};  // namespace wim::rpc

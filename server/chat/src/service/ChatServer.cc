@@ -8,8 +8,10 @@
 
 namespace wim {
 ChatServer::ChatServer(boost::asio::io_context &acceptContext, uint16_t port)
-    : acceptContext(acceptContext), Port(port),
-      Acceptor(acceptContext, tcp::endpoint(tcp::v4(), port)), sessionID(0) {
+    : acceptContext(acceptContext),
+      Port(port),
+      Acceptor(acceptContext, tcp::endpoint(tcp::v4(), port)),
+      sessionID(0) {
   LOG_INFO(netLogger, "ChatServer通讯服务启动监听，端口号为: {}", Port);
 }
 
@@ -49,5 +51,7 @@ void ChatServer::ClearSession(uint64_t id) {
   sessionGroup.erase(id);
 }
 
-uint64_t ChatServer::GetSessionID() { return sessionID; }
-}; // namespace wim
+uint64_t ChatServer::GetSessionID() {
+  return sessionID;
+}
+};  // namespace wim

@@ -285,7 +285,6 @@ Json::Value FileSend(ChatSession::Ptr session, uint32_t msgID,
 
 Json::Value TextSend(ChatSession::Ptr session, uint32_t msgID,
                      Json::Value &request) {
-
   Json::Value rsp;
 
   int64_t clientSeq = request["seq"].asInt64();
@@ -338,9 +337,8 @@ Json::Value TextSend(ChatSession::Ptr session, uint32_t msgID,
     rpcResponse = rpcNode->forwardTextSendMessage(rpcRequest);
 
     std::string status = rpcResponse.status();
-    LOG_INFO(businessLogger,
-             "转发完成，目标机器: {}, rpc 响应: {}, 状态码: {}", machineId,
-             rpcResponse.DebugString(), status);
+    LOG_INFO(businessLogger, "转发完成，目标机器: {}, rpc 响应: {}, 状态码: {}",
+             machineId, rpcResponse.DebugString(), status);
     rsp["status"] = "wait";
     if (status != "success")
       rsp["error"] = ErrorCodes::RPCFailed;
@@ -406,7 +404,7 @@ Json::Value UserQuit(ChatSession::Ptr session, uint32_t msgID,
   */
   OnlineUser::GetInstance()->ClearUser(uid, uid, session);
   return {};
-} // namespace wim
+}  // namespace wim
 
 Json::Value ReLogin(int64_t uid, ChatSession::Ptr oldSession,
                     ChatSession::Ptr newSession) {
@@ -425,7 +423,6 @@ Json::Value OnLogin(ChatSession::Ptr session, uint32_t msgID,
   // 待实现，先不做处理
   status = OnlineUser::GetInstance()->isOnline(uid);
   if (false && status == false) {
-
     rsp["error"] = ErrorCodes::UserOnline;
     auto oldSession = OnlineUser::GetInstance()->GetUserSession(uid);
     ReLogin(uid, oldSession, session);
@@ -614,4 +611,4 @@ Json::Value pullMessageList(ChatSession::Ptr session, uint32_t msgID,
 
   return rsp;
 }
-}; // namespace wim
+};  // namespace wim

@@ -19,7 +19,6 @@
 
 namespace wim {
 Tlv::Tlv(uint32_t maxLen, uint32_t msgID) {
-
   uint32_t tmp = ntohl(maxLen);
   id = ntohl(msgID);
   length = tmp + PROTOCOL_HEADER_TOTAL;
@@ -28,7 +27,6 @@ Tlv::Tlv(uint32_t maxLen, uint32_t msgID) {
 }
 
 Tlv::Tlv(uint32_t msgID, uint32_t maxLength, char *msg) {
-
   id = msgID;
 
   length = maxLength + PROTOCOL_HEADER_TOTAL;
@@ -42,11 +40,19 @@ Tlv::Tlv(uint32_t msgID, uint32_t maxLength, char *msg) {
   memcpy(data + PROTOCOL_ID_LEN + PROTOCOL_DATA_SIZE_LEN, msg, maxLength);
 }
 
-uint32_t Tlv::getDataSize() { return length - PROTOCOL_HEADER_TOTAL; }
-uint32_t Tlv::getTotal() { return length; }
+uint32_t Tlv::getDataSize() {
+  return length - PROTOCOL_HEADER_TOTAL;
+}
+uint32_t Tlv::getTotal() {
+  return length;
+}
 
-std::string Tlv::getDataString() { return std::string(data, getDataSize()); }
-char *Tlv::getData() { return data; }
+std::string Tlv::getDataString() {
+  return std::string(data, getDataSize());
+}
+char *Tlv::getData() {
+  return data;
+}
 
 Tlv::~Tlv() {
   if (data) {
@@ -79,88 +85,91 @@ ChatSession::~ChatSession() {
   Close();
 }
 
-bool ChatSession::isConnected() { return chat->is_open(); }
+bool ChatSession::isConnected() {
+  return chat->is_open();
+}
 
 void ChatSession::Start() {
   switch (parseState) {
-  case WAIT_HEADER: {
-    boost::asio::async_read(
-        *chat, recvStreamBuffer,
-        boost::asio::transfer_exactly(PROTOCOL_HEADER_TOTAL),
-        [this, self = shared_from_this()](net::error_code ec, size_t) {
-          try {
-            if (ec)
-              return HandleError(ec);
-
-            uint32_t currentMsgID = 0;
-            uint32_t expectedBodyLen = 0;
-            std::istream is(&recvStreamBuffer);
-            is.read(reinterpret_cast<char *>(&currentMsgID), sizeof(uint32_t));
-            is.read(reinterpret_cast<char *>(&expectedBodyLen),
-                    sizeof(uint32_t));
-
-            recvProtocolData = std::make_shared<ChatSession::Protocol>(
-                expectedBodyLen, currentMsgID);
-
-            // 验证长度有效性
-            if (recvProtocolData->getDataSize() > PROTOCOL_RECV_MSS) {
-              LOG_WARN(netLogger,
-                       "invalid data getDataSize() is {} > PROTOCOL_RECV_MSS",
-                       recvProtocolData->getDataSize());
-              recvStreamBuffer.consume(PROTOCOL_HEADER_TOTAL);
-              parseState = WAIT_HEADER;
-              return;
-            }
-            recvStreamBuffer.consume(PROTOCOL_HEADER_TOTAL);
-            parseState = ParseState::WAIT_BODY;
-
-            LOG_INFO(netLogger, "recvProtocolData->getDataSize() is {}",
-                     recvProtocolData->getDataSize());
-            Start();
-          } catch (std::exception &e) {
-            LOG_ERROR(netLogger, "[ChatSession::Start] Exception code is {}",
-                      e.what());
-          }
-        });
-    break;
-  }
-  case WAIT_BODY: {
-    try {
+    case WAIT_HEADER: {
       boost::asio::async_read(
           *chat, recvStreamBuffer,
-          boost::asio::transfer_exactly(recvProtocolData->getDataSize()),
-          [this, self = shared_from_this()](net::error_code ec, size_t byte) {
-            if (ec)
-              return HandleError(ec);
+          boost::asio::transfer_exactly(PROTOCOL_HEADER_TOTAL),
+          [this, self = shared_from_this()](net::error_code ec, size_t) {
+            try {
+              if (ec)
+                return HandleError(ec);
 
-            if (byte != recvProtocolData->getDataSize()) {
-              LOG_ERROR(netLogger,
-                        "boost::asio::async_read完整读取出现异常, "
-                        "数据长度不匹配, 期望长度:{}, 实际长度:{}",
-                        byte, recvProtocolData->getDataSize());
+              uint32_t currentMsgID = 0;
+              uint32_t expectedBodyLen = 0;
+              std::istream is(&recvStreamBuffer);
+              is.read(reinterpret_cast<char *>(&currentMsgID),
+                      sizeof(uint32_t));
+              is.read(reinterpret_cast<char *>(&expectedBodyLen),
+                      sizeof(uint32_t));
+
+              recvProtocolData = std::make_shared<ChatSession::Protocol>(
+                  expectedBodyLen, currentMsgID);
+
+              // 验证长度有效性
+              if (recvProtocolData->getDataSize() > PROTOCOL_RECV_MSS) {
+                LOG_WARN(netLogger,
+                         "invalid data getDataSize() is {} > PROTOCOL_RECV_MSS",
+                         recvProtocolData->getDataSize());
+                recvStreamBuffer.consume(PROTOCOL_HEADER_TOTAL);
+                parseState = WAIT_HEADER;
+                return;
+              }
+              recvStreamBuffer.consume(PROTOCOL_HEADER_TOTAL);
+              parseState = ParseState::WAIT_BODY;
+
+              LOG_INFO(netLogger, "recvProtocolData->getDataSize() is {}",
+                       recvProtocolData->getDataSize());
+              Start();
+            } catch (std::exception &e) {
+              LOG_ERROR(netLogger, "[ChatSession::Start] Exception code is {}",
+                        e.what());
+            }
+          });
+      break;
+    }
+    case WAIT_BODY: {
+      try {
+        boost::asio::async_read(
+            *chat, recvStreamBuffer,
+            boost::asio::transfer_exactly(recvProtocolData->getDataSize()),
+            [this, self = shared_from_this()](net::error_code ec, size_t byte) {
+              if (ec)
+                return HandleError(ec);
+
+              if (byte != recvProtocolData->getDataSize()) {
+                LOG_ERROR(netLogger,
+                          "boost::asio::async_read完整读取出现异常, "
+                          "数据长度不匹配, 期望长度:{}, 实际长度:{}",
+                          byte, recvProtocolData->getDataSize());
+                recvStreamBuffer.consume(byte);
+                parseState = ParseState::WAIT_HEADER;
+                Start();
+              }
+
+              memcpy(recvProtocolData->data, recvStreamBuffer.data().data(),
+                     byte);
+              Chat::GetInstance()->handleRun(recvProtocolData);
               recvStreamBuffer.consume(byte);
+
+              // 回到头解析状态
               parseState = ParseState::WAIT_HEADER;
               Start();
-            }
-
-            memcpy(recvProtocolData->data, recvStreamBuffer.data().data(),
-                   byte);
-            Chat::GetInstance()->handleRun(recvProtocolData);
-            recvStreamBuffer.consume(byte);
-
-            // 回到头解析状态
-            parseState = ParseState::WAIT_HEADER;
-            Start();
-          });
-    } catch (std::exception &e) {
-      LOG_ERROR(netLogger, "[ChatSession::Start] Exception code is {}",
-                e.what());
-      parseState = ParseState::WAIT_HEADER;
+            });
+      } catch (std::exception &e) {
+        LOG_ERROR(netLogger, "[ChatSession::Start] Exception code is {}",
+                  e.what());
+        parseState = ParseState::WAIT_HEADER;
+      }
+      break;
     }
-    break;
-  }
-  default:
-    LOG_ERROR(netLogger, "无效的解析状态!");
+    default:
+      LOG_ERROR(netLogger, "无效的解析状态!");
   }
 }
 void ChatSession::HandleError(net::error_code ec) {
@@ -223,9 +232,9 @@ void ChatSession::Close() {
   if (chat && chat->is_open()) {
     boost::system::error_code ec;
     chat->shutdown(tcp::socket::shutdown_both, ec);
-    chat->close(ec); // 显式关闭 socket
+    chat->close(ec);  // 显式关闭 socket
     closeEnable = true;
   }
 }
 
-}; // namespace wim
+};  // namespace wim

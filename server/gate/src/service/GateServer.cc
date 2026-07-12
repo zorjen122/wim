@@ -33,4 +33,4 @@ void GateServer::Start() {
         }
       });
 }
-}; // namespace wim
+};  // namespace wim

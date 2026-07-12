@@ -113,8 +113,8 @@ Json::Value ReplyAddFriend(ChatSession::Ptr session, unsigned int msgID,
   long sessionKey = skipStorage ? request.get("sessionKey", 0).asInt64()
                                 : StoreageReplyAddFriend(request);
   if (sessionKey == -1) {
-    LOG_ERROR(businessLogger, "StoreageReplyAddFriend is failed, from {}, to {}",
-              from, to);
+    LOG_ERROR(businessLogger,
+              "StoreageReplyAddFriend is failed, from {}, to {}", from, to);
     rsp["error"] = ErrorCodes::MysqlFailed;
     rsp["message"] = "数据库修改发送异常";
     return rsp;
@@ -178,7 +178,6 @@ Json::Value ReplyAddFriend(ChatSession::Ptr session, unsigned int msgID,
 }
 
 int StoreageReplyAddFriend(Json::Value &request) {
-
   long from = request["from"].asInt64();
   long to = request["to"].asInt64();
   bool accept = request["accept"].asBool();
@@ -215,4 +214,4 @@ int StoreageReplyAddFriend(Json::Value &request) {
   // 暂用
   return rt == -1 ? -1 : sessionId;
 }
-}; // namespace wim
+};  // namespace wim

@@ -11,7 +11,7 @@ using state::StateService;
 using state::TestNetwork;
 
 class StateServiceImpl final : public StateService::Service {
-public:
+ public:
   StateServiceImpl();
   grpc::Status GetImServer(grpc::ServerContext *context,
                            const ConnectUser *request,
@@ -29,4 +29,4 @@ public:
   std::unordered_map<std::string, std::unique_ptr<ImRpc>> imRpcMap;
   std::vector<std::string> imNodeName;
 };
-}; // namespace wim::rpc
+};  // namespace wim::rpc

@@ -23,10 +23,9 @@ grpc::Status ImRpcService::ActiveService(ServerContext *context,
   return grpc::Status::OK;
 }
 
-grpc::Status
-ImRpcService::NotifyAddFriend(ServerContext *context,
-                              const NotifyAddFriendRequest *request,
-                              NotifyAddFriendResponse *response) {
+grpc::Status ImRpcService::NotifyAddFriend(
+    ServerContext *context, const NotifyAddFriendRequest *request,
+    NotifyAddFriendResponse *response) {
   long from = request->from();
   long to = request->to();
   std::string message = request->requestmessage();
@@ -74,11 +73,9 @@ grpc::Status ImRpcService::ReplyAddFriend(ServerContext *context,
   return grpc::Status::OK;
 }
 
-grpc::Status
-ImRpcService::TextSendMessage(ServerContext *context,
-                              const TextSendMessageRequest *request,
-                              TextSendMessageResponse *response) {
-
+grpc::Status ImRpcService::TextSendMessage(
+    ServerContext *context, const TextSendMessageRequest *request,
+    TextSendMessageResponse *response) {
   long from = request->from();
   long to = request->to();
   std::string text = request->text();
@@ -100,4 +97,4 @@ ImRpcService::TextSendMessage(ServerContext *context,
 
   return grpc::Status::OK;
 }
-}; // namespace wim::rpc
+};  // namespace wim::rpc

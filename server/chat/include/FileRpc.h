@@ -17,15 +17,15 @@ using file::TransferStatus;
 using file::UploadRequest;
 using file::UploadResponse;
 class FileRpc : public Singleton<FileRpc> {
-public:
+ public:
   using Ptr = std::shared_ptr<FileRpc>;
   FileRpc();
   ~FileRpc();
   grpc::Status forwardUpload(const UploadRequest &req, UploadResponse &resp);
   auto getPoolSize() const;
 
-private:
+ private:
   std::unique_ptr<RpcPool<FileService>> pool = nullptr;
 };
 
-}; // namespace wim::rpc
+};  // namespace wim::rpc

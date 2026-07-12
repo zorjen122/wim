@@ -18,8 +18,12 @@ struct Chat : Singleton<Chat> {
              chat.use_count());
   }
 
-  void setSession(ChatSession::Ptr session) { chat = session; }
-  void setUser(db::User::Ptr user) { this->user = user; }
+  void setSession(ChatSession::Ptr session) {
+    chat = session;
+  }
+  void setUser(db::User::Ptr user) {
+    this->user = user;
+  }
   bool login(bool isFirstLogin = true);
   bool waitLoginReady(int timeoutSeconds = 5);
   void quit();
@@ -119,4 +123,4 @@ struct Chat : Singleton<Chat> {
   void sendFileHandle(Json::Value &response);
   void recvFileHandle(Json::Value &response);
 };
-}; // namespace wim
+};  // namespace wim

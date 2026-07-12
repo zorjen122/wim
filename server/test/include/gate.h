@@ -14,7 +14,6 @@ namespace wim {
 Json::Value __parseJson(const std::string &source);
 
 struct Gate {
-
   Gate(net::io_context &iocontext, const std::string &ip,
        const std::string &port);
 
@@ -40,4 +39,4 @@ struct Gate {
 
   bool onConnected;
 };
-} // namespace wim
+}  // namespace wim

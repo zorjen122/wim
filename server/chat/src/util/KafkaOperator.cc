@@ -26,6 +26,5 @@ bool KafkaProducer::Produce(const std::string &topic, const std::string &data) {
   return true;
 }
 bool KafkaProducer::SaveMessage(const std::string &message) {
-
   return Produce("im-messages", message);
 }

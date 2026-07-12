@@ -43,4 +43,4 @@ void IocPool::Stop() {
       t.join();
   }
 }
-}; // namespace wim
+};  // namespace wim

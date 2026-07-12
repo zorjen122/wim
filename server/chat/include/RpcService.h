@@ -24,7 +24,7 @@ using im::TextSendMessageRequest;
 using im::TextSendMessageResponse;
 
 class ImRpcService final : public ImService::Service {
-public:
+ public:
   grpc::Status ActiveService(ServerContext *context,
                              const ActiveRequest *request,
                              ActiveResponse *response) override;
@@ -41,4 +41,4 @@ public:
                                TextSendMessageResponse *response) override;
 };
 
-}; // namespace wim::rpc
+};  // namespace wim::rpc

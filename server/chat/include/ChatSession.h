@@ -15,13 +15,13 @@
 
 #include "Const.h"
 
-namespace beast = boost::beast;   // from <boost/beast.hpp>
-namespace http = beast::http;     // from <boost/beast/http.hpp>
-using tcp = boost::asio::ip::tcp; // from <boost/asio/ip/tcp.hpp>
+namespace beast = boost::beast;    // from <boost/beast.hpp>
+namespace http = beast::http;      // from <boost/beast/http.hpp>
+using tcp = boost::asio::ip::tcp;  // from <boost/asio/ip/tcp.hpp>
 namespace net {
 using namespace boost::asio;
 using boost::system::error_code;
-} // namespace net
+}  // namespace net
 
 namespace wim {
 
@@ -36,7 +36,7 @@ class Tlv {
   friend class ChatSession;
   friend class Service;
 
-public:
+ public:
   using Ptr = std::shared_ptr<Tlv>;
 
   // 从网络字节序数据转换到本地字节序
@@ -51,7 +51,7 @@ public:
   uint32_t getTotal();
   uint32_t getDataSize();
 
-private:
+ private:
   uint32_t id = 0;
   uint32_t total = 0;
   char *data = nullptr;
@@ -60,7 +60,7 @@ private:
 class ChatServer;
 
 class ChatSession : public std::enable_shared_from_this<ChatSession> {
-public:
+ public:
   using Protocol = Tlv;
   using Ptr = std::shared_ptr<ChatSession>;
 
@@ -78,18 +78,22 @@ public:
   void Close();
   void ClearSession();
   Ptr GetSharedSelf();
-  void SetUserId(int64_t uid) { userId = uid; }
-  int64_t GetUserId() const { return userId; }
+  void SetUserId(int64_t uid) {
+    userId = uid;
+  }
+  int64_t GetUserId() const {
+    return userId;
+  }
 
   bool IsConnected();
 
-private:
+ private:
   enum ParseState { WAIT_HEADER, WAIT_BODY };
 
   void HandleWrite(const net::error_code &ec, ChatSession::Ptr sharedSelf);
   void HandleError(net::error_code ec);
 
-private:
+ private:
   uint64_t sessionId;
   int64_t userId{0};
   tcp::socket socket;
@@ -113,15 +117,15 @@ class Channel {
   friend class ChatSession;
   friend class Service;
 
-public:
+ public:
   using Ptr = std::shared_ptr<Channel>;
 
   Channel(ChatSession::Ptr, Tlv::Ptr);
   std::string getData();
 
-private:
+ private:
   ChatSession::Ptr contextSession;
   Tlv::Ptr protocolData;
 };
 
-}; // namespace wim
+};  // namespace wim

@@ -9,7 +9,9 @@
 namespace wim {
 
 namespace util {
-unsigned char ToHex(unsigned char x) { return x > 9 ? x + 55 : x + 48; }
+unsigned char ToHex(unsigned char x) {
+  return x > 9 ? x + 55 : x + 48;
+}
 
 unsigned char FromHex(unsigned char x) {
   unsigned char y;
@@ -28,7 +30,6 @@ std::string UrlEncode(const std::string &str) {
   std::string strTemp = "";
   size_t length = str.length();
   for (size_t i = 0; i < length; i++) {
-
     if (isalnum((unsigned char)str[i]) || (str[i] == '-') || (str[i] == '_') ||
         (str[i] == '.') || (str[i] == '~'))
       strTemp += str[i];
@@ -60,10 +61,11 @@ std::string UrlDecode(const std::string &str) {
   return strTemp;
 }
 
-}; // namespace util
+};  // namespace util
 
 HttpSession::HttpSession(boost::asio::io_context &ioc)
-    : socket(ioc), request(new http::request<http::dynamic_body>()),
+    : socket(ioc),
+      request(new http::request<http::dynamic_body>()),
       response(new http::response<http::dynamic_body>()) {}
 
 void HttpSession::Start() {
@@ -173,4 +175,4 @@ void HttpSession::WriteResponse() {
                     });
 }
 
-}; // namespace wim
+};  // namespace wim

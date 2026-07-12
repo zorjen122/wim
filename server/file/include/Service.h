@@ -25,7 +25,7 @@ using grpc::ServerContext;
 using grpc::Status;
 
 class FileTask {
-public:
+ public:
   virtual ~FileTask() = default;
   virtual void Process() = 0;
 };
@@ -35,18 +35,22 @@ class UnifiedCallData
     : public FileTask,
       // 此用于对FileTask多态调用约束类型
       public std::shared_ptr<UnifiedCallData<RequestType, ResponseType>> {
-public:
+ public:
   using Ptr = std::shared_ptr<UnifiedCallData<RequestType, ResponseType>>;
   using ProcessFunc = std::function<void()>;
 
   UnifiedCallData(grpc::ServerContext *context, const RequestType *request,
                   ResponseType *response, ProcessFunc processor)
-      : context_(context), request_(request), response_(response),
+      : context_(context),
+        request_(request),
+        response_(response),
         processor_(processor) {}
 
-  void Process() override { processor_(); }
+  void Process() override {
+    processor_();
+  }
 
-private:
+ private:
   grpc::ServerContext *context_;
   const RequestType *request_;
   ResponseType *response_;
@@ -54,13 +58,13 @@ private:
 };
 
 class FileWorker {
-public:
+ public:
   using Task = std::shared_ptr<FileTask>;
   FileWorker();
   ~FileWorker();
   void PushTask(Task task);
 
-private:
+ private:
   std::thread workThread;
   std::queue<Task> tasks;
   std::atomic<bool> stopEnable;
@@ -69,23 +73,24 @@ private:
 };
 
 class FileServiceImpl final : public FileService::Service {
-public:
+ public:
   FileServiceImpl(int workerSize);
   ~FileServiceImpl();
   grpc::Status Upload(grpc::ServerContext *context,
                       const file::UploadRequest *request,
                       file::UploadResponse *response) override;
-private:
+
+ private:
   std::string getFileType(const std::string &filename);
 
   void PushTask(FileWorker::Task task);
 
-private:
+ private:
   std::vector<std::unique_ptr<FileWorker>> workers;
 };
 
 class FileServer final {
-public:
+ public:
   FileServer(size_t workerSize);
   ~FileServer();
 
@@ -99,4 +104,4 @@ public:
   size_t workerSize;
 };
 
-}; // namespace wim::rpc
+};  // namespace wim::rpc

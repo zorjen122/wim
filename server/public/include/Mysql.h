@@ -42,7 +42,7 @@ struct SqlConnection {
 };
 
 class MysqlPool {
-public:
+ public:
   using Ptr = std::shared_ptr<MysqlPool>;
 
   MysqlPool(const std::string &host, unsigned short port,
@@ -88,7 +88,7 @@ public:
     });
   }
 
-public:
+ public:
   std::unique_ptr<SqlConnection> GetConnection() {
     std::unique_lock<std::mutex> lock(sqlMutex);
     condVar.wait(lock, [this] {
@@ -110,8 +110,8 @@ public:
     return con;
   }
 
-  std::unique_ptr<SqlConnection>
-  ReturnConnection(std::unique_ptr<SqlConnection> con) {
+  std::unique_ptr<SqlConnection> ReturnConnection(
+      std::unique_ptr<SqlConnection> con) {
     std::unique_lock<std::mutex> lock(sqlMutex);
     if (stopEnable)
       return con;
@@ -150,7 +150,7 @@ public:
     }
   }
 
-private:
+ private:
   void keepConnectionHandle() {
     std::lock_guard<std::mutex> lock(sqlMutex);
     int poolsize = pool.size();
@@ -161,7 +161,6 @@ private:
         std::chrono::duration_cast<std::chrono::seconds>(currentTime).count();
 
     for (int i = 0; i < poolsize; i++) {
-
       // 一旦Close后，就可跳出，无需继续处理
       if (stopEnable)
         return;
@@ -196,7 +195,7 @@ private:
     }
   }
 
-private:
+ private:
   std::string host;
   unsigned short port;
   std::string user;
@@ -208,15 +207,15 @@ private:
   std::condition_variable condVar{};
   std::atomic<bool> stopEnable{};
   std::thread keepThread{};
-}; // MysqlPool
+};  // MysqlPool
 
 class MysqlDao : public Singleton<MysqlDao>,
                  public std::enable_shared_from_this<MysqlDao> {
-private:
+ private:
   MysqlPool::Ptr mysqlPool;
   friend class TestDb;
 
-public:
+ public:
   using Ptr = std::shared_ptr<MysqlDao>;
   MysqlDao() {
     try {
@@ -257,8 +256,8 @@ public:
   注意：为避免死锁，接口函数之间不得互相调用，因每个调用都会获取连接池，若池中没有可用连接，则会一直等待
   */
   template <typename Func>
-  auto executeTemplate(Func &&processor) -> decltype(
-      processor(std::declval<std::unique_ptr<mysqlx::Session> &>())) {
+  auto executeTemplate(Func &&processor) -> decltype(processor(
+      std::declval<std::unique_ptr<mysqlx::Session> &>())) {
     auto con = mysqlPool->GetConnection();
     if (con == nullptr) {
       LOG_INFO(dbLogger, "Mysql connection pool is empty!");
@@ -268,14 +267,15 @@ public:
         [&con, this]() { mysqlPool->ReturnConnection(std::move(con)); });
 
     try {
-      return processor(con->session); // 完全由processor处理SQL执行
+      return processor(con->session);  // 完全由processor处理SQL执行
     } catch (mysqlx::Error &e) {
       LOG_ERROR(dbLogger, "MySQL error: {}", e.what());
       HandleError(e);
       return defaultForType<decltype(processor(con->session))>();
     }
   }
-  template <typename T> static auto defaultForType() {
+  template <typename T>
+  static auto defaultForType() {
     if constexpr (std::is_same_v<T, bool>) {
       return false;
     } else if constexpr (std::is_integral_v<T>) {
@@ -289,7 +289,9 @@ public:
     return;
   }
 
-  void Close() { mysqlPool->Close(); }
+  void Close() {
+    mysqlPool->Close();
+  }
 
   User::Ptr getUser(const std::string &username) {
     return executeTemplate(
@@ -329,10 +331,10 @@ public:
           auto row = result.fetchOne();
           return std::make_shared<UserInfo>(
               uid,
-              row[1].get<std::string>(), // name
-              row[2].get<int>(),         // age
-              row[3].get<std::string>(), // sex
-              row[4].get<std::string>()  // headImageURL
+              row[1].get<std::string>(),  // name
+              row[2].get<int>(),          // age
+              row[3].get<std::string>(),  // sex
+              row[4].get<std::string>()   // headImageURL
           );
         });
   }
@@ -361,12 +363,12 @@ public:
 
           auto friendGroup = std::make_shared<std::vector<Friend::Ptr>>();
           for (const auto &row : result.fetchAll()) {
-            friendGroup->emplace_back(
-                new Friend(row[0].get<size_t>(),      // uidA
-                           row[1].get<size_t>(),      // uidB
-                           row[3].get<std::string>(), // createTime
-                           row[2].get<size_t>()       // sessionId
-                           ));
+            friendGroup->emplace_back(new Friend(
+                row[0].get<size_t>(),       // uidA
+                row[1].get<size_t>(),       // uidB
+                row[3].get<std::string>(),  // createTime
+                row[2].get<size_t>()        // sessionId
+                ));
           }
           return friendGroup;
         });
@@ -384,7 +386,7 @@ public:
 
       if (!(checkResult.count() > 0)) {
         LOG_DEBUG(dbLogger, "Mysql指令调用的结果集为空");
-        return 1; // 用户不存在
+        return 1;  // 用户不存在
       }
 
       // 更新密码
@@ -396,7 +398,7 @@ public:
               .bind(user->uid)
               .execute();
 
-      return 0; // 成功
+      return 0;  // 成功
     });
   }
 
@@ -427,12 +429,11 @@ public:
                        .bind(createTime)
                        .execute();
 
-          return 0; // 注册成功
+          return 0;  // 注册成功
         });
   }
 
   int insertUserInfo(UserInfo::Ptr userInfo) {
-
     return executeTemplate(
         [&](std::unique_ptr<mysqlx::Session> &session) -> int {
           std::string f = R"(INSERT INTO userInfo VALUES (?,?,?,?,?))";
@@ -449,7 +450,6 @@ public:
   }
 
   int insertFriendApply(FriendApply::Ptr friendData) {
-
     return executeTemplate(
         [&](std::unique_ptr<mysqlx::Session> &session) -> int {
           std::string f = R"(INSERT INTO friendApplys VALUES (?, ?, ?, ?, ?))";
@@ -585,24 +585,23 @@ public:
   }
   int updateMessage(long messageId, short status,
                     const std::string &readDateTime = "") {
-    return executeTemplate(
-        [&](std::unique_ptr<mysqlx::Session> &session) -> int {
-          if (readDateTime.empty()) {
-            std::string f =
-                R"(UPDATE messages SET status = ? WHERE messageId = ?)";
-            auto result =
-                session->sql(f).bind(status).bind(messageId).execute();
-          } else {
-            std::string f = R"(UPDATE messages SET status = ?, readDateTime = ? WHERE messageId = ?)";
-            auto result = session->sql(f)
-                              .bind(status)
-                              .bind(readDateTime)
-                              .bind(messageId)
-                              .execute();
-          }
+    return executeTemplate([&](std::unique_ptr<mysqlx::Session> &session)
+                               -> int {
+      if (readDateTime.empty()) {
+        std::string f = R"(UPDATE messages SET status = ? WHERE messageId = ?)";
+        auto result = session->sql(f).bind(status).bind(messageId).execute();
+      } else {
+        std::string f =
+            R"(UPDATE messages SET status = ?, readDateTime = ? WHERE messageId = ?)";
+        auto result = session->sql(f)
+                          .bind(status)
+                          .bind(readDateTime)
+                          .bind(messageId)
+                          .execute();
+      }
 
-          return 0;
-        });
+      return 0;
+    });
   }
   FriendApply::FriendApplyGroup getFriendApplyList(long from) {
     return executeTemplate([&](std::unique_ptr<mysqlx::Session> &session)
@@ -975,4 +974,4 @@ public:
     });
   }
 };
-}; // namespace wim::db
+};  // namespace wim::db

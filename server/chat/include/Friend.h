@@ -14,4 +14,4 @@ int StoreageReplyAddFriend(Json::Value &request);
 
 void RemoveFriend(ChatSession::Ptr session, unsigned int msgID,
                   Json::Value &request);
-}; // namespace wim
+};  // namespace wim

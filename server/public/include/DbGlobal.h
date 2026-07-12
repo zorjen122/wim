@@ -12,8 +12,11 @@ struct User {
   User() = default;
   User(size_t id, size_t uid, std::string username, std::string password,
        std::string email, std::string createTime = "")
-      : id(std::move(id)), uid(std::move(uid)), username(std::move(username)),
-        password(std::move(password)), email(std::move(email)),
+      : id(std::move(id)),
+        uid(std::move(uid)),
+        username(std::move(username)),
+        password(std::move(password)),
+        email(std::move(email)),
         createTime(std::move(createTime)) {}
   size_t id;
   size_t uid;
@@ -28,8 +31,11 @@ struct UserInfo {
   UserInfo() = default;
   UserInfo(size_t uid, std::string name, short age, std::string sex,
            std::string headImageURL)
-      : uid(std::move(uid)), name(std::move(name)), age(std::move(age)),
-        sex(std::move(sex)), headImageURL(std::move(headImageURL)) {}
+      : uid(std::move(uid)),
+        name(std::move(name)),
+        age(std::move(age)),
+        sex(std::move(sex)),
+        headImageURL(std::move(headImageURL)) {}
 
   size_t uid;
   std::string name;
@@ -42,7 +48,9 @@ struct Friend {
   using FriendGroup = std::shared_ptr<std::vector<Friend::Ptr>>;
   Friend() = default;
   Friend(size_t uidA, size_t uidB, std::string createTime, size_t sessionId)
-      : uidA(uidA), uidB(uidB), createTime(std::move(createTime)),
+      : uidA(uidA),
+        uidB(uidB),
+        createTime(std::move(createTime)),
         sessionId(sessionId) {}
 
   size_t uidA;
@@ -66,19 +74,22 @@ struct FriendApply {
   FriendApply(size_t fromUid, size_t toUId, short status = 0,
               const std::string &content = "",
               const std::string &createTime = "")
-      : from(fromUid), to(toUId), status(status), content(content),
+      : from(fromUid),
+        to(toUId),
+        status(status),
+        content(content),
         createTime(createTime) {}
 
   std::string formatStatus(short status) {
     switch (status) {
-    case 0:
-      return "wait";
-    case 1:
-      return "agree";
-    case 2:
-      return "refuse";
-    default:
-      return "unknown";
+      case 0:
+        return "wait";
+      case 1:
+        return "agree";
+      case 2:
+        return "refuse";
+      default:
+        return "unknown";
     }
   }
   size_t from;
@@ -103,40 +114,44 @@ struct Message {
   Message(long messageId, long fromUid, long toUid, std::string sessionKey,
           short type, std::string content, short status,
           std::string sendDateTime = "", std::string readDateTime = "")
-      : messageId(messageId), from(fromUid), to(toUid),
-        sessionKey(std::move(sessionKey)), type(type),
-        content(std::move(content)), status(status),
+      : messageId(messageId),
+        from(fromUid),
+        to(toUid),
+        sessionKey(std::move(sessionKey)),
+        type(type),
+        content(std::move(content)),
+        status(status),
         sendDateTime(std::move(sendDateTime)),
         readDateTime(std::move(readDateTime)) {}
 
   std::string formatType(short type) {
     switch (type) {
-    case 1:
-      return "text";
-    case 2:
-      return "image";
-    case 3:
-      return "audio";
-    case 4:
-      return "video";
-    case 5:
-      return "file";
-    default:
-      LOG_DEBUG(dbLogger, "no such type value: {}", type);
-      return "";
+      case 1:
+        return "text";
+      case 2:
+        return "image";
+      case 3:
+        return "audio";
+      case 4:
+        return "video";
+      case 5:
+        return "file";
+      default:
+        LOG_DEBUG(dbLogger, "no such type value: {}", type);
+        return "";
     }
   }
   std::string formatStatus(short status) {
     switch (status) {
-    case 0:
-      return "withdraw"; // 撤回
-    case 1:
-      return "wait";
-    case 2:
-      return "done";
-    default:
-      LOG_DEBUG(dbLogger, "no such status value: {}", status);
-      return "";
+      case 0:
+        return "withdraw";  // 撤回
+      case 1:
+        return "wait";
+      case 2:
+        return "done";
+      default:
+        LOG_DEBUG(dbLogger, "no such status value: {}", status);
+        return "";
     }
   }
   long messageId;
@@ -173,8 +188,12 @@ struct GroupMember {
   GroupMember() = default;
   GroupMember(long gid, long uid, short role, std::string joinTime = "",
               short speech = 0, std::string memberName = "")
-      : gid(gid), uid(uid), role(role), joinTime(std::move(joinTime)),
-        speech(speech), memberName(std::move(memberName)) {}
+      : gid(gid),
+        uid(uid),
+        role(role),
+        joinTime(std::move(joinTime)),
+        speech(speech),
+        memberName(std::move(memberName)) {}
   long gid;
   long uid;
   short role;
@@ -207,8 +226,13 @@ struct GroupApply {
   using GroupApplyList = std::shared_ptr<std::vector<GroupApply::Ptr>>;
   GroupApply(long requestor, long handler, long gid, short type, short status,
              std::string message, std::string updateTime)
-      : requestor(requestor), handler(handler), gid(gid), type(type),
-        status(status), message(message), updateTime(updateTime) {}
+      : requestor(requestor),
+        handler(handler),
+        gid(gid),
+        type(type),
+        status(status),
+        message(message),
+        updateTime(updateTime) {}
 
   // Type: 1.加群、2.退群、3.升权、4.降权、5、邀群、6.踢出
   enum Type {
@@ -231,4 +255,4 @@ struct GroupApply {
   std::string updateTime;
 };
 
-} // namespace wim::db
+}  // namespace wim::db

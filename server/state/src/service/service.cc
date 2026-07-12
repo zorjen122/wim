@@ -60,10 +60,9 @@ grpc::Status StateServiceImpl::GetImServer(grpc::ServerContext *context,
   return grpc::Status::OK;
 }
 
-grpc::Status
-StateServiceImpl::ActiveImBackupServer(grpc::ServerContext *context,
-                                       const ConnectUser *request,
-                                       ConnectUserRsp *response) {
+grpc::Status StateServiceImpl::ActiveImBackupServer(
+    grpc::ServerContext *context, const ConnectUser *request,
+    ConnectUserRsp *response) {
   static int routeCount = 0;
 
   int uid = request->id();
@@ -99,7 +98,6 @@ StateServiceImpl::ActiveImBackupServer(grpc::ServerContext *context,
 grpc::Status StateServiceImpl::TestNetworkPing(grpc::ServerContext *context,
                                                const TestNetwork *request,
                                                TestNetwork *response) {
-
   spdlog::info("imBackupRpc-TestNetworkPing, req {}", request->msg());
 
   auto &imBackupRpc = imRpcMap["hunan-im"];
@@ -114,4 +112,4 @@ grpc::Status StateServiceImpl::TestNetworkPing(grpc::ServerContext *context,
   response->set_msg("Pong!");
   return grpc::Status::OK;
 }
-}; // namespace wim::rpc
+};  // namespace wim::rpc

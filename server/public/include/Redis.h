@@ -20,7 +20,7 @@
 namespace wim::db {
 
 class RedisPool {
-public:
+ public:
   using Ptr = std::shared_ptr<RedisPool>;
 
   RedisPool(const std::string &host, unsigned int port,
@@ -41,8 +41,9 @@ public:
     }
 
     if (connections.empty()) {
-      spdlog::warn("REDIS CONNECTION POOL INIT IS WRONG, NO CONNECTION IS "
-                   "SUCCESSFUL, EXIT NOW ");
+      spdlog::warn(
+          "REDIS CONNECTION POOL INIT IS WRONG, NO CONNECTION IS "
+          "SUCCESSFUL, EXIT NOW ");
       return;
     }
 
@@ -121,7 +122,7 @@ public:
     return connections.size();
   }
 
-private:
+ private:
   void keepConnectionHandle() {
     std::lock_guard<std::mutex> lock(poolMutex);
 
@@ -154,7 +155,7 @@ private:
     }
   }
 
-private:
+ private:
   std::atomic<bool> stopEnable;
   std::string host;
   unsigned int port;
@@ -169,7 +170,7 @@ class RedisDao : public Singleton<RedisDao>,
                  std::enable_shared_from_this<RedisPool> {
   friend class TestDb;
 
-public:
+ public:
   using Ptr = std::shared_ptr<RedisDao>;
   RedisDao() {
     static bool inited = false;
@@ -209,8 +210,8 @@ public:
     返回接口定义处见：defaultForType
   */
   template <typename Func>
-  auto executeTemplate(Func &&processor) -> decltype(
-      processor(std::declval<std::unique_ptr<sw::redis::Redis> &>())) {
+  auto executeTemplate(Func &&processor) -> decltype(processor(
+      std::declval<std::unique_ptr<sw::redis::Redis> &>())) {
     auto con = redisPool->GetConnection();
     if (con == nullptr) {
       LOG_INFO(dbLogger, "Redis connection pool is empty!");
@@ -226,7 +227,8 @@ public:
       return defaultForType<decltype(processor(con))>();
     }
   }
-  template <typename T> static auto defaultForType() {
+  template <typename T>
+  static auto defaultForType() {
     if constexpr (std::is_same_v<T, bool>) {
       return false;
     } else if constexpr (std::is_integral_v<T>) {
@@ -236,25 +238,39 @@ public:
     }
   }
 
-  void Close() { return redisPool->Close(); }
+  void Close() {
+    return redisPool->Close();
+  }
 
   const std::string PrefixUserId = "im:userId:";
-  std::string getPrefixUserId() { return PrefixUserId; }
+  std::string getPrefixUserId() {
+    return PrefixUserId;
+  }
 
   const std::string PrefixOnlineUserInfo = "im:user:";
-  std::string getPrefixOnlineUserInfo() { return PrefixOnlineUserInfo; }
+  std::string getPrefixOnlineUserInfo() {
+    return PrefixOnlineUserInfo;
+  }
 
   const std::string __prefixUid = "im:userId";
-  int64_t generateUserId() { return generateId(__prefixUid); }
+  int64_t generateUserId() {
+    return generateId(__prefixUid);
+  }
 
   const std::string __prefixMsgId = "im:msgId";
-  int64_t generateMsgId() { return generateId(__prefixMsgId); }
+  int64_t generateMsgId() {
+    return generateId(__prefixMsgId);
+  }
 
   const std::string __prefixSessionId = "im:sessionId";
-  int64_t generateSessionId() { return generateId(__prefixSessionId); }
+  int64_t generateSessionId() {
+    return generateId(__prefixSessionId);
+  }
 
   const std::string __prefixGid = "im:gid";
-  int64_t generateGid() { return generateId(__prefixGid); }
+  int64_t generateGid() {
+    return generateId(__prefixGid);
+  }
 
   std::string getMsgId(int64_t msgId) {
     return executeTemplate(
@@ -354,7 +370,7 @@ public:
     });
   }
 
-private:
+ private:
   int64_t generateId(const std::string &key) {
     return executeTemplate(
         [&](std::unique_ptr<sw::redis::Redis> &redis) -> int64_t {
@@ -369,7 +385,7 @@ private:
           auto seq = redis->incr(key + ":" + std::to_string(ts));
           if (seq > 4095) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            return generateId(key); // 递归直到不冲突
+            return generateId(key);  // 递归直到不冲突
           }
 
           // 3. 组合ID：时间戳(41) + 机器ID(10) + 序列号(12)
@@ -377,10 +393,10 @@ private:
         });
   }
 
-private:
+ private:
   RedisPool::Ptr redisPool;
-  uint16_t machineId; // 集群中每个节点的唯一ID (0-1023)
-  static const int64_t epoch = 1672531200000; // 2023-01-01 00:00:00
+  uint16_t machineId;  // 集群中每个节点的唯一ID (0-1023)
+  static const int64_t epoch = 1672531200000;  // 2023-01-01 00:00:00
 };
 
-}; // namespace wim::db
+};  // namespace wim::db

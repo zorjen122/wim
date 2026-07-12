@@ -37,5 +37,7 @@ grpc::Status FileRpc::forwardUpload(const UploadRequest &req,
   return rpc->Upload(&context, req, &resp);
 }
 
-auto FileRpc::getPoolSize() const { return pool->getPoolSize(); }
-}; // namespace wim::rpc
+auto FileRpc::getPoolSize() const {
+  return pool->getPoolSize();
+}
+};  // namespace wim::rpc

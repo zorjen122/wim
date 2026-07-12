@@ -15,14 +15,14 @@ namespace wim {
 class Service : public Singleton<Service> {
   friend class Singleton<Service>;
 
-public:
+ public:
   using HandleType =
       std::function<Json::Value(ChatSession::Ptr, uint32_t, Json::Value &)>;
 
   ~Service();
   void PushService(std::shared_ptr<Channel> package);
 
-private:
+ private:
   Service();
   void Run();
   void Init();
@@ -71,4 +71,4 @@ Json::Value SerachUser(ChatSession::Ptr session, uint32_t msgID,
 Json::Value AckHandle(ChatSession::Ptr session, uint32_t msgID,
                       Json::Value &request);
 
-}; // namespace wim
+};  // namespace wim

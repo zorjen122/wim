@@ -14,7 +14,6 @@ namespace wim {
 
 Json::Value GroupCreate(ChatSession::Ptr session, unsigned int msgID,
                         Json::Value &request) {
-
   Json::Value rsp;
 
   int ret{};
@@ -76,7 +75,7 @@ int NotifyMemberJoin(int64_t uid, int64_t gid,
       int64_t serverSeq = db::RedisDao::GetInstance()->generateMsgId();
       notifyRequest["uid"] = Json::Value::Int64(uid);
       notifyRequest["gid"] = Json::Value::Int64(gid);
-      notifyRequest["type"]; // todo
+      notifyRequest["type"];  // todo
       notifyRequest["content"] = requestMessage;
       notifyRequest["seq"] = Json::Value::Int64(serverSeq);
       notifyRequest["error"] = ErrorCodes::Success;
@@ -280,4 +279,4 @@ Json::Value GroupTextSend(ChatSession::Ptr session, unsigned int msgID,
   Json::Value rsp;
   return rsp;
 }
-}; // namespace wim
+};  // namespace wim

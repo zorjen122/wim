@@ -20,31 +20,31 @@ using im::TextSendMessageResponse;
 using im::ImService;
 
 class ImRpcNode {
-public:
+ public:
   using Ptr = std::shared_ptr<ImRpcNode>;
   ImRpcNode(const std::string &ip, unsigned short port, size_t poolSize);
-  NotifyAddFriendResponse
-  forwardNotifyAddFriend(const NotifyAddFriendRequest &);
+  NotifyAddFriendResponse forwardNotifyAddFriend(
+      const NotifyAddFriendRequest &);
   ReplyAddFriendResponse forwardReplyAddFriend(const ReplyAddFriendRequest &);
-  TextSendMessageResponse
-  forwardTextSendMessage(const TextSendMessageRequest &);
+  TextSendMessageResponse forwardTextSendMessage(
+      const TextSendMessageRequest &);
 
-private:
+ private:
   std::unique_ptr<RpcPool<ImService>> pool = nullptr;
 };
 
 class ImRpc : public Singleton<ImRpc> {
-public:
+ public:
   using Machinekey = std::string;
   ImRpc();
   ImRpcNode::Ptr getRpc(const Machinekey &machine);
   ImRpcNode::Ptr getRpc(long hashValue);
 
-private:
+ private:
   Machinekey getMachineKey(long hashValue);
 
-private:
+ private:
   std::unordered_map<Machinekey, ImRpcNode::Ptr> rpcGroup;
 };
 
-}; // namespace wim::rpc
+};  // namespace wim::rpc

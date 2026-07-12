@@ -9,13 +9,13 @@ namespace net = boost::asio;
 
 namespace wim {
 class GateServer : public std::enable_shared_from_this<GateServer> {
-public:
+ public:
   GateServer(net::io_context &ioc, unsigned short &port);
   void Start();
 
-private:
+ private:
   net::io_context &gateContext;
   tcp::acceptor acceptor;
 };
 
-} // namespace wim
+}  // namespace wim

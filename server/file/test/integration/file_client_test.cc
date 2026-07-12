@@ -8,17 +8,17 @@
 namespace wim::rpc::test {
 
 class FileClientTest : public ::testing::Test {
-protected:
+ protected:
   void SetUp() override {
     serverThread = std::thread([this]() {
       server = std::make_unique<FileServer>(4);
       server->Run(50051);
     });
-    std::this_thread::sleep_for(std::chrono::seconds(1)); // 等待服务器启动
+    std::this_thread::sleep_for(std::chrono::seconds(1));  // 等待服务器启动
     grpc::ChannelArguments args;
-    args.SetMaxReceiveMessageSize(10 * 1024 * 1024);    // 10MB
-    args.SetMaxSendMessageSize(10 * 1024 * 1024);       // 10MB
-    args.SetInt(GRPC_ARG_USE_LOCAL_SUBCHANNEL_POOL, 1); // 避免代理干扰
+    args.SetMaxReceiveMessageSize(10 * 1024 * 1024);     // 10MB
+    args.SetMaxSendMessageSize(10 * 1024 * 1024);        // 10MB
+    args.SetInt(GRPC_ARG_USE_LOCAL_SUBCHANNEL_POOL, 1);  // 避免代理干扰
 
     auto channel = grpc::CreateCustomChannel(
         "localhost:50051", grpc::InsecureChannelCredentials(), args);
@@ -63,7 +63,7 @@ TEST_F(FileClientTest, UploadSmallFile) {
 
 TEST_F(FileClientTest, UploadLargeFileInChunks) {
   // 测试分块上传逻辑
-  const std::string testData(1024 * 1024, 'A'); // 1MB数据
+  const std::string testData(1024 * 1024, 'A');  // 1MB数据
 
   grpc::ClientContext context;
   file::UploadRequest request;
@@ -84,4 +84,4 @@ TEST_F(FileClientTest, UploadLargeFileInChunks) {
   EXPECT_EQ(file.tellg(), testData.size() + 1);
 }
 
-} // namespace wim::rpc::test
+}  // namespace wim::rpc::test

@@ -14,7 +14,7 @@ namespace wim {
 class OnlineUser : public Singleton<OnlineUser> {
   friend class Singleton<OnlineUser>;
 
-public:
+ public:
   ~OnlineUser();
   ChatSession::Ptr GetUserSession(long uid);
 
@@ -40,7 +40,7 @@ public:
 
   void cancelAckTimer(long seq, long uid);
 
-private:
+ private:
   OnlineUser();
   std::mutex sessionMutex;
   std::unordered_map<long, ChatSession::Ptr> sessionMap;
@@ -55,4 +55,4 @@ private:
       long, std::unordered_map<long, std::shared_ptr<net::steady_timer>>>
       waitAckTimerMap;
 };
-}; // namespace wim
+};  // namespace wim

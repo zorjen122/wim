@@ -17,7 +17,7 @@
 #include <thread>
 namespace wim {
 class ImServiceRunner : public Singleton<ImServiceRunner> {
-private:
+ private:
   void ClearUp() {
     if (cleaned.exchange(true))
       return;
@@ -49,7 +49,7 @@ private:
     }
   }
 
-public:
+ public:
   bool Activate() {
     try {
       auto config = Configer::getNode("server");
@@ -107,10 +107,10 @@ public:
     LOG_INFO(businessLogger, "ImServiceRunner::~ImServiceRunner");
   }
 
-private:
+ private:
   std::unique_ptr<grpc::Server> rpcServer;
   std::shared_ptr<ChatServer> imServer;
   std::thread rpcRunThread;
   std::atomic<bool> cleaned{false};
 };
-}; // namespace wim
+};  // namespace wim

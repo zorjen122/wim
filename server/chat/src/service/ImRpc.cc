@@ -18,9 +18,8 @@ ImRpcNode::ImRpcNode(const std::string &ip, unsigned short port,
   LOG_DEBUG(netLogger, "Created ImRpcNode with ip: {}, port: {}, poolSize: {}",
             ip, port, poolSize);
 }
-NotifyAddFriendResponse
-ImRpcNode::forwardNotifyAddFriend(const NotifyAddFriendRequest &request) {
-
+NotifyAddFriendResponse ImRpcNode::forwardNotifyAddFriend(
+    const NotifyAddFriendRequest &request) {
   auto rpc = pool->getConnection();
   if (!rpc)
     return NotifyAddFriendResponse();
@@ -42,9 +41,8 @@ ImRpcNode::forwardNotifyAddFriend(const NotifyAddFriendRequest &request) {
   return response;
 }
 
-ReplyAddFriendResponse
-ImRpcNode::forwardReplyAddFriend(const ReplyAddFriendRequest &request) {
-
+ReplyAddFriendResponse ImRpcNode::forwardReplyAddFriend(
+    const ReplyAddFriendRequest &request) {
   auto rpc = pool->getConnection();
   if (!rpc)
     return {};
@@ -65,9 +63,8 @@ ImRpcNode::forwardReplyAddFriend(const ReplyAddFriendRequest &request) {
 
   return response;
 }
-TextSendMessageResponse
-ImRpcNode::forwardTextSendMessage(const TextSendMessageRequest &request) {
-
+TextSendMessageResponse ImRpcNode::forwardTextSendMessage(
+    const TextSendMessageRequest &request) {
   auto rpc = pool->getConnection();
   if (rpc == nullptr)
     return {};
@@ -129,4 +126,4 @@ ImRpcNode::Ptr ImRpc::getRpc(long hashValue) {
   return getRpc(key);
 }
 
-}; // namespace wim::rpc
+};  // namespace wim::rpc

@@ -13,18 +13,24 @@ namespace net = boost::asio;
 class HttpSession : public std::enable_shared_from_this<HttpSession> {
   friend class Service;
 
-public:
+ public:
   using ResponsePtr = std::shared_ptr<http::response<http::dynamic_body>>;
   using RequestPtr = std::shared_ptr<http::request<http::dynamic_body>>;
 
   HttpSession(boost::asio::io_context &ioc);
   void Start();
   void PreParseGetParam();
-  tcp::socket &GetSocket() { return socket; }
-  ResponsePtr GetResponse() { return response; }
-  RequestPtr GetRequest() { return request; }
+  tcp::socket &GetSocket() {
+    return socket;
+  }
+  ResponsePtr GetResponse() {
+    return response;
+  }
+  RequestPtr GetRequest() {
+    return request;
+  }
 
-private:
+ private:
   void CheckDeadline();
   void WriteResponse();
   void HandleRequest();
@@ -45,4 +51,4 @@ private:
   std::string url;
   std::unordered_map<std::string, std::string> paramMap;
 };
-}; // namespace wim
+};  // namespace wim

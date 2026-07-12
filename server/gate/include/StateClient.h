@@ -17,24 +17,26 @@ using ::state::ConnectUserRsp;
 using ::state::StateService;
 
 class ServerNode {
-public:
+ public:
   ServerNode() = default;
   ServerNode(std::string ip, int port) : ip(ip), port(port) {}
 
-  bool empty() { return ip.empty() || port == 0; }
+  bool empty() {
+    return ip.empty() || port == 0;
+  }
   std::string ip;
   unsigned short port;
 };
 
 class StateClient : public Singleton<StateClient> {
-public:
+ public:
   ServerNode GetImServer(int uid);
   ServerNode ActiveImBackupServer(int uid);
   StateClient();
   std::string TestNetworkPing();
 
-private:
+ private:
   std::unique_ptr<RpcPool<StateService>> rpcPool = nullptr;
 };
 
-}; // namespace wim::rpc
+};  // namespace wim::rpc

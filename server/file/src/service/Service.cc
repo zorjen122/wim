@@ -75,7 +75,6 @@ void FileServiceImpl::PushTask(FileWorker::Task task) {
 grpc::Status FileServiceImpl::Upload(grpc::ServerContext *context,
                                      const file::UploadRequest *request,
                                      file::UploadResponse *response) {
-
   std::shared_ptr<file::UploadRequest> requestTemp(
       new file::UploadRequest(*request));
   auto handle = [requestTemp] {
@@ -102,7 +101,7 @@ grpc::Status FileServiceImpl::Upload(grpc::ServerContext *context,
 
     try {
       if (!fs::exists(saveDir)) {
-        fs::create_directories(saveDir); // 递归创建所有不存在的目录
+        fs::create_directories(saveDir);  // 递归创建所有不存在的目录
       }
 
       std::ofstream ofs(saveFilePath, std::ios::binary | std::ios::app);
@@ -137,10 +136,11 @@ FileServer::FileServer(size_t workerSize)
   }
 }
 
-FileServer::~FileServer() { Stop(); }
+FileServer::~FileServer() {
+  Stop();
+}
 
 void FileServer::Run(unsigned short port) {
-
   std::string serverAddress = "0.0.0.0:" + std::to_string(port);
   ServerBuilder builder;
   builder.AddListeningPort("0.0.0.0:" + std::to_string(port),
@@ -167,6 +167,8 @@ void FileServer::Stop() {
     service.reset();
   }
 }
-bool FileServer::stopped() const { return stopEnable.load(); }
+bool FileServer::stopped() const {
+  return stopEnable.load();
+}
 
-}; // namespace wim::rpc
+};  // namespace wim::rpc

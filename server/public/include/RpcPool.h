@@ -10,8 +10,9 @@ using grpc::Channel;
 using grpc::ClientContext;
 using grpc::Status;
 
-template <class RPC> class RpcPool {
-public:
+template <class RPC>
+class RpcPool {
+ public:
   RpcPool() = delete;
 
   RpcPool(size_t _poolSize, std::string _host, std::string _port)
@@ -21,7 +22,7 @@ public:
           _host + ":" + _port, grpc::InsecureChannelCredentials());
       bool isConnected = channel->WaitForConnected(
           std::chrono::system_clock::now() +
-          std::chrono::seconds(2)); // 2 seconds timeout
+          std::chrono::seconds(2));  // 2 seconds timeout
       if (!isConnected) {
         spdlog::warn("rpc connection failed, host: {}, port: {}, pool size: {}",
                      _host, _port, _poolSize);
@@ -70,11 +71,15 @@ public:
     cond.notify_all();
   }
 
-  bool empty() { return channelQueue.empty(); }
+  bool empty() {
+    return channelQueue.empty();
+  }
 
-  size_t getPoolSize() const { return poolSize; }
+  size_t getPoolSize() const {
+    return poolSize;
+  }
 
-private:
+ private:
   std::atomic<bool> isStop;
   size_t poolSize;
   std::mutex queueMutex;

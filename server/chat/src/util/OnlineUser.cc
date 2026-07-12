@@ -80,7 +80,8 @@ void OnlineUser::ClearUser(long seq, long uid,
   if (session && sessionIter->second != session) {
     LOG_DEBUG(businessLogger,
               "跳过清理旧连接映射, uid: {}, oldSession: {}, currentSession: {}",
-              uid, session->GetSessionID(), sessionIter->second->GetSessionID());
+              uid, session->GetSessionID(),
+              sessionIter->second->GetSessionID());
     return;
   }
 
@@ -90,22 +91,23 @@ void OnlineUser::ClearUser(long seq, long uid,
 
 OnlineUser::OnlineUser() {}
 
-bool OnlineUser::isOnline(long uid) { return GetUserSession(uid) != nullptr; }
+bool OnlineUser::isOnline(long uid) {
+  return GetUserSession(uid) != nullptr;
+}
 
 std::string OnlineUser::getReWriteString(ReWriteType type) {
   switch (type) {
-  case ReWriteType::HeartBeat:
-    return "heartbeat";
-  case ReWriteType::Message:
-    return "message";
-  default:
-    return "";
+    case ReWriteType::HeartBeat:
+      return "heartbeat";
+    case ReWriteType::Message:
+      return "message";
+    default:
+      return "";
   }
 }
 
 void OnlineUser::onReWrite(OnlineUser::ReWriteType type, long seq, long uid,
                            std::string packet, int rsp, int callcount) {
-
   ChatSession::Ptr session = GetUserSession(uid);
   if (session == nullptr) {
     LOG_WARN(businessLogger, "用户不在线，无法发送重传消息, uid: {}, seq: {}",
@@ -134,14 +136,14 @@ void OnlineUser::onReWrite(OnlineUser::ReWriteType type, long seq, long uid,
       static const int max_timeout_count = 3;
       auto currentSession = GetUserSession(uid);
       if (currentSession != session) {
-        LOG_DEBUG(wim::businessLogger,
-                  "重传定时器发现用户已切换连接，停止旧连接重传, uid: {}, seq: {}",
-                  uid, seq);
+        LOG_DEBUG(
+            wim::businessLogger,
+            "重传定时器发现用户已切换连接，停止旧连接重传, uid: {}, seq: {}",
+            uid, seq);
         return;
       }
 
       if (callcount + 1 >= max_timeout_count) {
-
         // 对于心跳类型重传，seq为用户Id
         if (type == ReWriteType::HeartBeat) {
           LOG_INFO(
@@ -184,7 +186,6 @@ void OnlineUser::onReWrite(OnlineUser::ReWriteType type, long seq, long uid,
 }
 
 void OnlineUser::Pong(long uid) {
-
   cancelAckTimer(uid, uid);
   ChatSession::Ptr session = GetUserSession(uid);
   if (session == nullptr) {
@@ -205,4 +206,4 @@ void OnlineUser::Pong(long uid) {
   LOG_DEBUG(wim::businessLogger, "Pong, uid: {}", uid);
 }
 
-}; // namespace wim
+};  // namespace wim

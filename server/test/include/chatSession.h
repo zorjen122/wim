@@ -14,13 +14,13 @@
 #include <queue>
 #include <unistd.h>
 
-namespace beast = boost::beast;   // from <boost/beast.hpp>
-namespace http = beast::http;     // from <boost/beast/http.hpp>
-using tcp = boost::asio::ip::tcp; // from <boost/asio/ip/tcp.hpp>
+namespace beast = boost::beast;    // from <boost/beast.hpp>
+namespace http = beast::http;      // from <boost/beast/http.hpp>
+using tcp = boost::asio::ip::tcp;  // from <boost/asio/ip/tcp.hpp>
 namespace net {
 using namespace boost::asio;
 using boost::system::error_code;
-} // namespace net
+}  // namespace net
 
 namespace wim {
 
@@ -28,7 +28,7 @@ class Tlv {
   friend class Chat;
   friend class ChatSession;
 
-public:
+ public:
   using Ptr = std::shared_ptr<Tlv>;
 
   Tlv(unsigned int packageLength, unsigned int msgID);
@@ -40,7 +40,7 @@ public:
   unsigned int getTotal();
   unsigned int getDataSize();
 
-private:
+ private:
   unsigned int id = 0;
   unsigned int length = 0;
   char *data = nullptr;
@@ -48,10 +48,10 @@ private:
 
 class Chat;
 class ChatSession : public std::enable_shared_from_this<ChatSession> {
-private:
+ private:
   friend class TestChatSession;
 
-public:
+ public:
   using Protocol = Tlv;
   using Ptr = std::shared_ptr<ChatSession>;
 
@@ -65,8 +65,12 @@ public:
   void Send(std::string msgData, unsigned int msgID);
   void Close();
   void ClearSession();
-  Ptr GetSharedSelf() { return shared_from_this(); }
-  net::io_context &getIoContext() { return iocontext; }
+  Ptr GetSharedSelf() {
+    return shared_from_this();
+  }
+  net::io_context &getIoContext() {
+    return iocontext;
+  }
 
   enum ParseState { WAIT_HEADER, WAIT_BODY };
 
@@ -88,4 +92,4 @@ public:
   net::io_context &iocontext;
 };
 
-} // namespace wim
+}  // namespace wim

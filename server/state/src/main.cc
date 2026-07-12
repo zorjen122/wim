@@ -7,10 +7,9 @@
  * 注意：该状态服务只是一个微服务，运行在网关服务器主机，其目的仅在后续扩展以及独立网关服务器的路由职责。[2025-3-18]
  */
 int main() {
-
   const char *configPath = std::getenv("WIM_CONFIG");
-  auto existConfig =
-      Configer::loadConfig(configPath ? configPath : "../conf/state-single.yaml");
+  auto existConfig = Configer::loadConfig(
+      configPath ? configPath : "../conf/state-single.yaml");
   if (!existConfig) {
     spdlog::error("Config load failed");
     return 0;

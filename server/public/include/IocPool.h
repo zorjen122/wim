@@ -9,7 +9,7 @@ namespace wim {
 class IocPool : public Singleton<IocPool> {
   friend Singleton<IocPool>;
 
-public:
+ public:
   using Service = boost::asio::io_context;
   using Work = boost::asio::executor_work_guard<Service::executor_type>;
   using WorkPtr = std::unique_ptr<Work>;
@@ -19,10 +19,10 @@ public:
   boost::asio::io_context &GetContext();
   void Stop();
 
-private:
+ private:
   IocPool(std::size_t size = 2);
   std::vector<Service> iocGroup;
   std::vector<WorkPtr> worker;
   std::vector<std::thread> threadGroup;
 };
-}; // namespace wim
+};  // namespace wim
