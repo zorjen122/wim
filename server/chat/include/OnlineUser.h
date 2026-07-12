@@ -3,7 +3,7 @@
 #include "ChatSession.h"
 #include "Const.h"
 #include "DbGlobal.h"
-#include <jsoncpp/json/value.h>
+#include "TcpMessageCodec.h"
 #include <memory>
 #include <string>
 #include <unordered_map>

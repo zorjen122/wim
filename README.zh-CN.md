@@ -38,7 +38,7 @@ Redis 启动和 smoke 测试脚本，便于重新把完整流程跑起来。
 本地环境大致需要：
 
 - C++ 构建工具：`clang`、`cmake`、`build-essential`、`pkg-config`。
-- gRPC 和 protobuf 开发包。
+- gRPC 和 protobuf 开发包，以及协议级 smoke 脚本所需的 Python protobuf 支持。
 - Boost、yaml-cpp、spdlog、fmt、jsoncpp、hiredis、librdkafka 开发包。
 - 启用 MySQL X Plugin 的 MySQL Server。
 - 支持 X DevAPI 的 MySQL Connector/C++。

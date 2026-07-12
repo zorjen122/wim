@@ -7,7 +7,7 @@ Tested on Ubuntu 26.04 with clang.
 | Component | Used by | Packages / runtime |
 | --- | --- | --- |
 | C++ toolchain | all C++ services | `clang`, `cmake`, `build-essential`, `pkg-config` |
-| Protobuf / gRPC | gate, state, chat, file, verify RPC clients | `protobuf-compiler`, `protobuf-compiler-grpc`, `libprotobuf-dev`, `libgrpc++-dev`, `libgrpc-dev` |
+| Protobuf / gRPC | gate, state, chat, file, verify RPC clients, protocol smoke scripts | `protobuf-compiler`, `protobuf-compiler-grpc`, `libprotobuf-dev`, `libgrpc++-dev`, `libgrpc-dev`, `python3-protobuf` |
 | Boost.Asio / Beast | gate, chat, test client | `libboost-dev`, `libboost-filesystem-dev` |
 | Config / logging / JSON | all C++ services | `libyaml-cpp-dev`, `libspdlog-dev`, `libfmt-dev`, `libjsoncpp-dev` |
 | Redis | verify codes, online users, ids, de-dup cache | `redis-server`, `libhiredis-dev` |
@@ -20,7 +20,7 @@ Install from Ubuntu repositories:
 ```bash
 sudo apt-get install -y \
   clang cmake build-essential pkg-config \
-  protobuf-compiler protobuf-compiler-grpc libprotobuf-dev \
+  protobuf-compiler protobuf-compiler-grpc libprotobuf-dev python3-protobuf \
   libgrpc++-dev libgrpc-dev \
   libboost-dev libboost-filesystem-dev \
   libyaml-cpp-dev libspdlog-dev libfmt-dev libjsoncpp-dev \

@@ -1,7 +1,5 @@
 #pragma once
 #include <functional>
-#include <jsoncpp/json/json.h>
-#include <jsoncpp/json/value.h>
 #include <map>
 #include <queue>
 #include <spdlog/spdlog.h>
@@ -9,6 +7,7 @@
 
 #include "ChatSession.h"
 #include "Const.h"
+#include "TcpMessageCodec.h"
 
 namespace wim {
 
@@ -17,7 +16,7 @@ class Service : public Singleton<Service> {
 
  public:
   using HandleType =
-      std::function<Json::Value(ChatSession::Ptr, uint32_t, Json::Value &)>;
+      std::function<TcpPacket(ChatSession::Ptr, uint32_t, TcpPacket &)>;
 
   ~Service();
   void PushService(std::shared_ptr<Channel> package);
@@ -39,36 +38,35 @@ class Service : public Singleton<Service> {
 
 // 已成功
 
-Json::Value OnLogin(ChatSession::Ptr session, uint32_t msgID,
-                    Json::Value &request);
+TcpPacket OnLogin(ChatSession::Ptr session, uint32_t msgID, TcpPacket &request);
 
-Json::Value PingHandle(ChatSession::Ptr session, uint32_t msgID,
-                       Json::Value &request);
+TcpPacket PingHandle(ChatSession::Ptr session, uint32_t msgID,
+                     TcpPacket &request);
 
-Json::Value TextSend(ChatSession::Ptr session, uint32_t msgID,
-                     Json::Value &request);
+TcpPacket TextSend(ChatSession::Ptr session, uint32_t msgID,
+                   TcpPacket &request);
 
-Json::Value UploadFile(ChatSession::Ptr session, uint32_t msgID,
-                       Json::Value &request);
+TcpPacket UploadFile(ChatSession::Ptr session, uint32_t msgID,
+                     TcpPacket &request);
 
-Json::Value FileSend(ChatSession::Ptr session, uint32_t msgID,
-                     Json::Value &request);
+TcpPacket FileSend(ChatSession::Ptr session, uint32_t msgID,
+                   TcpPacket &request);
 
-Json::Value pullFriendApplyList(ChatSession::Ptr session, uint32_t msgID,
-                                Json::Value &request);
-Json::Value pullFriendList(ChatSession::Ptr session, uint32_t msgID,
-                           Json::Value &request);
-Json::Value pullSessionMessageList(ChatSession::Ptr session, uint32_t msgID,
-                                   Json::Value &request);
-Json::Value pullMessageList(ChatSession::Ptr session, uint32_t msgID,
-                            Json::Value &request);
-Json::Value UserQuit(ChatSession::Ptr session, uint32_t msgID,
-                     Json::Value &request);
+TcpPacket pullFriendApplyList(ChatSession::Ptr session, uint32_t msgID,
+                              TcpPacket &request);
+TcpPacket pullFriendList(ChatSession::Ptr session, uint32_t msgID,
+                         TcpPacket &request);
+TcpPacket pullSessionMessageList(ChatSession::Ptr session, uint32_t msgID,
+                                 TcpPacket &request);
+TcpPacket pullMessageList(ChatSession::Ptr session, uint32_t msgID,
+                          TcpPacket &request);
+TcpPacket UserQuit(ChatSession::Ptr session, uint32_t msgID,
+                   TcpPacket &request);
 
-Json::Value SerachUser(ChatSession::Ptr session, uint32_t msgID,
-                       Json::Value &request);
+TcpPacket SerachUser(ChatSession::Ptr session, uint32_t msgID,
+                     TcpPacket &request);
 
-Json::Value AckHandle(ChatSession::Ptr session, uint32_t msgID,
-                      Json::Value &request);
+TcpPacket AckHandle(ChatSession::Ptr session, uint32_t msgID,
+                    TcpPacket &request);
 
 };  // namespace wim

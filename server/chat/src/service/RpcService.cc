@@ -9,7 +9,6 @@
 #include <grpcpp/client_context.h>
 #include <grpcpp/server_context.h>
 #include <grpcpp/support/status.h>
-#include <jsoncpp/json/value.h>
 
 #include "Friend.h"
 #include "Service.h"
@@ -30,16 +29,16 @@ grpc::Status ImRpcService::NotifyAddFriend(
   long to = request->to();
   std::string message = request->requestmessage();
 
-  Json::Value requestJsonData;
-  requestJsonData["from"] = Json::Value::Int64(from);
-  requestJsonData["to"] = Json::Value::Int64(to);
-  requestJsonData["requestMessage"] = Json::Value(message);
-  requestJsonData["__skipStorage"] = true;
+  TcpPacket requestData;
+  requestData.set_from(from);
+  requestData.set_to(to);
+  requestData.set_request_message(message);
+  requestData.set_skip_storage(true);
 
   auto localServiceResponse =
-      wim::NotifyAddFriend(NULL, ID_NOTIFY_ADD_FRIEND_REQ, requestJsonData);
+      wim::NotifyAddFriend(NULL, ID_NOTIFY_ADD_FRIEND_REQ, requestData);
 
-  int ec = localServiceResponse["error"].asInt();
+  int ec = TcpPacketError(localServiceResponse);
   if (ec < 0) {
     LOG_INFO(businessLogger, "error: {}", ec);
     return grpc::Status::CANCELLED;
@@ -55,17 +54,17 @@ grpc::Status ImRpcService::ReplyAddFriend(ServerContext *context,
   bool accept = request->accept();
   std::string message = request->replymessage();
 
-  Json::Value requestJsonData;
-  requestJsonData["from"] = Json::Value::Int64(from);
-  requestJsonData["to"] = Json::Value::Int64(to);
-  requestJsonData["accept"] = Json::Value(accept);
-  requestJsonData["replyMessage"] = Json::Value(message);
-  requestJsonData["__skipStorage"] = true;
+  TcpPacket requestData;
+  requestData.set_from(from);
+  requestData.set_to(to);
+  requestData.set_accept(accept);
+  requestData.set_reply_message(message);
+  requestData.set_skip_storage(true);
 
   auto localServiceResponse =
-      wim::ReplyAddFriend(nullptr, ID_REPLY_ADD_FRIEND_REQ, requestJsonData);
+      wim::ReplyAddFriend(nullptr, ID_REPLY_ADD_FRIEND_REQ, requestData);
 
-  int ec = localServiceResponse["error"].asInt();
+  int ec = TcpPacketError(localServiceResponse);
   if (ec < 0) {
     LOG_INFO(businessLogger, "error: ", ec);
     return grpc::Status::CANCELLED;
@@ -79,17 +78,17 @@ grpc::Status ImRpcService::TextSendMessage(
   long from = request->from();
   long to = request->to();
   std::string text = request->text();
-  Json::Value requestJsonData;
-  requestJsonData["seq"] = Json::Value::Int64(request->seq());
-  requestJsonData["from"] = Json::Value::Int64(from);
-  requestJsonData["to"] = Json::Value::Int64(to);
-  requestJsonData["data"] = Json::Value(text);
-  requestJsonData["sessionKey"] = Json::Value::Int64(request->session_key());
+  TcpPacket requestData;
+  requestData.set_seq(request->seq());
+  requestData.set_from(from);
+  requestData.set_to(to);
+  requestData.set_data(text);
+  requestData.set_session_key(request->session_key());
 
   auto localServiceResponse =
-      wim::TextSend(nullptr, ID_TEXT_SEND_REQ, requestJsonData);
+      wim::TextSend(nullptr, ID_TEXT_SEND_REQ, requestData);
 
-  int ec = localServiceResponse["error"].asInt();
+  int ec = TcpPacketError(localServiceResponse);
   if (ec != 0) {
     LOG_INFO(businessLogger, "error: {}", ec);
     return grpc::Status::CANCELLED;

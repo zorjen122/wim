@@ -8,6 +8,8 @@ logs/
 .demos/
 .agents/
 .codex/
+__pycache__/
+*.pyc
 *.o
 *.out
 compile_commands.json

@@ -8,7 +8,6 @@
 #include <exception>
 #include <fstream>
 #include <iostream>
-#include <jsoncpp/json/value.h>
 
 namespace wim {
 
@@ -24,11 +23,7 @@ static long generateRandomId() {
   return dis(gen);  // 返回一个随机数
 }
 
-static bool hasField(const Json::Value &value, const char *field) {
-  return value.isObject() && value.isMember(field);
-}
-
-void Chat::nullHandle(const Json::Value &response) {}
+void Chat::nullHandle(const TcpPacket &response) {}
 
 Chat::Chat() {
   using namespace std::placeholders;
@@ -103,40 +98,38 @@ void File_recv_rsp_handler(int from, int to, long seq, std::string text) {
   ofs.close();
 }
 
-void Chat::replyAddFriendSenderHandle(const Json::Value &response) {
-  auto fromUid = response["uid"].asInt64();
-  auto accept = response["accept"].asBool();
-  auto replyMessage = response["replyMessage"].asString();
+void Chat::replyAddFriendSenderHandle(const TcpPacket &response) {
+  auto fromUid = response.uid();
+  auto accept = response.accept();
+  auto replyMessage = response.reply_message();
   if (friendApplyMap.find(fromUid) == friendApplyMap.end()) {
     spdlog::error("好友申请回应信息未保存到本地, uid:{}", fromUid);
     return;
   }
-  if (response["error"].asInt() == ErrorCodes::Success) {
+  if (TcpPacketError(response) == ErrorCodes::Success) {
     friendApplyMap[fromUid]->status = accept;
     friendApplyMap[fromUid]->content = replyMessage;
   }
 }
 
-void Chat::replyAddFriendRecvierHandle(const Json::Value &response) {
-  long uid = hasField(response, "uid") ? response["uid"].asInt64()
-                                       : response["from"].asInt64();
+void Chat::replyAddFriendRecvierHandle(const TcpPacket &response) {
+  long uid = response.has_uid() ? response.uid() : response.from();
 
-  if (hasField(response, "seq")) {
-    long seq = response["seq"].asInt64();
+  if (response.has_seq()) {
+    long seq = response.seq();
     bool missCache = CheckAckCache(seq);
     if (missCache)
       return;
-    Json::Value ack;
-    ack["seq"] = response["seq"];
-    ack["uid"] = Json::Value::Int64(user->uid);
-    chat->Send(ack.toStyledString(), ID_ACK);
+    TcpPacket ack;
+    ack.set_seq(response.seq());
+    ack.set_uid(user->uid);
+    chat->Send(SerializeTcpPacket(ack), ID_ACK);
   }
 
   // 服务端处理失败时则回复原来状态
-  if (hasField(response, "error") &&
-      response["error"].asInt() != ErrorCodes::Success) {
+  if (response.has_error() && response.error() != ErrorCodes::Success) {
     LOG_WARN(businessLogger, "答复好友申请出现了异常, message: {}",
-             response["message"].asString());
+             response.message());
     if (friendApplyMap.find(uid) == friendApplyMap.end()) {
       LOG_INFO(businessLogger, "friend apply not found, uid:{}", uid);
       return;
@@ -150,13 +143,12 @@ void Chat::replyAddFriendRecvierHandle(const Json::Value &response) {
   }
 }
 
-void Chat::notifyAddFriendSenderHandle(const Json::Value &response) {
-  long uid = response["uid"].asInt64();
+void Chat::notifyAddFriendSenderHandle(const TcpPacket &response) {
+  long uid = response.uid();
 
   // 服务端处理失败时则回复原来状态
-  if (response["error"].asInt() != ErrorCodes::Success) {
-    LOG_WARN(businessLogger, "申请好友失败, message: {}",
-             response["message"].asString());
+  if (TcpPacketError(response) != ErrorCodes::Success) {
+    LOG_WARN(businessLogger, "申请好友失败, message: {}", response.message());
     if (friendApplyMap.find(uid) == friendApplyMap.end()) {
       LOG_INFO(businessLogger, "申请好友信息未保存到本地, uid:{}", uid);
       return;
@@ -165,18 +157,17 @@ void Chat::notifyAddFriendSenderHandle(const Json::Value &response) {
     return;
   }
 }
-void Chat::notifyAddFriendRecvierHandle(const Json::Value &response) {
+void Chat::notifyAddFriendRecvierHandle(const TcpPacket &response) {
   db::FriendApply::Ptr apply(new db::FriendApply());
-  apply->from = response["from"].asInt64();
-  apply->content = hasField(response, "content")
-                       ? response["content"].asString()
-                       : response["requestMessage"].asString();
+  apply->from = response.from();
+  apply->content =
+      response.has_content() ? response.content() : response.request_message();
   apply->to = user->uid;
   apply->status = 0;
   friendApplyMap[apply->from] = apply;
 }
-void Chat::loginInitHandle(const Json::Value &response) {
-  auto errcode = response["error"].asInt();
+void Chat::loginInitHandle(const TcpPacket &response) {
+  auto errcode = TcpPacketError(response);
   {
     std::lock_guard<std::mutex> lock(loginMutex);
     loginInitDone = true;
@@ -189,10 +180,10 @@ void Chat::loginInitHandle(const Json::Value &response) {
     return;
   }
 
-  std::string name = response["name"].asString();
-  short age = response["age"].asInt();
-  std::string sex = response["sex"].asString();
-  std::string headImageURL = response["headImageURL"].asString();
+  std::string name = response.name();
+  short age = response.age();
+  std::string sex = response.sex();
+  std::string headImageURL = response.head_image_url();
 }
 
 bool Chat::waitLoginReady(int timeoutSeconds) {
@@ -203,13 +194,13 @@ bool Chat::waitLoginReady(int timeoutSeconds) {
   return hasResponse && loginInitOk;
 }
 
-void Chat::textSenderHandle(const Json::Value &response) {
-  if (!hasField(response, "seq")) {
+void Chat::textSenderHandle(const TcpPacket &response) {
+  if (!response.has_seq()) {
     LOG_INFO(businessLogger, "发送响应未携带 seq，响应: {}",
-             response.toStyledString());
+             TcpPacketDebugString(response));
     return;
   }
-  long seq = response["seq"].asInt64();
+  long seq = response.seq();
   auto timer = waitAckTimerMap[seq];
   if (timer == nullptr) {
     LOG_INFO(businessLogger,
@@ -222,13 +213,13 @@ void Chat::textSenderHandle(const Json::Value &response) {
   LOG_INFO(businessLogger, "消息成功被接收，序列号为：{}", seq);
 }
 bool Chat::CheckAckCache(int64_t seq) {
-  Json::Value ack;
-  ack["seq"] = Json::Value::Int64(seq);
-  ack["uid"] = Json::Value::Int64(user->uid);
+  TcpPacket ack;
+  ack.set_seq(seq);
+  ack.set_uid(user->uid);
   bool missCache = seqCacheExpireMap.find(seq) != seqCacheExpireMap.end();
   // 若ACK已被服务端收到，则意味着其不会重发，反之则重发，若其重发，则复发一次ACK给客户端
   if (missCache) {
-    chat->Send(ack.toStyledString(), ID_ACK);
+    chat->Send(SerializeTcpPacket(ack), ID_ACK);
     return true;
   }
 
@@ -246,12 +237,12 @@ bool Chat::CheckAckCache(int64_t seq) {
   return false;
 }
 
-void Chat::textRecvierHandle(const Json::Value &response) {
-  long from = response["from"].asInt64();
-  long to = response["to"].asInt64();
-  long seq = response["seq"].asInt64();
-  std::string data = response["data"].asString();
-  int type = response["type"].asInt();
+void Chat::textRecvierHandle(const TcpPacket &response) {
+  long from = response.from();
+  long to = response.to();
+  long seq = response.seq();
+  std::string data = response.data();
+  int type = response.type();
 
   bool missCache = CheckAckCache(seq);
   if (missCache)
@@ -297,64 +288,63 @@ void Chat::textRecvierHandle(const Json::Value &response) {
     });
   }
 
-  Json::Value ack;
-  ack["seq"] = response["seq"];
-  ack["uid"] = Json::Value::Int64(user->uid);
-  chat->Send(ack.toStyledString(), ID_ACK);
+  TcpPacket ack;
+  ack.set_seq(response.seq());
+  ack.set_uid(user->uid);
+  chat->Send(SerializeTcpPacket(ack), ID_ACK);
 }
-void Chat::uploadFileHandle(const Json::Value &response) {}
+void Chat::uploadFileHandle(const TcpPacket &response) {}
 
 void Chat::handleRun(Tlv::Ptr protocolData) {
-  Json::Value response;
-  Json::Reader reader;
-  if (!reader.parse(protocolData->getDataString(), response)) {
-    LOG_WARN(businessLogger, "响应 JSON 解析失败, 服务: {}, 原始数据: {}",
-             getServiceIdString(protocolData->id),
-             protocolData->getDataString());
+  TcpPacket response;
+  if (!ParseTcpPacket(protocolData->getDataString(), response)) {
+    LOG_WARN(businessLogger,
+             "响应 Protobuf 解析失败, 服务: {}, 原始数据大小: {}",
+             getServiceIdString(protocolData->id), protocolData->getDataSize());
     return;
   }
 
-  auto errcode = hasField(response, "error") ? response["error"].asInt()
-                                             : ErrorCodes::Success;
+  auto errcode = TcpPacketError(response);
   if (errcode == -1) {
-    LOG_WARN(businessLogger, "响应异常： {}", response.toStyledString());
+    LOG_WARN(businessLogger, "响应异常： {}", TcpPacketDebugString(response));
   }
 
   auto handleFunc = handleMap.find(protocolData->id);
 
   if (handleFunc == handleMap.end()) {
     LOG_WARN(businessLogger, "没有这样的服务响应函数, 响应码: {}, response: {}",
-             protocolData->id, response.toStyledString());
+             protocolData->id, TcpPacketDebugString(response));
     return;
   }
 
   LOG_DEBUG(wim::businessLogger, "响应服务: {}, 响应包: {}",
-            getServiceIdString(protocolData->id), response.toStyledString());
+            getServiceIdString(protocolData->id),
+            TcpPacketDebugString(response));
   try {
     handleFunc->second(response);
   } catch (const std::exception &e) {
     LOG_ERROR(businessLogger, "处理响应异常, 服务: {}, 异常: {}, 响应: {}",
               getServiceIdString(protocolData->id), e.what(),
-              response.toStyledString());
+              TcpPacketDebugString(response));
   }
 }
 
 void Chat::initUserInfo(db::UserInfo::Ptr userInfo) {
-  Json::Value request;
-  request["name"] = userInfo->name;
-  request["age"] = userInfo->age;
-  request["sex"] = userInfo->sex;
-  chat->Send(request.toStyledString(), ID_INIT_USER_INFO_REQ);
+  TcpPacket request;
+  request.set_name(userInfo->name);
+  request.set_age(userInfo->age);
+  request.set_sex(userInfo->sex);
+  chat->Send(SerializeTcpPacket(request), ID_INIT_USER_INFO_REQ);
 }
 
-void Chat::initUserInfoHandle(const Json::Value &response) {
+void Chat::initUserInfoHandle(const TcpPacket &response) {
   // pull...
 }
 bool Chat::login(bool isFirstLogin) {
-  Json::Value loginRequest;
-  loginRequest["uid"] = Json::Value::Int64(user->uid);
+  TcpPacket loginRequest;
+  loginRequest.set_uid(user->uid);
 
-  chat->Send(loginRequest.toStyledString(), ID_LOGIN_INIT_REQ);
+  chat->Send(SerializeTcpPacket(loginRequest), ID_LOGIN_INIT_REQ);
   pullFriendList();
   pullFriendApplyList();
   pullMessageList();
@@ -362,17 +352,16 @@ bool Chat::login(bool isFirstLogin) {
 }
 
 void Chat::quit() {
-  Json::Value quitRequest;
-  quitRequest["uid"] = Json::Value::Int64(user->uid);
-  chat->Send(quitRequest.toStyledString(), ID_USER_QUIT_REQ);
+  TcpPacket quitRequest;
+  quitRequest.set_uid(user->uid);
+  chat->Send(SerializeTcpPacket(quitRequest), ID_USER_QUIT_REQ);
 }
 
 bool Chat::ping() {
-  Json::Value ping;
-  ping["uid"] = Json::Value::Int64(user->uid);
+  TcpPacket ping;
+  ping.set_uid(user->uid);
 
-  std::string pingBuffer = ping.toStyledString();
-  // LOG_INFO(businessLogger, "request json: {}", pingBuffer);
+  std::string pingBuffer = SerializeTcpPacket(ping);
   chat->Send(pingBuffer, ID_PING_REQ);
   return true;
 }
@@ -401,7 +390,7 @@ bool Chat::OnheartBeat(int count) {
   });
   return true;
 }
-void Chat::pingHandle(const Json::Value &response) {
+void Chat::pingHandle(const TcpPacket &response) {
   if (waitPongTimer == nullptr) {
     spdlog::warn("心跳定时器为空");
     return;
@@ -414,66 +403,65 @@ void Chat::arrhythmiaHandle(long uid) {
   LOG_INFO(businessLogger, "arrhythmiaHandle: uid-{}", uid);
 }
 
-void Chat::serachUserHandle(const Json::Value &response) {
-  long uid = response["uid"].asInt64();
-  std::string name = response["name"].asString();
-  short age = response["age"].asInt();
-  short sex = response["sex"].asInt();
-  std::string headImageURL = response["headImageURL"].asString();
+void Chat::serachUserHandle(const TcpPacket &response) {
+  long uid = response.uid();
+  std::string name = response.name();
+  short age = response.age();
+  std::string sex = response.sex();
+  std::string headImageURL = response.head_image_url();
 }
 
 bool Chat::searchUser(const std::string &username) {
-  Json::Value searchReq;
-  searchReq["username"] = username;
-  chat->Send(searchReq.toStyledString(), ID_SEARCH_USER_REQ);
+  TcpPacket searchReq;
+  searchReq.set_username(username);
+  chat->Send(SerializeTcpPacket(searchReq), ID_SEARCH_USER_REQ);
 
   LOG_INFO(wim::businessLogger, "search user: {}", username);
   return true;
 }
 
 bool Chat::pullFriendList() {
-  Json::Value request;
-  request["uid"] = Json::Value::Int64(user->uid);
-  chat->Send(request.toStyledString(), ID_PULL_FRIEND_LIST_REQ);
+  TcpPacket request;
+  request.set_uid(user->uid);
+  chat->Send(SerializeTcpPacket(request), ID_PULL_FRIEND_LIST_REQ);
   return true;
 }
 bool Chat::pullFriendApplyList() {
-  Json::Value request;
-  request["uid"] = Json::Value::Int64(user->uid);
-  chat->Send(request.toStyledString(), ID_PULL_FRIEND_APPLY_LIST_REQ);
+  TcpPacket request;
+  request.set_uid(user->uid);
+  chat->Send(SerializeTcpPacket(request), ID_PULL_FRIEND_APPLY_LIST_REQ);
   return true;
 }
 
 bool Chat::pullMessageList() {
-  Json::Value request;
-  request["uid"] = Json::Value::Int64(user->uid);
-  request["lastMsgId"] = Json::Value::Int64(0);
-  request["limit"] = Json::Value::Int(10);
-  chat->Send(request.toStyledString(), ID_PULL_MESSAGE_LIST_REQ);
+  TcpPacket request;
+  request.set_uid(user->uid);
+  request.set_last_msg_id(0);
+  request.set_limit(10);
+  chat->Send(SerializeTcpPacket(request), ID_PULL_MESSAGE_LIST_REQ);
   return true;
 }
 
 bool Chat::pullSessionMessageList(long uid) {
-  Json::Value request;
-  request["from"] = Json::Value::Int64(uid);
-  request["to"] = Json::Value::Int64(user->uid);
-  request["lastMsgId"] = Json::Value::Int64(0);
-  request["limit"] = Json::Value::Int(10);
-  chat->Send(request.toStyledString(), ID_PULL_SESSION_MESSAGE_LIST_REQ);
+  TcpPacket request;
+  request.set_from(uid);
+  request.set_to(user->uid);
+  request.set_last_msg_id(0);
+  request.set_limit(10);
+  chat->Send(SerializeTcpPacket(request), ID_PULL_SESSION_MESSAGE_LIST_REQ);
 
   return true;
 }
 
-void Chat::pullFriendListHandle(const Json::Value &response) {
+void Chat::pullFriendListHandle(const TcpPacket &response) {
   try {
-    Json::Value tmp = response["friendList"];
-    for (auto &item : tmp) {
+    for (const auto &item : response.friend_list()) {
       db::UserInfo::Ptr info(new db::UserInfo());
-      info->uid = item["uid"].asInt64();
-      info->name = item["name"].asString();
-      info->age = item["age"].asInt();
-      info->sex = item["sex"].asString();
-      info->headImageURL = item["headImageURL"].asString();
+      info->uid = item.uid();
+      info->name = item.name();
+      info->age = item.age();
+      info->sex = item.sex();
+      info->headImageURL = item.head_image_url();
       friendMap[info->uid] = info;
     }
   } catch (const std::exception &e) {
@@ -481,44 +469,41 @@ void Chat::pullFriendListHandle(const Json::Value &response) {
   }
 }
 
-void Chat::pullFriendApplyListHandle(const Json::Value &response) {
-  Json::Value tmp = response["applyList"];
-  for (auto &item : tmp) {
+void Chat::pullFriendApplyListHandle(const TcpPacket &response) {
+  for (const auto &item : response.apply_list()) {
     db::FriendApply::Ptr apply(new db::FriendApply());
-    apply->from = item["from"].asInt64();
-    apply->to = item["to"].asInt64();
-    apply->status = item["status"].asInt();
-    apply->content = item["content"].asString();
-    apply->createTime = hasField(item, "createTime")
-                            ? item["createTime"].asString()
-                            : item["applyDateTime"].asString();
+    apply->from = item.from();
+    apply->to = item.to();
+    apply->status = item.status();
+    apply->content = item.content();
+    apply->createTime = item.create_time().empty() ? item.apply_date_time()
+                                                   : item.create_time();
     friendApplyMap[apply->to] = apply;
   }
 }
 
-void Chat::pullMessageListHandle(const Json::Value &response) {
-  Json::Value tmp = response["messageList"];
-  long uid = response["uid"].asInt64();
+void Chat::pullMessageListHandle(const TcpPacket &response) {
+  long uid = response.uid();
   db::Message::MessageGroup messageList(new std::vector<db::Message::Ptr>());
-  for (auto &item : tmp) {
+  for (const auto &item : response.message_list()) {
     db::Message::Ptr message(new db::Message());
-    message->messageId = item["messageId"].asInt64();
-    message->type = item["type"].asInt();
-    message->content = item["content"].asString();
-    message->status = item["status"].asInt();
-    message->sendDateTime = item["sendDateTime"].asString();
-    message->readDateTime = item["readDateTime"].asString();
+    message->messageId = item.message_id();
+    message->type = item.type();
+    message->content = item.content();
+    message->status = item.status();
+    message->sendDateTime = item.send_date_time();
+    message->readDateTime = item.read_date_time();
     messageList->push_back(message);
   }
   messageListMap[uid] = messageList;
 }
 
 bool Chat::notifyAddFriend(long uid, const std::string &requestMessage) {
-  Json::Value addFriendReq;
-  addFriendReq["from"] = Json::Value::Int64(user->uid);
-  addFriendReq["to"] = Json::Value::Int64(uid);
-  addFriendReq["requestMessage"] = requestMessage;
-  chat->Send(addFriendReq.toStyledString(), ID_NOTIFY_ADD_FRIEND_REQ);
+  TcpPacket addFriendReq;
+  addFriendReq.set_from(user->uid);
+  addFriendReq.set_to(uid);
+  addFriendReq.set_request_message(requestMessage);
+  chat->Send(SerializeTcpPacket(addFriendReq), ID_NOTIFY_ADD_FRIEND_REQ);
 
   friendApplyMap[uid] = std::make_shared<db::FriendApply>();
   friendApplyMap[uid]->from = user->uid;
@@ -530,15 +515,15 @@ bool Chat::notifyAddFriend(long uid, const std::string &requestMessage) {
 }
 bool Chat::replyAddFriend(long uid, bool accept,
                           const std::string &replyMessage) {
-  Json::Value addFriendRequest;
-  addFriendRequest["from"] = Json::Value::Int64(user->uid);
-  addFriendRequest["to"] = Json::Value::Int64(uid);
-  addFriendRequest["accept"] = accept;
-  addFriendRequest["replyMessage"] = replyMessage;
-  LOG_INFO(businessLogger, "request json: {}",
-           addFriendRequest.toStyledString());
+  TcpPacket addFriendRequest;
+  addFriendRequest.set_from(user->uid);
+  addFriendRequest.set_to(uid);
+  addFriendRequest.set_accept(accept);
+  addFriendRequest.set_reply_message(replyMessage);
+  LOG_INFO(businessLogger, "request packet: {}",
+           TcpPacketDebugString(addFriendRequest));
 
-  chat->Send(addFriendRequest.toStyledString(), ID_REPLY_ADD_FRIEND_REQ);
+  chat->Send(SerializeTcpPacket(addFriendRequest), ID_REPLY_ADD_FRIEND_REQ);
   friendApplyMap[uid] = std::make_shared<db::FriendApply>();
   friendApplyMap[uid]->status = accept;
   friendApplyMap[uid]->content = replyMessage;
@@ -570,65 +555,65 @@ void Chat::onReWrite(long id, const std::string &message, long serviceId,
   });
 }
 void Chat::sendTextMessage(long uid, const std::string &message) {
-  Json::Value textMsg;
+  TcpPacket textMsg;
 
   // 该id仅是客户端的序列号，其作用是在之后接收到服务器ACK能找到并取消重传定时器
   long seq = generateRandomId();
-  textMsg["seq"] = Json::Value::Int64(seq);
-  textMsg["from"] = Json::Value::Int64(user->uid);
-  textMsg["to"] = Json::Value::Int64(uid);
-  textMsg["data"] = message;
-  textMsg["sessionKey"] = 0;
-  LOG_INFO(businessLogger, "request json: {}", textMsg.toStyledString());
+  textMsg.set_seq(seq);
+  textMsg.set_from(user->uid);
+  textMsg.set_to(uid);
+  textMsg.set_data(message);
+  textMsg.set_session_key(0);
+  LOG_INFO(businessLogger, "request packet: {}", TcpPacketDebugString(textMsg));
 
-  onReWrite(seq, textMsg.toStyledString(), ID_TEXT_SEND_REQ);
+  onReWrite(seq, SerializeTcpPacket(textMsg), ID_TEXT_SEND_REQ);
 }
 
 // 群聊
 bool Chat::createGroup(const std::string &groupName) {
-  Json::Value request;
-  request["groupName"] = groupName;
-  request["uid"] = Json::Value::Int64(user->uid);
-  chat->Send(request.toStyledString(), ID_GROUP_CREATE_REQ);
+  TcpPacket request;
+  request.set_group_name(groupName);
+  request.set_uid(user->uid);
+  chat->Send(SerializeTcpPacket(request), ID_GROUP_CREATE_REQ);
   return true;
 }
 bool Chat::joinGroup(long groupId, const std::string &requestMessage) {
-  Json::Value request;
-  request["gid"] = Json::Value::Int64(groupId);
-  request["uid"] = Json::Value::Int64(user->uid);
-  request["requestMessage"] = requestMessage;
-  chat->Send(request.toStyledString(), ID_GROUP_NOTIFY_JOIN_REQ);
+  TcpPacket request;
+  request.set_gid(groupId);
+  request.set_uid(user->uid);
+  request.set_request_message(requestMessage);
+  chat->Send(SerializeTcpPacket(request), ID_GROUP_NOTIFY_JOIN_REQ);
   return true;
 }
 bool Chat::replyJoinGroup(long groupId, long requestorUid, bool accept) {
-  Json::Value request;
-  request["gid"] = Json::Value::Int64(groupId);
-  request["managerUid"] = Json::Value::Int64(user->uid);
-  request["requestorUid"] = Json::Value::Int64(requestorUid);
-  request["accept"] = accept;
-  chat->Send(request.toStyledString(), ID_GROUP_REPLY_JOIN_REQ);
+  TcpPacket request;
+  request.set_gid(groupId);
+  request.set_manager_uid(user->uid);
+  request.set_requestor_uid(requestorUid);
+  request.set_accept(accept);
+  chat->Send(SerializeTcpPacket(request), ID_GROUP_REPLY_JOIN_REQ);
   return true;
 }
 bool Chat::quitGroup(long groupId) {
-  Json::Value request;
-  request["groupId"] = Json::Value::Int64(groupId);
-  request["uid"] = Json::Value::Int64(user->uid);
-  chat->Send(request.toStyledString(), ID_GROUP_QUIT_REQ);
+  TcpPacket request;
+  request.set_group_id(groupId);
+  request.set_uid(user->uid);
+  chat->Send(SerializeTcpPacket(request), ID_GROUP_QUIT_REQ);
   return true;
 }
 bool Chat::sendGroupMessage(long groupId, const std::string &message) {
-  Json::Value request;
-  request["groupId"] = Json::Value::Int64(groupId);
-  request["uid"] = Json::Value::Int64(user->uid);
-  request["text"] = message;
-  chat->Send(request.toStyledString(), ID_GROUP_TEXT_SEND_REQ);
+  TcpPacket request;
+  request.set_group_id(groupId);
+  request.set_uid(user->uid);
+  request.set_data(message);
+  chat->Send(SerializeTcpPacket(request), ID_GROUP_TEXT_SEND_REQ);
   return true;
 }
 bool Chat::pullGroupMember(long groupId) {
-  Json::Value request;
-  request["groupId"] = Json::Value::Int64(groupId);
-  request["uid"] = Json::Value::Int64(user->uid);
-  chat->Send(request.toStyledString(), ID_GROUP_PULL_MEMBER_REQ);
+  TcpPacket request;
+  request.set_group_id(groupId);
+  request.set_uid(user->uid);
+  chat->Send(SerializeTcpPacket(request), ID_GROUP_PULL_MEMBER_REQ);
   return true;
 }
 
@@ -636,68 +621,65 @@ bool Chat::pullGroupMessage(long groupId, long lastMsgId, int limit) {
   return true;
 }
 
-void Chat::createGroupHandle(Json::Value &response) {
+void Chat::createGroupHandle(TcpPacket &response) {
   db::GroupManager info;
 
-  info.gid = response["gid"].asInt64();
-  info.sessionKey = response["sessionKey"].asInt64();
-  info.createTime = response["createTime"].asString();
+  info.gid = response.gid();
+  info.sessionKey = response.session_key();
+  info.createTime = response.create_time();
 }
 
-void Chat::joinGroupSenderHandle(Json::Value &response) {}
-void Chat::joinGroupRecvierHandle(Json::Value &response) {
+void Chat::joinGroupSenderHandle(TcpPacket &response) {}
+void Chat::joinGroupRecvierHandle(TcpPacket &response) {
   try {
-    long seq = response["seq"].asInt64();
+    long seq = response.seq();
 
     bool missCache = CheckAckCache(seq);
     if (missCache)
       return;
 
-    Json::Value ack;
-    ack["seq"] = response["seq"];
-    ack["uid"] = Json::Value::Int64(user->uid);
-    chat->Send(ack.toStyledString(), ID_ACK);
+    TcpPacket ack;
+    ack.set_seq(response.seq());
+    ack.set_uid(user->uid);
+    chat->Send(SerializeTcpPacket(ack), ID_ACK);
   } catch (std::exception &e) {
     LOG_ERROR(businessLogger, "异常：{}", e.what());
   }
 }
-void Chat::replyJoinGroupSenderHandle(Json::Value &response) {}
-void Chat::replyJoinGroupRecvierHandle(Json::Value &response) {
-  long seq = response["seq"].asInt64();
+void Chat::replyJoinGroupSenderHandle(TcpPacket &response) {}
+void Chat::replyJoinGroupRecvierHandle(TcpPacket &response) {
+  long seq = response.seq();
   bool missCache = CheckAckCache(seq);
   if (missCache) {
     return;
   }
-  Json::Value ack;
-  ack["seq"] = response["seq"];
-  ack["uid"] = Json::Value::Int64(user->uid);
-  chat->Send(ack.toStyledString(), ID_ACK);
+  TcpPacket ack;
+  ack.set_seq(response.seq());
+  ack.set_uid(user->uid);
+  chat->Send(SerializeTcpPacket(ack), ID_ACK);
 }
 
-void Chat::quitGroupHandle(Json::Value &response) {}
-void Chat::sendGroupTextMessageHandle(Json::Value &response) {}
-void Chat::pullGroupMemberHandle(Json::Value &response) {
-  Json::Value list = response["memberList"];
-  long gid = response["groupId"].asInt64();
+void Chat::quitGroupHandle(TcpPacket &response) {}
+void Chat::sendGroupTextMessageHandle(TcpPacket &response) {}
+void Chat::pullGroupMemberHandle(TcpPacket &response) {
+  long gid = response.group_id();
   groupMemberMap[gid] = {};
 
-  for (auto &item : list) {
+  for (const auto &item : response.member_list()) {
     db::GroupMember::Ptr member;
     member = std::make_shared<db::GroupMember>();
-    member->uid = item["uid"].asInt64();
-    member->memberName = item["name"].asString();
-    member->joinTime = item["joinTime"].asString();
-    member->role = item["role"].asInt();
-    member->speech = item["speech"].asInt();
+    member->uid = item.uid();
+    member->memberName = item.name();
+    member->joinTime = item.join_time();
+    member->role = item.role();
+    member->speech = item.speech();
     groupMemberMap[gid].push_back(member);
   }
 }
-void Chat::pullGroupMessageHandle(Json::Value &response) {}
+void Chat::pullGroupMessageHandle(TcpPacket &response) {}
 
 // 文件
 bool Chat::uploadFile(const std::string &fileName) {
-  Json::Value request;
-
   std::fstream file(Configer::getSaveFilePath() + fileName,
                     std::ios::in | std::ios::binary);
   if (!file.is_open()) {
@@ -723,15 +705,14 @@ bool Chat::uploadFile(const std::string &fileName) {
     fileInfo->offset += bytesRead;
     fileInfo->data.append(buffer, bytesRead);
 
-    request["seq"] = Json::Value::Int64(seq);
-    request["uid"] = Json::Value::Int64(user->uid);
-    request["data"] = std::string(buffer, bytesRead);
-    request["fileName"] = fileName;
-    request["type"] = "TEXT";
+    TcpPacket request;
+    request.set_seq(seq);
+    request.set_uid(user->uid);
+    request.set_data(std::string(buffer, bytesRead));
+    request.set_file_name(fileName);
+    request.set_file_type("TEXT");
 
-    // onReWrite(seq, request.toStyledString(), ID_FILE_UPLOAD_REQ);
-
-    chat->Send(request.toStyledString(), ID_FILE_UPLOAD_REQ);
+    chat->Send(SerializeTcpPacket(request), ID_FILE_UPLOAD_REQ);
     seq++;
 
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -741,8 +722,6 @@ bool Chat::uploadFile(const std::string &fileName) {
   return true;
 }
 bool Chat::sendFile(long toId, const std::string &filePath) {
-  Json::Value request;
-
   std::fstream file(filePath, std::ios::in | std::ios::binary);
   if (!file.is_open()) {
     LOG_ERROR(businessLogger, "open file failed: {}", filePath);
@@ -767,13 +746,14 @@ bool Chat::sendFile(long toId, const std::string &filePath) {
     fileInfo->data.append(buffer, bytesRead);
 
     long chunkSeq = generateRandomId();
-    request["seq"] = Json::Value::Int64(chunkSeq);
-    request["from"] = Json::Value::Int64(user->uid);
-    request["to"] = Json::Value::Int64(toId);
-    request["data"] = std::string(buffer, bytesRead);
-    request["sessionKey"] = 0;
-    request["type"] = 2;
-    onReWrite(chunkSeq, request.toStyledString(), ID_FILE_SEND_REQ);
+    TcpPacket request;
+    request.set_seq(chunkSeq);
+    request.set_from(user->uid);
+    request.set_to(toId);
+    request.set_data(std::string(buffer, bytesRead));
+    request.set_session_key(0);
+    request.set_type(2);
+    onReWrite(chunkSeq, SerializeTcpPacket(request), ID_FILE_SEND_REQ);
     // 客户端主动P99延迟，保顺序
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
@@ -781,21 +761,21 @@ bool Chat::sendFile(long toId, const std::string &filePath) {
   file.close();
   return true;
 }
-void Chat::sendFileHandle(Json::Value &response) {
-  std::string name = response["name"].asString();
-  long seq = response["seq"].asInt64();
-  long toUid = response["to"].asInt64();
-  int status = response["status"].asInt();
+void Chat::sendFileHandle(TcpPacket &response) {
+  std::string name = response.name();
+  long seq = response.seq();
+  long toUid = response.to();
+  std::string status = response.status();
 
   LOG_INFO(businessLogger, "recv file: {}, seq: {}, toUid: {}, status: {}",
            name, seq, toUid, status);
 }
 
-void Chat::recvFileHandle(Json::Value &response) {
-  std::string name = response["name"].asString();
-  long seq = response["seq"].asInt64();
-  long fromUid = response["from"].asInt64();
-  std::string data = response["data"].asString();
+void Chat::recvFileHandle(TcpPacket &response) {
+  std::string name = response.name();
+  long seq = response.seq();
+  long fromUid = response.from();
+  std::string data = response.data();
 
   std::string savePath =
       "./" + std::to_string(user->uid) + "/files/" + name + ".txt";

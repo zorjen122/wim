@@ -40,7 +40,8 @@ and package installation commands.
 At a high level, the local environment needs:
 
 - C++ build tools: `clang`, `cmake`, `build-essential`, `pkg-config`.
-- gRPC and protobuf development packages.
+- gRPC and protobuf development packages, plus Python protobuf support for the
+  protocol-level smoke scripts.
 - Boost, yaml-cpp, spdlog, fmt, jsoncpp, hiredis, and librdkafka development
   packages.
 - MySQL Server with MySQL X Plugin enabled.

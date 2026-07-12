@@ -12,16 +12,12 @@ find_package(Boost REQUIRED COMPONENTS filesystem)
 find_package(gRPC REQUIRED)
 
 set(protobuf_MODULE_COMPATIBLE TRUE)
-wim_generate_grpc_proto(IM_PROTO ../public/proto/im.proto)
-wim_generate_grpc_proto(FILE_PROTO ../public/proto/file.proto)
 
 file(GLOB SOURCE src/**/*.cc)
-add_library(imChat ${SOURCE} ${IM_PROTO} ${FILE_PROTO})
+add_library(imChat ${SOURCE})
 add_executable(chat src/main.cc)
 
-target_include_directories(imChat PUBLIC ./include ${IM_PROTO_INCLUDE_DIR}
-                                         ${FILE_PROTO_INCLUDE_DIR}
-                                         ../public/include)
+target_include_directories(imChat PUBLIC ./include ../public/include)
 target_link_directories(imChat PUBLIC ../public/build)
 
 target_link_libraries(

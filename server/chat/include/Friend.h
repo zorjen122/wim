@@ -1,17 +1,17 @@
 #pragma once
 #include "ChatSession.h"
-#include <jsoncpp/json/value.h>
+#include "TcpMessageCodec.h"
 
 namespace wim {
 
-Json::Value NotifyAddFriend(ChatSession::Ptr session, unsigned int msgID,
-                            Json::Value &request);
-int StoreageNotifyAddFriend(Json::Value &request);
+TcpPacket NotifyAddFriend(ChatSession::Ptr session, unsigned int msgID,
+                          TcpPacket &request);
+int StoreageNotifyAddFriend(TcpPacket &request);
 
-Json::Value ReplyAddFriend(ChatSession::Ptr session, unsigned int msgID,
-                           Json::Value &request);
-int StoreageReplyAddFriend(Json::Value &request);
+TcpPacket ReplyAddFriend(ChatSession::Ptr session, unsigned int msgID,
+                         TcpPacket &request);
+int StoreageReplyAddFriend(TcpPacket &request);
 
 void RemoveFriend(ChatSession::Ptr session, unsigned int msgID,
-                  Json::Value &request);
+                  TcpPacket &request);
 };  // namespace wim

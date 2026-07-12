@@ -12,15 +12,13 @@ find_package(Boost REQUIRED COMPONENTS filesystem)
 find_package(gRPC REQUIRED)
 
 set(protobuf_MODULE_COMPATIBLE TRUE)
-wim_generate_grpc_proto(STATE_PROTO ../public/proto/state.proto)
 wim_generate_grpc_proto(VERIFY_PROTO ../verify/message.proto)
 
 file(GLOB SOURCE src/**/*.cc)
-add_library(imGate ${SOURCE} ${STATE_PROTO} ${VERIFY_PROTO})
+add_library(imGate ${SOURCE} ${VERIFY_PROTO})
 add_executable(gate src/main.cc)
 
-target_include_directories(imGate PUBLIC ./include ${STATE_PROTO_INCLUDE_DIR}
-                                        ${VERIFY_PROTO_INCLUDE_DIR}
+target_include_directories(imGate PUBLIC ./include ${VERIFY_PROTO_INCLUDE_DIR}
                                         ../public/include)
 target_link_directories(imGate PUBLIC ../public/build)
 

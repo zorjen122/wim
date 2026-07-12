@@ -15,7 +15,9 @@ int main(int argc, char *argv[]) {
       configPath ? configPath : "../conf/test-client.yaml");
   YAML::Node node = Configer::getNode("server");
   if (!loadSuccess || node.IsNull())
-    return -1;
+  {
+    spdlog::info("This is expected, currently load config is not supported");
+  }
 
   net::io_context ioContext;
   auto work = net::make_work_guard(ioContext);

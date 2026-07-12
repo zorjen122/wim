@@ -11,16 +11,12 @@ find_package(Protobuf REQUIRED)
 find_package(gRPC REQUIRED)
 
 set(protobuf_MODULE_COMPATIBLE TRUE)
-wim_generate_grpc_proto(STATE_PROTO ../public/proto/state.proto)
-wim_generate_grpc_proto(IM_PROTO ../public/proto/im.proto)
 
 file(GLOB SOURCE src/**/*.cc)
-add_library(imState ${SOURCE} ${STATE_PROTO} ${IM_PROTO})
+add_library(imState ${SOURCE})
 add_executable(state src/main.cc)
 
-target_include_directories(imState PUBLIC ./include ${STATE_PROTO_INCLUDE_DIR}
-                                         ${IM_PROTO_INCLUDE_DIR}
-                                         ../public/include)
+target_include_directories(imState PUBLIC ./include ../public/include)
 target_link_directories(imState PUBLIC ../public/build)
 
 target_link_libraries(

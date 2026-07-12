@@ -8,17 +8,15 @@
 #include "OnlineUser.h"
 #include "Redis.h"
 
-#include <jsoncpp/json/json.h>
-#include <jsoncpp/json/reader.h>
 #include <jsoncpp/json/value.h>
 #include <spdlog/spdlog.h>
 #include <string>
 namespace wim {
 
-int StoreageNotifyAddFriend(Json::Value &request) {
-  long from = request["from"].asInt64();
-  long to = request["to"].asInt64();
-  std::string requestMessage = request["requestMessage"].asString();
+int StoreageNotifyAddFriend(TcpPacket &request) {
+  long from = request.from();
+  long to = request.to();
+  std::string requestMessage = request.request_message();
   db::FriendApply::Ptr friendApply(new db::FriendApply(
       from, to, db::FriendApply::Status::Wait, requestMessage));
 
@@ -26,22 +24,22 @@ int StoreageNotifyAddFriend(Json::Value &request) {
   return ret;
 }
 
-Json::Value NotifyAddFriend(ChatSession::Ptr session, unsigned int msgID,
-                            Json::Value &request) {
-  Json::Value rsp;
+TcpPacket NotifyAddFriend(ChatSession::Ptr session, unsigned int msgID,
+                          TcpPacket &request) {
+  TcpPacket rsp;
 
-  long from = request["from"].asInt64();
-  long to = request["to"].asInt64();
-  bool skipStorage = request.get("__skipStorage", false).asBool();
+  long from = request.from();
+  long to = request.to();
+  bool skipStorage = request.skip_storage();
 
   int ret = skipStorage ? 0 : StoreageNotifyAddFriend(request);
-  rsp["uid"] = Json::Value::Int64(to);
+  rsp.set_uid(to);
   if (ret == -1) {
     LOG_INFO(businessLogger,
              "StoreageNotifyAddFriend save service failed, from-{}, to-{}",
              from, to);
-    rsp["error"] = ErrorCodes::MysqlFailed;
-    rsp["message"] = "数据库修改异常";
+    rsp.set_error(ErrorCodes::MysqlFailed);
+    rsp.set_message("数据库修改异常");
     return rsp;
   }
 
@@ -49,11 +47,11 @@ Json::Value NotifyAddFriend(ChatSession::Ptr session, unsigned int msgID,
   bool isLocalMachineOnline = OnlineUser::GetInstance()->isOnline(to);
   if (isLocalMachineOnline) {
     // 本地在线推送
-    Json::Value senderRsp = request;
-    senderRsp.removeMember("__skipStorage");
-    toSession->Send(senderRsp.toStyledString(), ID_NOTIFY_ADD_FRIEND_REQ);
+    TcpPacket senderRsp = request;
+    senderRsp.clear_skip_storage();
+    toSession->Send(SerializeTcpPacket(senderRsp), ID_NOTIFY_ADD_FRIEND_REQ);
 
-    rsp["error"] = ErrorCodes::Success;
+    rsp.set_error(ErrorCodes::Success);
     return rsp;
   }
 
@@ -71,7 +69,7 @@ Json::Value NotifyAddFriend(ChatSession::Ptr session, unsigned int msgID,
     rpc::NotifyAddFriendResponse notifyResponse;
     notifyRequest.set_from(from);
     notifyRequest.set_to(to);
-    notifyRequest.set_requestmessage(request["requestMessage"].asString());
+    notifyRequest.set_requestmessage(request.request_message());
 
     // 通过MachineID路由到对应的机器，并转发
     LOG_INFO(wim::businessLogger,
@@ -79,61 +77,61 @@ Json::Value NotifyAddFriend(ChatSession::Ptr session, unsigned int msgID,
              to, machineId);
     auto rpcNode = rpc::ImRpc::GetInstance()->getRpc(machineId);
     if (rpcNode == nullptr) {
-      rsp["message"] = "RPC目标机器不存在";
-      rsp["error"] = ErrorCodes::RPCFailed;
+      rsp.set_message("RPC目标机器不存在");
+      rsp.set_error(ErrorCodes::RPCFailed);
       return rsp;
     }
     notifyResponse = rpcNode->forwardNotifyAddFriend(notifyRequest);
 
     if (notifyResponse.status() == "success") {
-      rsp["error"] = ErrorCodes::Success;
+      rsp.set_error(ErrorCodes::Success);
     } else {
-      rsp["message"] = "RPC转发异常";
-      rsp["error"] = ErrorCodes::RPCFailed;
+      rsp.set_message("RPC转发异常");
+      rsp.set_error(ErrorCodes::RPCFailed);
     }
     return rsp;
   }
 
-  rsp["error"] = ErrorCodes::Success;
+  rsp.set_error(ErrorCodes::Success);
   return rsp;
 }
 
-Json::Value ReplyAddFriend(ChatSession::Ptr session, unsigned int msgID,
-                           Json::Value &request) {
-  Json::Value rsp;
+TcpPacket ReplyAddFriend(ChatSession::Ptr session, unsigned int msgID,
+                         TcpPacket &request) {
+  TcpPacket rsp;
 
-  long from = request["from"].asInt64();
-  long to = request["to"].asInt64();
-  bool accept = request["accept"].asBool();
-  std::string replyMessage = request["replyMessage"].asString();
-  bool skipStorage = request.get("__skipStorage", false).asBool();
+  long from = request.from();
+  long to = request.to();
+  bool accept = request.accept();
+  std::string replyMessage = request.reply_message();
+  bool skipStorage = request.skip_storage();
 
-  rsp["uid"] = Json::Value::Int64(to);
+  rsp.set_uid(to);
 
-  long sessionKey = skipStorage ? request.get("sessionKey", 0).asInt64()
-                                : StoreageReplyAddFriend(request);
+  long sessionKey =
+      skipStorage ? request.session_key() : StoreageReplyAddFriend(request);
   if (sessionKey == -1) {
     LOG_ERROR(businessLogger,
               "StoreageReplyAddFriend is failed, from {}, to {}", from, to);
-    rsp["error"] = ErrorCodes::MysqlFailed;
-    rsp["message"] = "数据库修改发送异常";
+    rsp.set_error(ErrorCodes::MysqlFailed);
+    rsp.set_message("数据库修改发送异常");
     return rsp;
   }
 
   bool isLocalMachineOnline = OnlineUser::GetInstance()->isOnline(to);
   if (isLocalMachineOnline) {
-    Json::Value senderRsp{};
-    senderRsp["from"] = Json::Value::Int64(from);
-    senderRsp["to"] = Json::Value::Int64(to);
-    senderRsp["uid"] = Json::Value::Int64(to);
-    senderRsp["sessionKey"] = Json::Value::Int64(sessionKey);
-    senderRsp["accept"] = accept;
-    senderRsp["replyMessage"] = replyMessage;
+    TcpPacket senderRsp{};
+    senderRsp.set_from(from);
+    senderRsp.set_to(to);
+    senderRsp.set_uid(to);
+    senderRsp.set_session_key(sessionKey);
+    senderRsp.set_accept(accept);
+    senderRsp.set_reply_message(replyMessage);
 
     auto toSession = OnlineUser::GetInstance()->GetUserSession(to);
-    toSession->Send(senderRsp.toStyledString(), ID_REPLY_ADD_FRIEND_REQ);
+    toSession->Send(SerializeTcpPacket(senderRsp), ID_REPLY_ADD_FRIEND_REQ);
 
-    rsp["error"] = ErrorCodes::Success;
+    rsp.set_error(ErrorCodes::Success);
     return rsp;
   }
 
@@ -154,8 +152,8 @@ Json::Value ReplyAddFriend(ChatSession::Ptr session, unsigned int msgID,
     replyRequest.set_replymessage(replyMessage);
     auto rpcNode = rpc::ImRpc::GetInstance()->getRpc(machineId);
     if (rpcNode == nullptr) {
-      rsp["error"] = ErrorCodes::RPCFailed;
-      rsp["message"] = "RPC目标机器不存在";
+      rsp.set_error(ErrorCodes::RPCFailed);
+      rsp.set_message("RPC目标机器不存在");
       return rsp;
     }
     replyResponse = rpcNode->forwardReplyAddFriend(replyRequest);
@@ -165,23 +163,23 @@ Json::Value ReplyAddFriend(ChatSession::Ptr session, unsigned int msgID,
         from, to, machineId, replyResponse.status());
 
     if (replyResponse.status() == "success") {
-      rsp["error"] = ErrorCodes::Success;
+      rsp.set_error(ErrorCodes::Success);
     } else {
-      rsp["error"] = ErrorCodes::RPCFailed;
-      rsp["message"] = "RPC转发异常";
+      rsp.set_error(ErrorCodes::RPCFailed);
+      rsp.set_message("RPC转发异常");
     }
     return rsp;
   }
 
-  rsp["error"] = ErrorCodes::Success;
+  rsp.set_error(ErrorCodes::Success);
   return rsp;
 }
 
-int StoreageReplyAddFriend(Json::Value &request) {
-  long from = request["from"].asInt64();
-  long to = request["to"].asInt64();
-  bool accept = request["accept"].asBool();
-  std::string replyMessage = request["replyMessage"].asString();
+int StoreageReplyAddFriend(TcpPacket &request) {
+  long from = request.from();
+  long to = request.to();
+  bool accept = request.accept();
+  std::string replyMessage = request.reply_message();
 
   int rt = -1;
   db::FriendApply::Status status{};

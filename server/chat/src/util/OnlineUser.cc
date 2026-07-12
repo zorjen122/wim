@@ -193,15 +193,15 @@ void OnlineUser::Pong(long uid) {
     return;
   }
 
-  Json::Value pong;
-  pong["uid"] = Json::Value::Int64(uid);
-  pong["error"] = ErrorCodes::Success;
+  TcpPacket pong;
+  pong.set_uid(uid);
+  pong.set_error(ErrorCodes::Success);
 
-  session->Send(pong.toStyledString(), ID_PING_RSP);
+  std::string pongData = SerializeTcpPacket(pong);
+  session->Send(pongData, ID_PING_RSP);
 
   // 使用用户Id作为序列号，因心跳仅监视状态
-  onReWrite(ReWriteType::HeartBeat, uid, uid, pong.toStyledString(),
-            ID_PING_RSP);
+  onReWrite(ReWriteType::HeartBeat, uid, uid, pongData, ID_PING_RSP);
 
   LOG_DEBUG(wim::businessLogger, "Pong, uid: {}", uid);
 }

@@ -54,6 +54,45 @@ fi
 : "${CHAT_A_MACHINE:=hunan-im}"
 : "${CHAT_B_MACHINE:=beijing-im}"
 
+check_chat_port() {
+  local label="$1"
+  local host="$2"
+  local port="$3"
+
+  python3 - "$label" "$host" "$port" <<'PY'
+import socket
+import sys
+
+label = sys.argv[1]
+host = sys.argv[2]
+port = int(sys.argv[3])
+
+try:
+    with socket.create_connection((host, port), timeout=2):
+        pass
+except OSError as exc:
+    print(f"{label} is not reachable at {host}:{port}: {exc}", file=sys.stderr)
+    sys.exit(1)
+PY
+}
+
+if ! check_chat_port "chat node A" "$CHAT_A_HOST" "$CHAT_A_PORT" ||
+  ! check_chat_port "chat node B" "$CHAT_B_HOST" "$CHAT_B_PORT"; then
+  cat >&2 <<EOF
+smoke_multi_chat.sh requires two chat nodes before it writes test data.
+
+Start the local stack in multi-chat mode:
+  WIM_STATE_CONFIG="\$PWD/server/conf/state-multi.yaml" \\
+  WIM_CHAT_CONFIGS="\$PWD/server/conf/chat-hunan-im.yaml \$PWD/server/conf/chat-beijing-im.yaml" \\
+    ./scripts/run_local_services.sh
+
+Current expected TCP endpoints:
+  chat node A: $CHAT_A_HOST:$CHAT_A_PORT
+  chat node B: $CHAT_B_HOST:$CHAT_B_PORT
+EOF
+  exit 1
+fi
+
 stamp="$(date +%s%N)"
 uid_a=$((400000 + stamp % 100000))
 uid_b=$((uid_a + 1))
@@ -117,13 +156,14 @@ WIM_REDIS_HOST="$WIM_REDIS_HOST" \
 WIM_REDIS_PORT="$WIM_REDIS_PORT" \
 WIM_REDIS_PASSWORD="$WIM_REDIS_PASSWORD" \
 RESULT_FILE="$result_file" \
+PYTHONPATH="$ROOT_DIR/scripts/lib${PYTHONPATH:+:$PYTHONPATH}" \
 python3 - <<'PY'
 import json
 import os
-import socket
-import struct
 import subprocess
 import time
+
+from wim_tcp_client import WimClient, require
 
 UID_A = int(os.environ["UID_A"])
 UID_B = int(os.environ["UID_B"])
@@ -145,17 +185,9 @@ ID_PULL_FRIEND_LIST_REQ = 1001
 ID_PULL_FRIEND_APPLY_LIST_REQ = 1003
 ID_PULL_SESSION_MESSAGE_LIST_REQ = 1005
 ID_PULL_MESSAGE_LIST_REQ = 1007
-ID_LOGIN_INIT_REQ = 1013
-ID_USER_QUIT_REQ = 1015
 ID_NOTIFY_ADD_FRIEND_REQ = 1021
 ID_REPLY_ADD_FRIEND_REQ = 1023
 ID_TEXT_SEND_REQ = 1027
-ID_ACK = 1033
-
-
-def require(cond, message):
-    if not cond:
-        raise AssertionError(message)
 
 
 def redis_machine(uid):
@@ -177,94 +209,12 @@ def redis_machine(uid):
     require(output, f"redis online info missing for uid {uid}")
     return json.loads(output)["machineId"]
 
-
-class WimClient:
-    def __init__(self, uid, host, port):
-        self.uid = uid
-        self.sock = socket.create_connection((host, port), timeout=5)
-        self.sock.settimeout(5)
-        self.pending = []
-
-    def close(self):
-        try:
-            self.sock.close()
-        except OSError:
-            pass
-
-    def send_packet(self, service_id, body):
-        data = json.dumps(body, separators=(",", ":")).encode()
-        self.sock.sendall(struct.pack("!II", service_id, len(data)) + data)
-
-    def recv_exact(self, size):
-        chunks = []
-        remaining = size
-        while remaining:
-            chunk = self.sock.recv(remaining)
-            if not chunk:
-                raise EOFError("chat connection closed")
-            chunks.append(chunk)
-            remaining -= len(chunk)
-        return b"".join(chunks)
-
-    def recv_packet(self, timeout=5):
-        old_timeout = self.sock.gettimeout()
-        self.sock.settimeout(timeout)
-        try:
-            header = self.recv_exact(8)
-            service_id, size = struct.unpack("!II", header)
-            body = self.recv_exact(size)
-            payload = json.loads(body.decode()) if body else {}
-            return service_id, payload
-        finally:
-            self.sock.settimeout(old_timeout)
-
-    def request(self, service_id, body, expected_id=None, timeout=5):
-        if expected_id is None:
-            expected_id = service_id + 1
-        self.send_packet(service_id, body)
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            service, payload = self.recv_packet(max(0.1, deadline - time.monotonic()))
-            if service == expected_id:
-                return payload
-            self.pending.append((service, payload))
-        raise TimeoutError(f"uid {self.uid} did not receive service {expected_id}")
-
-    def expect_async(self, service_id, predicate=lambda payload: True, timeout=5):
-        for idx, (service, payload) in enumerate(self.pending):
-            if service == service_id and predicate(payload):
-                self.pending.pop(idx)
-                return payload
-
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            service, payload = self.recv_packet(max(0.1, deadline - time.monotonic()))
-            if service == service_id and predicate(payload):
-                return payload
-            self.pending.append((service, payload))
-        raise TimeoutError(f"uid {self.uid} did not receive async service {service_id}")
-
-    def login(self):
-        rsp = self.request(ID_LOGIN_INIT_REQ, {"uid": self.uid, "init": False})
-        require(rsp.get("error") == 0, f"login failed for {self.uid}: {rsp}")
-
-    def ack(self, seq):
-        self.send_packet(ID_ACK, {"seq": seq, "uid": self.uid})
-
-    def quit(self):
-        try:
-            self.request(ID_USER_QUIT_REQ, {"uid": self.uid}, timeout=2)
-        except Exception:
-            pass
-        self.close()
-
-
 a = WimClient(UID_A, CHAT_A_HOST, CHAT_A_PORT)
 b = WimClient(UID_B, CHAT_B_HOST, CHAT_B_PORT)
 server_seq = 0
 try:
-    a.login()
-    b.login()
+    a.login(init=False)
+    b.login(init=False)
 
     machine_a = redis_machine(UID_A)
     machine_b = redis_machine(UID_B)
@@ -364,9 +314,9 @@ try:
     print("cross-node message pull ok")
 finally:
     try:
-        a.quit()
+        a.quit(wait_response=True)
     finally:
-        b.quit()
+        b.quit(wait_response=True)
 
 with open(RESULT_FILE, "w", encoding="utf-8") as fp:
     json.dump({"server_seq": server_seq}, fp)

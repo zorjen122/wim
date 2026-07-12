@@ -52,12 +52,14 @@ PAYLOAD="$payload" \
 CHAT_HOST="$CHAT_HOST" \
 CHAT_PORT="$CHAT_PORT" \
 RESULT_FILE="$result_file" \
+PYTHONPATH="$ROOT_DIR/scripts/lib${PYTHONPATH:+:$PYTHONPATH}" \
 python3 - <<'PY'
 import json
 import os
 import socket
-import struct
 import time
+
+from wim_tcp_client import WimClient, require
 
 UID_SENDER = int(os.environ["UID_SENDER"])
 UID_RECEIVER = int(os.environ["UID_RECEIVER"])
@@ -66,88 +68,20 @@ CHAT_HOST = os.environ["CHAT_HOST"]
 CHAT_PORT = int(os.environ["CHAT_PORT"])
 RESULT_FILE = os.environ["RESULT_FILE"]
 
-ID_LOGIN_INIT_REQ = 1013
-ID_USER_QUIT_REQ = 1015
 ID_TEXT_SEND_REQ = 1027
 ID_ACK = 1033
 ID_NULL = 1034
 
 
-def require(condition, message):
-    if not condition:
-        raise AssertionError(message)
-
-
-class WimClient:
-    def __init__(self, uid):
-        self.uid = uid
-        self.sock = socket.create_connection((CHAT_HOST, CHAT_PORT), timeout=5)
-        self.sock.settimeout(5)
-
-    def close(self):
-        try:
-            self.sock.close()
-        except OSError:
-            pass
-
-    def send_packet(self, service_id, body):
-        data = json.dumps(body, separators=(",", ":")).encode()
-        self.sock.sendall(struct.pack("!II", service_id, len(data)) + data)
-
-    def recv_exact(self, size):
-        chunks = []
-        remaining = size
-        while remaining:
-            chunk = self.sock.recv(remaining)
-            if not chunk:
-                raise EOFError("chat connection closed")
-            chunks.append(chunk)
-            remaining -= len(chunk)
-        return b"".join(chunks)
-
-    def recv_packet(self, timeout=5):
-        old_timeout = self.sock.gettimeout()
-        self.sock.settimeout(timeout)
-        try:
-            header = self.recv_exact(8)
-            service_id, size = struct.unpack("!II", header)
-            body = self.recv_exact(size)
-            payload = json.loads(body.decode()) if body else {}
-            return service_id, payload
-        finally:
-            self.sock.settimeout(old_timeout)
-
-    def request(self, service_id, body, expected_id=None):
-        if expected_id is None:
-            expected_id = service_id + 1
-        self.send_packet(service_id, body)
-        service, payload = self.recv_packet()
-        require(
-            service == expected_id,
-            f"expected service {expected_id}, got {service}: {payload}",
-        )
-        return payload
-
-    def login(self):
-        rsp = self.request(ID_LOGIN_INIT_REQ, {"uid": self.uid})
-        require(rsp.get("error") == 0, f"login failed for {self.uid}: {rsp}")
-
-    def quit(self):
-        try:
-            self.send_packet(ID_USER_QUIT_REQ, {"uid": self.uid})
-        finally:
-            self.close()
-
-
-sender = WimClient(UID_SENDER)
-receiver = WimClient(UID_RECEIVER)
+sender = WimClient(UID_SENDER, CHAT_HOST, CHAT_PORT)
+receiver = WimClient(UID_RECEIVER, CHAT_HOST, CHAT_PORT)
 
 try:
     sender.login()
     receiver.login()
 
     client_seq = int(time.time_ns() % 9_000_000_000 + 1_000_000_000)
-    sender.send_packet(
+    sender_rsp = sender.request(
         ID_TEXT_SEND_REQ,
         {
             "seq": client_seq,
@@ -157,9 +91,6 @@ try:
             "sessionKey": 0,
         },
     )
-
-    sender_service, sender_rsp = sender.recv_packet()
-    require(sender_service == ID_TEXT_SEND_REQ + 1, f"bad sender rsp id: {sender_service}")
     require(sender_rsp.get("error") == 0, f"text send failed: {sender_rsp}")
     require(sender_rsp.get("seq") == client_seq, f"sender rsp seq mismatch: {sender_rsp}")
 

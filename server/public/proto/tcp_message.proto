@@ -1,0 +1,85 @@
+syntax = "proto3";
+
+package wim.protocol;
+
+message UserInfo {
+  int64 uid = 1;
+  string name = 2;
+  int32 age = 3;
+  string sex = 4;
+  string head_image_url = 5;
+}
+
+message FriendApply {
+  int64 from = 1;
+  int64 to = 2;
+  int32 status = 3;
+  string content = 4;
+  string apply_date_time = 5;
+  string create_time = 6;
+}
+
+message ChatMessage {
+  int64 message_id = 1;
+  int64 from = 2;
+  int64 to = 3;
+  int32 type = 4;
+  string content = 5;
+  int32 status = 6;
+  string send_date_time = 7;
+  string read_date_time = 8;
+}
+
+message GroupMember {
+  int64 uid = 1;
+  string name = 2;
+  string join_time = 3;
+  int32 role = 4;
+  int32 speech = 5;
+}
+
+message Packet {
+  optional int64 uid = 1;
+  optional int64 seq = 2;
+  optional int64 from = 3;
+  optional int64 to = 4;
+  optional bytes data = 5;
+  optional int64 session_key = 6;
+  optional int32 error = 7;
+  optional string message = 8;
+  optional string status = 9;
+  optional bool accept = 10;
+  optional string request_message = 11;
+  optional string reply_message = 12;
+  optional string username = 13;
+  optional string name = 14;
+  optional int32 age = 15;
+  optional string sex = 16;
+  optional string head_image_url = 17;
+  optional bool init = 18;
+  optional string file_name = 19;
+  optional string file_type = 20;
+  optional int32 type = 21;
+  optional int64 last_msg_id = 22;
+  optional int32 limit = 23;
+  optional int64 gid = 24;
+  optional int64 group_id = 25;
+  optional string group_name = 26;
+  optional int64 manager_uid = 27;
+  optional int64 requestor_uid = 28;
+  optional int64 replyor_uid = 29;
+  optional string content = 30;
+  optional string create_time = 31;
+  optional string apply_date_time = 32;
+  optional string send_date_time = 33;
+  optional string read_date_time = 34;
+  optional string join_time = 35;
+  optional int32 role = 36;
+  optional int32 speech = 37;
+  optional bool skip_storage = 38;
+
+  repeated UserInfo friend_list = 50;
+  repeated FriendApply apply_list = 51;
+  repeated ChatMessage message_list = 52;
+  repeated GroupMember member_list = 53;
+}

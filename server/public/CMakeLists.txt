@@ -16,6 +16,28 @@ find_package(gRPC REQUIRED)
 # 添加 src 目录下的所有源文件
 file(GLOB SOURCES src/*.cc)
 
+set(WIM_PUBLIC_PROTO_FILES
+    proto/file.proto
+    proto/im.proto
+    proto/state.proto
+    proto/tcp_message.proto)
+
+set(WIM_PUBLIC_PROTO_SRCS)
+set(WIM_PUBLIC_PROTO_INCLUDE_DIRS)
+foreach(proto_file IN LISTS WIM_PUBLIC_PROTO_FILES)
+  wim_generate_grpc_proto(GENERATED_PROTO
+                          "${CMAKE_CURRENT_SOURCE_DIR}/${proto_file}")
+  list(APPEND WIM_PUBLIC_PROTO_SRCS ${GENERATED_PROTO})
+  list(APPEND WIM_PUBLIC_PROTO_INCLUDE_DIRS ${GENERATED_PROTO_INCLUDE_DIR})
+endforeach()
+list(REMOVE_DUPLICATES WIM_PUBLIC_PROTO_INCLUDE_DIRS)
+
+add_library(imProto STATIC ${WIM_PUBLIC_PROTO_SRCS})
+set_target_properties(imProto PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_include_directories(imProto PUBLIC ${WIM_PUBLIC_PROTO_INCLUDE_DIRS})
+target_link_libraries(imProto PUBLIC protobuf::libprotobuf gRPC::grpc++
+                                    gRPC::grpc++_reflection)
+
 add_library(imPublic SHARED ${SOURCES})
 
 #add_library(imPublicStatic STATIC ${SOURCES})
@@ -23,7 +45,8 @@ add_library(imPublic SHARED ${SOURCES})
 target_include_directories(imPublic PUBLIC ./include)
 target_link_libraries(
   imPublic
-  PUBLIC Threads::Threads
+  PUBLIC imProto
+         Threads::Threads
          protobuf::libprotobuf
          Boost::filesystem
          gRPC::grpc++

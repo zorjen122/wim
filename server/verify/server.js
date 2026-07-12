@@ -5,6 +5,7 @@ const const_module = require('./const')
 const {v4: uuidv4} = require('uuid');
 const emailModule = require('./email');
 const redis_module = require('./redis')
+const configModule = require('./config')
 
 /**
  * GetVarifyCode grpc响应获取验证码的服务

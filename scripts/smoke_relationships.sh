@@ -100,13 +100,12 @@ PULL_PAYLOAD="$pull_payload" \
 CHAT_HOST="$CHAT_HOST" \
 CHAT_PORT="$CHAT_PORT" \
 RESULT_FILE="$result_file" \
+PYTHONPATH="$ROOT_DIR/scripts/lib${PYTHONPATH:+:$PYTHONPATH}" \
 python3 - <<'PY'
 import json
 import os
-import socket
-import struct
-import sys
-import time
+
+from wim_tcp_client import WimClient, require
 
 UID_A = int(os.environ["UID_A"])
 UID_B = int(os.environ["UID_B"])
@@ -123,11 +122,8 @@ ID_PULL_FRIEND_LIST_REQ = 1001
 ID_PULL_FRIEND_APPLY_LIST_REQ = 1003
 ID_PULL_SESSION_MESSAGE_LIST_REQ = 1005
 ID_PULL_MESSAGE_LIST_REQ = 1007
-ID_LOGIN_INIT_REQ = 1013
-ID_USER_QUIT_REQ = 1015
 ID_NOTIFY_ADD_FRIEND_REQ = 1021
 ID_REPLY_ADD_FRIEND_REQ = 1023
-ID_ACK = 1033
 ID_GROUP_CREATE_REQ = 1035
 ID_GROUP_NOTIFY_JOIN_REQ = 1037
 ID_GROUP_REPLY_JOIN_REQ = 1039
@@ -141,83 +137,13 @@ ASYNC_IDS = {
 }
 
 
-def require(cond, message):
-    if not cond:
-        raise AssertionError(message)
-
-
-class WimClient:
-    def __init__(self, uid):
-        self.uid = uid
-        self.sock = socket.create_connection((CHAT_HOST, CHAT_PORT), timeout=5)
-        self.sock.settimeout(5)
-
-    def close(self):
-        try:
-            self.sock.close()
-        except OSError:
-            pass
-
-    def send_packet(self, service_id, body):
-        data = json.dumps(body, separators=(",", ":")).encode()
-        self.sock.sendall(struct.pack("!II", service_id, len(data)) + data)
-
-    def recv_exact(self, size):
-        chunks = []
-        remaining = size
-        while remaining:
-            chunk = self.sock.recv(remaining)
-            if not chunk:
-                raise EOFError("chat connection closed")
-            chunks.append(chunk)
-            remaining -= len(chunk)
-        return b"".join(chunks)
-
-    def recv_packet(self):
-        header = self.recv_exact(8)
-        service_id, size = struct.unpack("!II", header)
-        body = self.recv_exact(size)
-        if body:
-            payload = json.loads(body.decode())
-        else:
-            payload = {}
-        return service_id, payload
-
-    def ack_async(self, service_id, payload):
-        if service_id in ASYNC_IDS and "seq" in payload:
-            self.send_packet(ID_ACK, {"seq": payload["seq"], "uid": self.uid})
-
-    def request(self, service_id, body, expected_id=None, timeout=5):
-        if expected_id is None:
-            expected_id = service_id + 1
-        deadline = time.monotonic() + timeout
-        self.send_packet(service_id, body)
-        while time.monotonic() < deadline:
-            service, payload = self.recv_packet()
-            if service == expected_id:
-                return payload
-            self.ack_async(service, payload)
-        raise TimeoutError(f"did not receive service {expected_id}")
-
-    def login(self):
-        rsp = self.request(ID_LOGIN_INIT_REQ, {"uid": self.uid})
-        require(rsp.get("error") == 0, f"login failed for {self.uid}: {rsp}")
-
-    def quit(self):
-        try:
-            self.request(ID_USER_QUIT_REQ, {"uid": self.uid}, timeout=2)
-        except Exception:
-            pass
-        self.close()
-
-
 def with_client(uid, func):
-    client = WimClient(uid)
+    client = WimClient(uid, CHAT_HOST, CHAT_PORT, async_ack_ids=ASYNC_IDS, auto_ack=True)
     try:
         client.login()
         return func(client)
     finally:
-        client.quit()
+        client.quit(wait_response=True)
 
 
 def check_friend_notify(client):
