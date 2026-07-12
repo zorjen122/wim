@@ -10,7 +10,7 @@ namespace fs = std::filesystem;
 
 namespace wim::rpc {
 
-FileWorker::FileWorker() {
+FileWorker::FileWorker() : stopEnable(false) {
   workThread = std::thread([this]() {
     while (!stopEnable) {
       std::unique_lock<std::mutex> lock(executeMutex);

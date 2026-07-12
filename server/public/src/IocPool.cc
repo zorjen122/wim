@@ -5,7 +5,7 @@
 namespace wim {
 IocPool::IocPool(std::size_t size) : iocGroup(size), worker(size) {
   for (std::size_t i = 0; i < size; ++i)
-    worker[i] = std::unique_ptr<Work>(new Work(iocGroup[i]));
+    worker[i] = std::make_unique<Work>(iocGroup[i].get_executor());
 
   for (std::size_t i = 0; i < iocGroup.size(); ++i)
     threadGroup.emplace_back([this, i]() { iocGroup[i].run(); });
@@ -32,13 +32,15 @@ boost::asio::io_context &IocPool::GetContext() {
 }
 
 void IocPool::Stop() {
-  // work 析构不会连带关闭控制的iocontext
-  for (auto &work : worker) {
-    work->get_io_context().stop();
-    work.reset();
-  }
+  for (auto &ioc : iocGroup)
+    ioc.stop();
 
-  for (auto &t : threadGroup)
-    t.join();
+  for (auto &work : worker)
+    work.reset();
+
+  for (auto &t : threadGroup) {
+    if (t.joinable())
+      t.join();
+  }
 }
 }; // namespace wim

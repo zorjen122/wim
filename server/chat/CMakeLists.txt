@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.1)
+cmake_minimum_required(VERSION 3.16)
 project(chat LANGUAGES CXX)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
@@ -7,18 +7,21 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(Threads REQUIRED)
-find_package(Protobuf CONFIG REQUIRED)
-find_package(Boost REQUIRED COMPONENTS system filesystem)
+find_package(Protobuf REQUIRED)
+find_package(Boost REQUIRED COMPONENTS filesystem)
 find_package(gRPC REQUIRED)
 
 set(protobuf_MODULE_COMPATIBLE TRUE)
+wim_generate_grpc_proto(IM_PROTO ../public/proto/im.proto)
+wim_generate_grpc_proto(FILE_PROTO ../public/proto/file.proto)
+
 file(GLOB SOURCE src/**/*.cc)
-file(GLOB RPC_SOURCE ../public/rpc/chat/*.cc ../public/rpc/file/*.cc)
-add_library(imChat ${SOURCE} ${RPC_SOURCE})
+add_library(imChat ${SOURCE} ${IM_PROTO} ${FILE_PROTO})
 add_executable(chat src/main.cc)
 
-target_include_directories(imChat PUBLIC ./include ../public/rpc/chat
-                                         ../public/rpc/file ../public/include)
+target_include_directories(imChat PUBLIC ./include ${IM_PROTO_INCLUDE_DIR}
+                                         ${FILE_PROTO_INCLUDE_DIR}
+                                         ../public/include)
 target_link_directories(imChat PUBLIC ../public/build)
 
 target_link_libraries(
@@ -26,15 +29,15 @@ target_link_libraries(
   PUBLIC imPublic
          Threads::Threads
          protobuf::libprotobuf
-         Boost::system
          Boost::filesystem
          gRPC::grpc++
          gRPC::grpc++_reflection
+         fmt::fmt
          yaml-cpp
          spdlog
          hiredis
          redis++
-         mysqlcppconn8
+         mysqlcppconnx
          jsoncpp
          rdkafka
          rdkafka++)
@@ -45,6 +48,6 @@ target_link_libraries(chat PRIVATE imChat)
 
 target_compile_options(chat PRIVATE -Wall)
 
-if(BUILD_TESTING)
+if(WIM_BUILD_UNIT_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/CMakeLists.txt")
   add_subdirectory(test)
 endif()

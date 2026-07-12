@@ -22,8 +22,7 @@ FileRpc::FileRpc() {
   }
 }
 FileRpc::~FileRpc() {
-
-  LOG_INFO(netLogger, "FileRpc::~FileRpc() | use count: {}");
+  LOG_INFO(netLogger, "FileRpc::~FileRpc()");
 }
 grpc::Status FileRpc::forwardUpload(const UploadRequest &req,
                                     UploadResponse &resp) {

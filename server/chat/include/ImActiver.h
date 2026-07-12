@@ -12,12 +12,16 @@
 #include "Redis.h"
 #include <boost/asio.hpp>
 #include <boost/asio/io_context.hpp>
+#include <atomic>
 #include <cstddef>
 #include <thread>
 namespace wim {
 class ImServiceRunner : public Singleton<ImServiceRunner> {
 private:
   void ClearUp() {
+    if (cleaned.exchange(true))
+      return;
+
     size_t refCount;
     // 减去instance实例拷贝的一份引用
     refCount = IocPool::GetInstance().use_count() - 1;
@@ -37,7 +41,8 @@ private:
       LOG_ERROR(wim::dbLogger, "RedisDao资源池状态异常, 引用计数", refCount);
     db::RedisDao::GetInstance()->Close();
 
-    rpcServer->Shutdown();
+    if (rpcServer)
+      rpcServer->Shutdown();
     if (rpcRunThread.joinable()) {
       rpcRunThread.join();
       LOG_INFO(wim::businessLogger, "IM RPC服务线程退出成功");
@@ -79,13 +84,14 @@ public:
 
       boost::asio::signal_set signals(ioc, SIGINT, SIGTERM);
       signals.async_wait(
-          [this](const boost::system::error_code &error, int signalNumber) {
+          [&ioc](const boost::system::error_code &error, int signalNumber) {
             if (error)
               return;
-            ClearUp();
+            ioc.stop();
           });
 
       ioc.run();
+      ClearUp();
 
       return true;
     } catch (const std::exception &e) {
@@ -105,5 +111,6 @@ private:
   std::unique_ptr<grpc::Server> rpcServer;
   std::shared_ptr<ChatServer> imServer;
   std::thread rpcRunThread;
+  std::atomic<bool> cleaned{false};
 };
 }; // namespace wim

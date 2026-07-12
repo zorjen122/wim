@@ -9,7 +9,7 @@ set(CMAKE_CXX_STANDARD 17)
 
 find_package(Threads REQUIRED)
 find_package(Protobuf CONFIG REQUIRED)
-find_package(Boost REQUIRED COMPONENTS system)
+find_package(Boost REQUIRED)
 find_package(GTest REQUIRED)
 include(CTest)
 
@@ -24,13 +24,11 @@ function(add_chat_test target)
             imPublic
             Threads::Threads
             protobuf::libprotobuf
-            Boost::system
+            fmt::fmt
             yaml-cpp
             spdlog
-            mysqlcppconn8
+            mysqlcppconnx
             jsoncpp)
 
   add_test(NAME ${CMAKE_PROJECT_NAME}.${target} COMMAND ${target})
 endfunction()
-
-add_chat_test(test_demo src/demo.cc)

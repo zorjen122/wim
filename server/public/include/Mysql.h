@@ -6,9 +6,9 @@
 #include <cstdint>
 #include <ctime>
 #include <exception>
-#include <mysql-cppconn-8/mysqlx/devapi/common.h>
-#include <mysql-cppconn-8/mysqlx/devapi/result.h>
-#include <mysql-cppconn-8/mysqlx/xdevapi.h>
+#include <mysql-cppconn/mysqlx/devapi/common.h>
+#include <mysql-cppconn/mysqlx/devapi/result.h>
+#include <mysql-cppconn/mysqlx/xdevapi.h>
 
 #include <atomic>
 #include <cstddef>
@@ -184,7 +184,7 @@ private:
                  e.what());
         try {
           mysqlx::Session *newSession(
-              new mysqlx::Session(host, user, password, schema));
+              new mysqlx::Session(host, port, user, password, schema));
           con->leaseTime = leaseTime;
           con.reset();
           pool.push(std::make_unique<SqlConnection>(newSession, leaseTime));
@@ -411,7 +411,8 @@ public:
                   .bind(user->uid)
                   .execute();
 
-          if ((result.count() > 0)) {
+          auto row = result.fetchOne();
+          if (row && row[0].get<int64_t>() > 0) {
             LOG_INFO(dbLogger, "User already exists");
             return 1;
           }
@@ -582,12 +583,23 @@ public:
           return 0;
         });
   }
-  int updateMessage(long messageId, short status) {
+  int updateMessage(long messageId, short status,
+                    const std::string &readDateTime = "") {
     return executeTemplate(
         [&](std::unique_ptr<mysqlx::Session> &session) -> int {
-          std::string f =
-              R"(UPDATE messages SET status = ? WHERE messageId = ?)";
-          auto result = session->sql(f).bind(status).bind(messageId).execute();
+          if (readDateTime.empty()) {
+            std::string f =
+                R"(UPDATE messages SET status = ? WHERE messageId = ?)";
+            auto result =
+                session->sql(f).bind(status).bind(messageId).execute();
+          } else {
+            std::string f = R"(UPDATE messages SET status = ?, readDateTime = ? WHERE messageId = ?)";
+            auto result = session->sql(f)
+                              .bind(status)
+                              .bind(readDateTime)
+                              .bind(messageId)
+                              .execute();
+          }
 
           return 0;
         });
@@ -755,7 +767,7 @@ public:
   int insertGroup(GroupManager::Ptr group) {
     return executeTemplate(
         [&](std::unique_ptr<mysqlx::Session> &session) -> int {
-          std::string f = R"(INSERT INTO `groups` VALUES (?, ?, ?, ?))";
+          std::string f = R"(INSERT INTO groupInfo VALUES (?, ?, ?, ?))";
           auto result = session->sql(f)
                             .bind(group->gid)
                             .bind(group->sessionKey)
@@ -807,7 +819,7 @@ public:
   int hasGroup(long gid) {
     return executeTemplate(
         [&](std::unique_ptr<mysqlx::Session> &session) -> int {
-          std::string f = R"(SELECT 1 FROM `groups` WHERE gid = ?)";
+          std::string f = R"(SELECT 1 FROM groupInfo WHERE gid = ?)";
           auto result = session->sql(f).bind(gid).execute();
           return (result.fetchOne() != 0);
         });

@@ -1,5 +1,6 @@
 #include "Configer.h"
 #include "service.h"
+#include <cstdlib>
 #include <grpcpp/server_builder.h>
 #include <spdlog/spdlog.h>
 /*
@@ -7,7 +8,9 @@
  */
 int main() {
 
-  auto existConfig = Configer::loadConfig("../config.yaml");
+  const char *configPath = std::getenv("WIM_CONFIG");
+  auto existConfig =
+      Configer::loadConfig(configPath ? configPath : "../conf/state-single.yaml");
   if (!existConfig) {
     spdlog::error("Config load failed");
     return 0;

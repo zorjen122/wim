@@ -17,5 +17,3 @@ function(add_state_test target)
 
   add_test(NAME ${CMAKE_PROJECT_NAME}.${target} COMMAND ${target})
 endfunction()
-
-add_state_test(test_demo demo.cc)

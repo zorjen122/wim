@@ -9,8 +9,8 @@ set(protobuf_MODULE_COMPATIBLE TRUE)
 
 # 仅用于clangd搜索
 find_package(Threads REQUIRED)
-find_package(Protobuf CONFIG REQUIRED)
-find_package(Boost REQUIRED COMPONENTS system filesystem)
+find_package(Protobuf REQUIRED)
+find_package(Boost REQUIRED COMPONENTS filesystem)
 find_package(gRPC REQUIRED)
 
 # 添加 src 目录下的所有源文件
@@ -25,17 +25,17 @@ target_link_libraries(
   imPublic
   PUBLIC Threads::Threads
          protobuf::libprotobuf
-         Boost::system
          Boost::filesystem
          gRPC::grpc++
          gRPC::grpc++_reflection
+         fmt::fmt
          yaml-cpp
          spdlog
          hiredis
          redis++
-         mysqlcppconn8)
+         mysqlcppconnx)
 
 # 单元测试
-if(BUILD_TESTING)
+if(WIM_BUILD_UNIT_TESTS)
   add_subdirectory(test)
 endif()

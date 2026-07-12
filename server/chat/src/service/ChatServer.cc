@@ -28,9 +28,11 @@ void ChatServer::Start() {
 void ChatServer::HandleAccept(ChatSession::Ptr session,
                               const boost::system::error_code &error) {
   if (!error) {
+    {
+      std::lock_guard<std::mutex> lock(Mutex);
+      sessionGroup[session->GetSessionID()] = session;
+    }
     session->Start();
-    std::lock_guard<std::mutex> lock(Mutex);
-    sessionGroup[sessionID] = session;
   } else {
     LOG_WARN(netLogger, "连接发生错误，错误信息为: {}", error.message());
   }

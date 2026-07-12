@@ -8,7 +8,7 @@ namespace wim::db {
 
 class MysqlDaoTest : public ::testing::Test {
 protected:
-  void SetUp() override { Configer::loadConfig("../../config.yaml"); }
+  void SetUp() override { Configer::loadConfig("../../conf/public-test.yaml"); }
 
   void TearDown() override { cleanupTestData(); }
 
@@ -153,7 +153,7 @@ TEST_F(MysqlDaoTest, TestMessageOperations) {
 
 int main(int argc, char **argv) {
   // ::testing::InitGoogleTest(&argc, argv);
-  Configer::loadConfig("../config.yaml");
+  Configer::loadConfig("../../conf/public-test.yaml");
   using namespace wim;
   auto p = db::MysqlDao::GetInstance();
   db::GroupApply::Ptr apply(

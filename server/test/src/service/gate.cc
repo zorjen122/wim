@@ -111,7 +111,7 @@ bool Gate::signUp(const std::string &username, const std::string &password,
   request.prepare_payload();
 
   LOG_INFO(wim::businessLogger, "http-write({}): request body: {}",
-           request.target(), (request.body().data()));
+           std::string(request.target()), request.body());
   http::write(stream, request, ec);
   if (ec.failed())
     throw std::runtime_error("write failed: " + ec.message());

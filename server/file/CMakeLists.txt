@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.1)
+cmake_minimum_required(VERSION 3.16)
 project(file LANGUAGES CXX)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
@@ -7,17 +7,19 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(Threads REQUIRED)
-find_package(Protobuf CONFIG REQUIRED)
-find_package(Boost REQUIRED COMPONENTS system filesystem)
+find_package(Protobuf REQUIRED)
+find_package(Boost REQUIRED COMPONENTS filesystem)
 find_package(gRPC REQUIRED)
 
 set(protobuf_MODULE_COMPATIBLE TRUE)
+wim_generate_grpc_proto(FILE_PROTO ../public/proto/file.proto)
+
 file(GLOB SOURCE src/**/*.cc)
-file(GLOB RPC_SOURCE ../public/rpc/file/*.cc)
-add_library(imFile ${SOURCE} ${RPC_SOURCE})
+add_library(imFile ${SOURCE} ${FILE_PROTO})
 add_executable(file src/main.cc)
 
-target_include_directories(imFile PUBLIC ./include ../public/rpc/file ../public/include)
+target_include_directories(imFile PUBLIC ./include ${FILE_PROTO_INCLUDE_DIR}
+                                         ../public/include)
 target_link_directories(imFile PUBLIC ../public/build)
 
 target_link_libraries(
@@ -28,6 +30,7 @@ target_link_libraries(
          imPublic
          gRPC::grpc++
          gRPC::grpc++_reflection
+         fmt::fmt
          spdlog
          yaml-cpp
          Threads::Threads)
@@ -38,6 +41,6 @@ target_link_libraries(file PRIVATE imFile)
 
 target_compile_options(file PRIVATE -Wall)
 
-if(BUILD_TESTING)
+if(WIM_BUILD_UNIT_TESTS)
   add_subdirectory(test)
 endif()

@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <memory>
 #include <mutex>
+#include <queue>
 #include <unistd.h>
 
 namespace beast = boost::beast;   // from <boost/beast.hpp>
@@ -70,6 +71,7 @@ public:
   enum ParseState { WAIT_HEADER, WAIT_BODY };
 
   void HandleError(net::error_code ec);
+  void HandleWrite(const net::error_code &ec, ChatSession::Ptr sharedSelf);
 
   std::shared_ptr<tcp::socket> chat;
 
@@ -79,7 +81,7 @@ public:
 
   ParseState parseState;
 
-  Tlv::Ptr sendProtocolData;
+  std::queue<Tlv::Ptr> sendQueue;
   std::mutex sendMutex;
 
   Tlv::Ptr recvProtocolData;

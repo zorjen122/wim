@@ -1,0 +1,16 @@
+{
+  "email": {
+    "user": "",
+    "pass": ""
+  },
+  "mysql": {
+    "host": "127.0.0.1",
+    "port": 3309,
+    "passwd": ""
+  },
+  "redis": {
+    "host": "127.0.0.1",
+    "port": 6380,
+    "passwd": ""
+  }
+}

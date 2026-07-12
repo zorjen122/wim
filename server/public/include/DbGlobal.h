@@ -103,7 +103,8 @@ struct Message {
   Message(long messageId, long fromUid, long toUid, std::string sessionKey,
           short type, std::string content, short status,
           std::string sendDateTime = "", std::string readDateTime = "")
-      : messageId(messageId), from(fromUid), to(toUid), type(type),
+      : messageId(messageId), from(fromUid), to(toUid),
+        sessionKey(std::move(sessionKey)), type(type),
         content(std::move(content)), status(status),
         sendDateTime(std::move(sendDateTime)),
         readDateTime(std::move(readDateTime)) {}

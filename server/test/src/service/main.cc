@@ -1,30 +1,33 @@
 #include "Configer.h"
 #include "chat.h"
 #include "gate.h"
+#include <cstdlib>
 #include <iostream>
 
 int main(int argc, char *argv[]) {
 
-  if (argc < 3) {
-    spdlog::error(
-        "Usage: [username] [password] | [userId] [chatIp] [chatPort]");
+  if (argc < 6) {
+    spdlog::info(
+        "Usage: [username] [password] [userId] [chatIp] [chatPort]");
     return -1;
   }
 
-  bool loadSuccess = Configer::loadConfig("../config.yaml");
+  const char *configPath = std::getenv("WIM_CONFIG");
+  bool loadSuccess =
+      Configer::loadConfig(configPath ? configPath : "../conf/test-client.yaml");
   YAML::Node node = Configer::getNode("server");
   if (!loadSuccess || node.IsNull())
     return -1;
 
   net::io_context ioContext;
-  net::io_context::work work(ioContext);
-
+  auto work = net::make_work_guard(ioContext);
+  
   // auto gateHost = config["gateway"]["host"].as<std::string>();
   // auto gatePort = config["gateway"]["port"].as<std::string>();
   // spdlog::info("gate host: {}, port: {}", gateHost, gatePort);
   // wim::Gate gate(ioContext, gateHost, gatePort);
 
-  // // gate.signUp("zorjen", "123456", "1001@qq.com");
+  // // gate.signUp("test", "123456", "1001@qq.com");
   // spdlog::info("sign up...");
   // std::pair<wim::Endpoint, int> result;
   // if (argc >= 3) {
@@ -36,7 +39,7 @@ int main(int argc, char *argv[]) {
   // spdlog::info("chat endpoint: {}, {}", endpoint.ip, endpoint.port);
 
   // wim::UserInfo::Ptr userinfo;
-  // auto user = gate.users["zorjen"];
+  // auto user = gate.users["test"];
 
   // if (init == 1) {
   //   userinfo.reset(new wim::UserInfo(user->uid, "Peter", 25, "male",
@@ -70,9 +73,15 @@ int main(int argc, char *argv[]) {
   });
 
   auto clearUp = [&]() {
-    work.get_io_context().stop();
-    if (t.joinable())
+    if (session)
+      session->Close();
+    work.reset();
+    ioContext.stop();
+    if (t.joinable() && std::this_thread::get_id() != t.get_id())
       t.join();
+    session.reset();
+    if (chat)
+      chat->setSession(nullptr);
   };
 
   std::cout << "\n【请求方式：【命令】 (q/Q 退出)】\n";
@@ -89,6 +98,10 @@ int main(int argc, char *argv[]) {
       LOG_ERROR(wim::netLogger, "login failed");
       return -1;
     }
+    if (!chat->waitLoginReady()) {
+      LOG_ERROR(wim::netLogger, "login init response timed out");
+      return -1;
+    }
 
     // chat->OnheartBeat();
 
@@ -101,7 +114,10 @@ int main(int argc, char *argv[]) {
 
     while (true) {
       std::string command;
-      std::cin >> command;
+      if (!(std::cin >> command)) {
+        chat->quit();
+        break;
+      }
 
       if (command == "q" || command == "Q") {
         std::cout << "Exiting..." << std::endl;
@@ -165,6 +181,13 @@ int main(int argc, char *argv[]) {
         chat->pullFriendList();
       } else if (command == "pullFriendApplyList") {
         chat->pullFriendApplyList();
+      } else if (command == "ping") {
+        chat->ping();
+      } else if (command == "searchUser") {
+        std::string username;
+        std::cout << "请输入用户名: ";
+        std::cin >> username;
+        chat->searchUser(username);
       } else if (command == "uploadFile") {
         std::string fileName;
         std::cout << "请输入文件全称: ";
@@ -203,6 +226,18 @@ int main(int argc, char *argv[]) {
         }
         chat->replyJoinGroup(std::atol(groupId.c_str()),
                              std::atol(requestorUid.c_str()), accept);
+      } else if (command == "sendGroupMessage") {
+        std::string groupId, message;
+        std::cout << "请输入群组ID: ";
+        std::cin >> groupId;
+        std::cout << "请输入消息内容: ";
+        std::cin >> message;
+        chat->sendGroupMessage(std::atol(groupId.c_str()), message);
+      } else if (command == "pullGroupMember") {
+        std::string groupId;
+        std::cout << "请输入群组ID: ";
+        std::cin >> groupId;
+        chat->pullGroupMember(std::atol(groupId.c_str()));
       } else if (command == "quitGroup") {
         std::string groupId;
         std::cout << "请输入群组ID: ";

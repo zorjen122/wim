@@ -1,4 +1,14 @@
-cmake_minimum_required(VERSION 3.1)
+cmake_minimum_required(VERSION 3.16)
+
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR
+   AND "$ENV{CXX}" STREQUAL ""
+   AND NOT DEFINED CMAKE_CXX_COMPILER
+   AND EXISTS "/usr/bin/clang++")
+  set(CMAKE_CXX_COMPILER
+      clang++
+      CACHE FILEPATH "C++ compiler for standalone server/test builds")
+endif()
+
 project(imTest LANGUAGES CXX)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
@@ -7,29 +17,36 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(Threads REQUIRED)
-find_package(Protobuf CONFIG REQUIRED)
-find_package(Boost REQUIRED COMPONENTS system filesystem)
+find_package(Protobuf REQUIRED)
+find_package(Boost REQUIRED COMPONENTS filesystem)
+find_package(fmt REQUIRED)
 
 set(protobuf_MODULE_COMPATIBLE TRUE)
 file(GLOB SOURCE src/service/*.cc)
 
+if(NOT TARGET imPublic)
+  add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../public"
+                   "${CMAKE_CURRENT_BINARY_DIR}/public")
+endif()
+
 add_executable(imTest ${SOURCE})
 
-target_include_directories(imTest PUBLIC ../public/include ./include)
-target_link_directories(imTest PUBLIC ../public/build)
+target_include_directories(
+  imTest PUBLIC "${CMAKE_CURRENT_LIST_DIR}/../public/include"
+                "${CMAKE_CURRENT_LIST_DIR}/include")
 
 target_link_libraries(
   imTest
   PUBLIC imPublic
          Threads::Threads
          protobuf::libprotobuf
-         Boost::system
          Boost::filesystem
+         fmt::fmt
          yaml-cpp
          spdlog
          hiredis
          redis++
-         mysqlcppconn8
+         mysqlcppconnx
          jsoncpp
          rdkafka
          rdkafka++)

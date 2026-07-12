@@ -2,6 +2,7 @@
 #include "ChatServer.h"
 #include "Const.h"
 #include "Logger.h"
+#include "OnlineUser.h"
 #include "Service.h"
 
 #include <boost/asio/detail/socket_ops.hpp>
@@ -152,9 +153,16 @@ void ChatSession::HandleError(net::error_code ec) {
     eof：表示对端关闭了连接
     connection_reset：表示对方异常断开连接
   */
+  if (closeEnable)
+    return;
+  closeEnable = true;
+
   LOG_INFO(netLogger, "异常信息: {} | 会话ID: {}", ec.message(), sessionId);
 
-  Close();
+  if (userId > 0) {
+    OnlineUser::GetInstance()->ClearUser(userId, userId, shared_from_this());
+  }
+  socket.close();
   chatServer->ClearSession(sessionId);
 }
 
@@ -191,8 +199,10 @@ void ChatSession::Send(std::string msgData, uint32_t msgID) {
 }
 
 void ChatSession::Close() {
-  socket.close();
+  if (closeEnable)
+    return;
   closeEnable = true;
+  socket.close();
 }
 
 void ChatSession::HandleWrite(const net::error_code &ec,
@@ -201,9 +211,10 @@ void ChatSession::HandleWrite(const net::error_code &ec,
     std::lock_guard<std::mutex> lock(sendMutex);
     if (ec)
       return HandleError(ec);
+    auto &responsePackage = sendQueue.front();
     LOG_DEBUG(netLogger, "发送成功！会话ID: {}, 服务ID: {}, 总长: {}",
-              sessionId, getServiceIdString(protocolData->id),
-              protocolData->getTotal());
+              sessionId, getServiceIdString(responsePackage->id),
+              responsePackage->getTotal());
 
     sendQueue.pop();
 

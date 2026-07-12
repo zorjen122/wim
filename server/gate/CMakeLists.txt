@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.1)
+cmake_minimum_required(VERSION 3.16)
 project(gate LANGUAGES CXX)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
@@ -7,17 +7,21 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(Threads REQUIRED)
-find_package(Protobuf CONFIG REQUIRED)
-find_package(Boost REQUIRED COMPONENTS system filesystem)
+find_package(Protobuf REQUIRED)
+find_package(Boost REQUIRED COMPONENTS filesystem)
 find_package(gRPC REQUIRED)
 
 set(protobuf_MODULE_COMPATIBLE TRUE)
+wim_generate_grpc_proto(STATE_PROTO ../public/proto/state.proto)
+wim_generate_grpc_proto(VERIFY_PROTO ../verify/message.proto)
+
 file(GLOB SOURCE src/**/*.cc)
-file(GLOB RPC_SOURCE rpc/*.cc)
-add_library(imGate ${SOURCE} ${RPC_SOURCE})
+add_library(imGate ${SOURCE} ${STATE_PROTO} ${VERIFY_PROTO})
 add_executable(gate src/main.cc)
 
-target_include_directories(imGate PUBLIC ./include ./rpc ../public/include)
+target_include_directories(imGate PUBLIC ./include ${STATE_PROTO_INCLUDE_DIR}
+                                        ${VERIFY_PROTO_INCLUDE_DIR}
+                                        ../public/include)
 target_link_directories(imGate PUBLIC ../public/build)
 
 target_link_libraries(
@@ -25,15 +29,15 @@ target_link_libraries(
   PUBLIC imPublic
          Threads::Threads
          protobuf::libprotobuf
-         Boost::system
          Boost::filesystem
          gRPC::grpc++
          gRPC::grpc++_reflection
+         fmt::fmt
          yaml-cpp
          spdlog
          hiredis
          redis++
-         mysqlcppconn8
+         mysqlcppconnx
          jsoncpp)
 
 target_compile_options(imGate PRIVATE -Wall -g)
@@ -42,6 +46,6 @@ target_link_libraries(gate PRIVATE imGate)
 
 target_compile_options(gate PRIVATE -Wall)
 
-if(BUILD_TESTING)
+if(WIM_BUILD_UNIT_TESTS)
   add_subdirectory(test)
 endif()

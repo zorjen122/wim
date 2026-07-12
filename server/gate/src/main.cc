@@ -7,13 +7,16 @@
 #include "Mysql.h"
 #include "Redis.h"
 #include <iostream>
+#include <cstdlib>
 #include <jsoncpp/json/json.h>
 #include <jsoncpp/json/reader.h>
 #include <jsoncpp/json/value.h>
 
 int main() {
   try {
-    auto existConfig = Configer::loadConfig("../config.yaml");
+    const char *configPath = std::getenv("WIM_CONFIG");
+    auto existConfig =
+        Configer::loadConfig(configPath ? configPath : "../conf/gate.yaml");
     if (!existConfig) {
       spdlog::error("Config load failed");
       return 0;

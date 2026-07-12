@@ -15,7 +15,7 @@ public:
   RpcPool() = delete;
 
   RpcPool(size_t _poolSize, std::string _host, std::string _port)
-      : poolSize(_poolSize), isStop(false) {
+      : isStop(false), poolSize(_poolSize) {
     for (size_t i = 0; i < _poolSize; ++i) {
       std::shared_ptr<Channel> channel = grpc::CreateChannel(
           _host + ":" + _port, grpc::InsecureChannelCredentials());

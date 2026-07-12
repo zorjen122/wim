@@ -4,7 +4,9 @@
 #include "chatSession.h"
 #include <jsoncpp/json/json.h>
 #include <jsoncpp/json/value.h>
+#include <condition_variable>
 #include <memory>
+#include <mutex>
 #include <queue>
 
 namespace wim {
@@ -19,6 +21,7 @@ struct Chat : Singleton<Chat> {
   void setSession(ChatSession::Ptr session) { chat = session; }
   void setUser(db::User::Ptr user) { this->user = user; }
   bool login(bool isFirstLogin = true);
+  bool waitLoginReady(int timeoutSeconds = 5);
   void quit();
 
   bool searchUser(const std::string &username);
@@ -73,6 +76,10 @@ struct Chat : Singleton<Chat> {
   std::vector<db::Message> messageQueue{};
 
   std::mutex comsumeMessageMutex{};
+  std::mutex loginMutex{};
+  std::condition_variable loginCv{};
+  bool loginInitDone{false};
+  bool loginInitOk{false};
 
   // handle
   std::map<int, std::function<void(Json::Value &response)>> handleMap{};

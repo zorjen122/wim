@@ -1,30 +1,23 @@
 server:
-  self:
-    name : hunan-im
-    host: 0.0.0.0
-    port: 8090
-    rpcPort: 50055
+  state:
+    host: 127.0.0.1
+    port: 50052
   im:
     s1:
+      name: hunan-im
+      host: 127.0.0.1
+      port: 8090
+      rpcPort: 50055
+      rpcCount: 1
+      status: active
+    s2:
       name: beijing-im
       host: 127.0.0.1
       port: 8091
       rpcPort: 50056
       rpcCount: 1
+      status: active
     im-total: 1
-  file:
-    host: 127.0.0.1
-    rpcPort: 51000
-    rpcCount: 1
-  gateway:
-    host: 127.0.0.1
-    port: 8080
-  verify:
-    host: 127.0.0.1
-    port: 50051
-  state:
-    host: 127.0.0.1
-    port: 50052
   mysql:
     host: 127.0.0.1
     port: 33060
@@ -37,7 +30,7 @@ server:
     host: 127.0.0.1
     port: 6380
     password: root
-    clientCount: 1
+    clientCount: 2
     machineId: 1
   kafka:
     broker: bootstrap.servers

@@ -45,7 +45,7 @@ Tlv::Tlv(uint32_t msgID, uint32_t maxLength, char *msg) {
 uint32_t Tlv::getDataSize() { return length - PROTOCOL_HEADER_TOTAL; }
 uint32_t Tlv::getTotal() { return length; }
 
-std::string Tlv::getDataString() { return std::string(data, length); }
+std::string Tlv::getDataString() { return std::string(data, getDataSize()); }
 char *Tlv::getData() { return data; }
 
 Tlv::~Tlv() {
@@ -56,15 +56,17 @@ Tlv::~Tlv() {
 }
 
 ChatSession::ChatSession(net::io_context &iocontext, Endpoint endpoint)
-    : parseState(WAIT_HEADER), iocontext(iocontext) {
+    : closeEnable(false), parseState(WAIT_HEADER), iocontext(iocontext) {
   chat.reset(new tcp::socket(iocontext));
 
   boost::system::error_code ec;
 
   LOG_INFO(wim::businessLogger, "chat connect to {}:{}", endpoint.ip,
            endpoint.port);
-  net::ip::tcp::endpoint ep(net::ip::address::from_string(endpoint.ip),
+  net::ip::tcp::endpoint ep(net::ip::make_address(endpoint.ip, ec),
                             std::stoi(endpoint.port));
+  if (ec.failed())
+    throw std::runtime_error("invalid chat endpoint: " + ec.message());
 
   ec = chat->connect(ep, ec);
   if (ec.failed())
@@ -171,7 +173,7 @@ void ChatSession::HandleError(net::error_code ec) {
   } else if (ec == net::error::connection_reset) {
     LOG_DEBUG(netLogger, "connection reset, chat close ");
   } else {
-    LOG_DEBUG(netLogger, "handle error, error is {} ");
+    LOG_DEBUG(netLogger, "handle error, error is {}", ec.message());
   }
 
   Close();
@@ -180,26 +182,48 @@ void ChatSession::HandleError(net::error_code ec) {
 void ChatSession::Send(char *msgData, uint32_t maxSize, uint32_t msgID) {
   LOG_INFO(netLogger, "预发送大小为：{}, 请求服务ID：{}", maxSize,
            getServiceIdString(msgID));
-  sendProtocolData.reset(new Tlv(msgID, maxSize, msgData));
+  std::lock_guard<std::mutex> lock(sendMutex);
+  auto senderSize = sendQueue.size();
+  sendQueue.push(std::make_shared<Tlv>(msgID, maxSize, msgData));
+  if (senderSize > 0)
+    return;
 
   // 写入操作会发送完整的包数据
+  auto &sendProtocolData = sendQueue.front();
   boost::asio::async_write(
       *chat,
       boost::asio::buffer(sendProtocolData->data, sendProtocolData->length),
-      [this](net::error_code ec, size_t) {
-        if (ec)
-          HandleError(ec);
-        sendProtocolData.reset();
-      });
+      std::bind(&ChatSession::HandleWrite, this, std::placeholders::_1,
+                shared_from_this()));
 }
 
 void ChatSession::Send(std::string msgData, uint32_t msgID) {
   ChatSession::Send(msgData.data(), msgData.length(), msgID);
 }
 
+void ChatSession::HandleWrite(const net::error_code &ec,
+                              ChatSession::Ptr sharedSelf) {
+  std::lock_guard<std::mutex> lock(sendMutex);
+  if (ec)
+    return HandleError(ec);
+
+  sendQueue.pop();
+  if (sendQueue.empty())
+    return;
+
+  auto &sendProtocolData = sendQueue.front();
+  boost::asio::async_write(
+      *chat,
+      boost::asio::buffer(sendProtocolData->data, sendProtocolData->length),
+      std::bind(&ChatSession::HandleWrite, this, std::placeholders::_1,
+                sharedSelf));
+}
+
 void ChatSession::Close() {
   if (chat && chat->is_open()) {
-    chat->close(); // 显式关闭 socket
+    boost::system::error_code ec;
+    chat->shutdown(tcp::socket::shutdown_both, ec);
+    chat->close(ec); // 显式关闭 socket
     closeEnable = true;
   }
 }

@@ -19,7 +19,8 @@ public:
   ChatSession::Ptr GetUserSession(long uid);
 
   bool MapUser(db::UserInfo::Ptr userInfo, ChatSession::Ptr session);
-  void ClearUser(long seq, long uid);
+  void ClearUser(long seq, long uid,
+                 const ChatSession::Ptr &session = ChatSession::Ptr{});
   bool isOnline(long uid);
 
   void Pong(long uid);

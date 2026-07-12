@@ -11,7 +11,7 @@ class IocPool : public Singleton<IocPool> {
 
 public:
   using Service = boost::asio::io_context;
-  using Work = boost::asio::io_context::work;
+  using Work = boost::asio::executor_work_guard<Service::executor_type>;
   using WorkPtr = std::unique_ptr<Work>;
   ~IocPool();
   IocPool(const IocPool &) = delete;

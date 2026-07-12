@@ -7,6 +7,7 @@
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <queue>
@@ -77,6 +78,8 @@ public:
   void Close();
   void ClearSession();
   Ptr GetSharedSelf();
+  void SetUserId(int64_t uid) { userId = uid; }
+  int64_t GetUserId() const { return userId; }
 
   bool IsConnected();
 
@@ -88,6 +91,7 @@ private:
 
 private:
   uint64_t sessionId;
+  int64_t userId{0};
   tcp::socket socket;
 
   char recvBuffer[PROTOCOL_DATA_MTU];

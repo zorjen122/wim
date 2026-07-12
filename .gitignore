@@ -1,10 +1,13 @@
 build/
-demo/
 .vscode/
 bin/
 rpc/
 node_modules/
 .cache/
+logs/
+.demos/
+.agents/
+.codex/
 *.o
-a.out
-
+*.out
+compile_commands.json

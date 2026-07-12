@@ -67,9 +67,9 @@ build-%:
 	@cd $*/$(BUILD_DIR) && cmake .. && $(MAKE)
 
 # Special targets with common arguments(TODO)
-gate-with-args: ARGS = ../config.yaml --info
-chat-with-args-1: ARGS = run-chat ../config.yaml --normal --info
-chat-with-args-2: ARGS = run-chat ../config2.yaml --normal --info
+gate-with-args: ARGS = ../conf/gate.yaml --info
+chat-with-args-1: ARGS = run-chat ../conf/chat-hunan-im.yaml --normal --info
+chat-with-args-2: ARGS = run-chat ../conf/chat-beijing-im.yaml --normal --info
 
 
 # Phony targets

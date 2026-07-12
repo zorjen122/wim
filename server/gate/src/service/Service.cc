@@ -6,12 +6,43 @@
 #include "Logger.h"
 #include "Mysql.h"
 #include "Redis.h"
+#include "message.grpc.pb.h"
+#include "message.pb.h"
 #include "spdlog/spdlog.h"
+#include <grpcpp/grpcpp.h>
 #include <jsoncpp/json/json.h>
 #include <jsoncpp/json/value.h>
 #include <yaml-cpp/parser.h>
 
 namespace wim {
+namespace {
+int requestVerifyCode(const std::string &email) {
+  auto config = Configer::getNode("server");
+  if (!config || !config["verifyRPC"]) {
+    businessLogger->error("[post_verifycode] verifyRPC config not found");
+    return ErrorCodes::RPCFailed;
+  }
+
+  const auto host = config["verifyRPC"]["host"].as<std::string>();
+  const auto port = config["verifyRPC"]["port"].as<std::string>();
+  auto channel = grpc::CreateChannel(host + ":" + port,
+                                     grpc::InsecureChannelCredentials());
+  auto stub = message::VarifyService::NewStub(channel);
+
+  message::GetVarifyReq req;
+  req.set_email(email);
+  message::GetVarifyRsp rsp;
+  grpc::ClientContext context;
+  auto status = stub->GetVarifyCode(&context, req, &rsp);
+  if (!status.ok()) {
+    businessLogger->error("[post_verifycode] verify rpc failed: {}",
+                          status.error_message());
+    return ErrorCodes::RPCFailed;
+  }
+
+  return rsp.error();
+}
+} // namespace
 
 Service::Service() {
   using namespace std::placeholders;
@@ -135,11 +166,9 @@ bool Service::verifycode(HttpSession::ResponsePtr response,
   }
 
   auto email = requestData["email"].asString();
-  // GetVerifyRsp rsp = VerifyGrpcClient::GetInstance()->GetVerifyCode(email);
-
   businessLogger->info("service-post_verifycode] email as {}", email);
 
-  // rspInfo["error"] = rsp.error();
+  rspInfo["error"] = requestVerifyCode(email);
   rspInfo["email"] = requestData["email"];
   return true;
 }

@@ -35,6 +35,7 @@ ImRpcService::NotifyAddFriend(ServerContext *context,
   requestJsonData["from"] = Json::Value::Int64(from);
   requestJsonData["to"] = Json::Value::Int64(to);
   requestJsonData["requestMessage"] = Json::Value(message);
+  requestJsonData["__skipStorage"] = true;
 
   auto localServiceResponse =
       wim::NotifyAddFriend(NULL, ID_NOTIFY_ADD_FRIEND_REQ, requestJsonData);
@@ -60,6 +61,7 @@ grpc::Status ImRpcService::ReplyAddFriend(ServerContext *context,
   requestJsonData["to"] = Json::Value::Int64(to);
   requestJsonData["accept"] = Json::Value(accept);
   requestJsonData["replyMessage"] = Json::Value(message);
+  requestJsonData["__skipStorage"] = true;
 
   auto localServiceResponse =
       wim::ReplyAddFriend(nullptr, ID_REPLY_ADD_FRIEND_REQ, requestJsonData);
@@ -81,10 +83,11 @@ ImRpcService::TextSendMessage(ServerContext *context,
   long to = request->to();
   std::string text = request->text();
   Json::Value requestJsonData;
+  requestJsonData["seq"] = Json::Value::Int64(request->seq());
   requestJsonData["from"] = Json::Value::Int64(from);
   requestJsonData["to"] = Json::Value::Int64(to);
-  requestJsonData["text"] = Json::Value(text);
-  requestJsonData["sessionKey"] = Json::Value::Int64(0);
+  requestJsonData["data"] = Json::Value(text);
+  requestJsonData["sessionKey"] = Json::Value::Int64(request->session_key());
 
   auto localServiceResponse =
       wim::TextSend(nullptr, ID_TEXT_SEND_REQ, requestJsonData);

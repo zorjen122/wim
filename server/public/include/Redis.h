@@ -25,7 +25,7 @@ public:
 
   RedisPool(const std::string &host, unsigned int port,
             const std::string &password, size_t poolSize = 2)
-      : host(host), port(port), stopEnable(false), password(password) {
+      : stopEnable(false), host(host), port(port), password(password) {
     for (size_t i = 0; i < poolSize; ++i) {
       try {
         std::string url = "tcp://" + host + ":" + std::to_string(port);
@@ -132,8 +132,8 @@ private:
       auto con = std::move(connections.front());
       connections.pop();
       try {
-        auto v = con->get("PING");
-        if (v->empty())
+        auto pong = con->ping();
+        if (pong != "PONG")
           throw sw::redis::Error("PING command is failed");
 
         connections.push(std::move(con));
@@ -144,8 +144,8 @@ private:
         std::string url = "tcp://" + host + ":" + std::to_string(port);
         try {
           std::unique_ptr<sw::redis::Redis> session(new sw::redis::Redis(url));
-          connections.push(std::move(session));
           session->auth(password);
+          connections.push(std::move(session));
         } catch (sw::redis::Error &e) {
           spdlog::warn("redis reconnection is error: {} | url: {}", e.what(),
                        url);

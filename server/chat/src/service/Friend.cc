@@ -32,28 +32,28 @@ Json::Value NotifyAddFriend(ChatSession::Ptr session, unsigned int msgID,
 
   long from = request["from"].asInt64();
   long to = request["to"].asInt64();
+  bool skipStorage = request.get("__skipStorage", false).asBool();
 
-  int ret = StoreageNotifyAddFriend(request);
+  int ret = skipStorage ? 0 : StoreageNotifyAddFriend(request);
   rsp["uid"] = Json::Value::Int64(to);
+  if (ret == -1) {
+    LOG_INFO(businessLogger,
+             "StoreageNotifyAddFriend save service failed, from-{}, to-{}",
+             from, to);
+    rsp["error"] = ErrorCodes::MysqlFailed;
+    rsp["message"] = "数据库修改异常";
+    return rsp;
+  }
 
   auto toSession = OnlineUser::GetInstance()->GetUserSession(to);
   bool isLocalMachineOnline = OnlineUser::GetInstance()->isOnline(to);
   if (isLocalMachineOnline) {
     // 本地在线推送
-    Json::Value senderRsp{};
-    senderRsp["uid"] = Json::Value::Int64(from);
-    senderRsp["requestMessage"] = request["requestMessage"];
-    toSession->Send(request.toStyledString(), ID_NOTIFY_ADD_FRIEND_REQ);
+    Json::Value senderRsp = request;
+    senderRsp.removeMember("__skipStorage");
+    toSession->Send(senderRsp.toStyledString(), ID_NOTIFY_ADD_FRIEND_REQ);
 
-    if (ret == -1) {
-      LOG_INFO(businessLogger,
-               "StoreageNotifyAddFriend save service failed, from-{}, to-{}",
-               from, to);
-      rsp["error"] = ErrorCodes::MysqlFailed;
-      rsp["message"] = "数据库修改异常";
-    } else {
-      rsp["error"] = ErrorCodes::Success;
-    }
+    rsp["error"] = ErrorCodes::Success;
     return rsp;
   }
 
@@ -71,15 +71,19 @@ Json::Value NotifyAddFriend(ChatSession::Ptr session, unsigned int msgID,
     rpc::NotifyAddFriendResponse notifyResponse;
     notifyRequest.set_from(from);
     notifyRequest.set_to(to);
-    notifyRequest.set_requestmessage(request.toStyledString());
+    notifyRequest.set_requestmessage(request["requestMessage"].asString());
 
     // 通过MachineID路由到对应的机器，并转发
     LOG_INFO(wim::businessLogger,
              "forwardNotifyAddFriend(from: {}, to: {}) to machine: {}", from,
              to, machineId);
-    notifyResponse =
-        rpc::ImRpc::GetInstance()->getRpc(machineId)->forwardNotifyAddFriend(
-            notifyRequest);
+    auto rpcNode = rpc::ImRpc::GetInstance()->getRpc(machineId);
+    if (rpcNode == nullptr) {
+      rsp["message"] = "RPC目标机器不存在";
+      rsp["error"] = ErrorCodes::RPCFailed;
+      return rsp;
+    }
+    notifyResponse = rpcNode->forwardNotifyAddFriend(notifyRequest);
 
     if (notifyResponse.status() == "success") {
       rsp["error"] = ErrorCodes::Success;
@@ -88,18 +92,10 @@ Json::Value NotifyAddFriend(ChatSession::Ptr session, unsigned int msgID,
       rsp["error"] = ErrorCodes::RPCFailed;
     }
     return rsp;
-  } else {
-    if (ret == -1) {
-      LOG_INFO(businessLogger,
-               "StoreageNotifyAddFriend save service failed, from-{}, to-{}",
-               from, to);
-      rsp["error"] = ErrorCodes::MysqlFailed;
-      rsp["message"] = "数据库修改异常";
-    } else {
-      rsp["error"] = ErrorCodes::Success;
-    }
-    return rsp;
   }
+
+  rsp["error"] = ErrorCodes::Success;
+  return rsp;
 }
 
 Json::Value ReplyAddFriend(ChatSession::Ptr session, unsigned int msgID,
@@ -110,29 +106,34 @@ Json::Value ReplyAddFriend(ChatSession::Ptr session, unsigned int msgID,
   long to = request["to"].asInt64();
   bool accept = request["accept"].asBool();
   std::string replyMessage = request["replyMessage"].asString();
+  bool skipStorage = request.get("__skipStorage", false).asBool();
 
   rsp["uid"] = Json::Value::Int64(to);
 
-  long sessionKey = StoreageReplyAddFriend(request);
+  long sessionKey = skipStorage ? request.get("sessionKey", 0).asInt64()
+                                : StoreageReplyAddFriend(request);
+  if (sessionKey == -1) {
+    LOG_ERROR(businessLogger, "StoreageReplyAddFriend is failed, from {}, to {}",
+              from, to);
+    rsp["error"] = ErrorCodes::MysqlFailed;
+    rsp["message"] = "数据库修改发送异常";
+    return rsp;
+  }
+
   bool isLocalMachineOnline = OnlineUser::GetInstance()->isOnline(to);
   if (isLocalMachineOnline) {
     Json::Value senderRsp{};
+    senderRsp["from"] = Json::Value::Int64(from);
+    senderRsp["to"] = Json::Value::Int64(to);
     senderRsp["uid"] = Json::Value::Int64(to);
     senderRsp["sessionKey"] = Json::Value::Int64(sessionKey);
     senderRsp["accept"] = accept;
     senderRsp["replyMessage"] = replyMessage;
 
     auto toSession = OnlineUser::GetInstance()->GetUserSession(to);
-    toSession->Send(request.toStyledString(), ID_REPLY_ADD_FRIEND_REQ);
+    toSession->Send(senderRsp.toStyledString(), ID_REPLY_ADD_FRIEND_REQ);
 
-    if (sessionKey == -1) {
-      LOG_ERROR(businessLogger,
-                "StoreageReplyAddFriend is failed, from {}, to {}", from, to);
-      rsp["error"] = ErrorCodes::MysqlFailed;
-      rsp["message"] = "数据库修改发送异常";
-    } else {
-      rsp["error"] = ErrorCodes::Success;
-    }
+    rsp["error"] = ErrorCodes::Success;
     return rsp;
   }
 
@@ -151,9 +152,13 @@ Json::Value ReplyAddFriend(ChatSession::Ptr session, unsigned int msgID,
     replyRequest.set_to(to);
     replyRequest.set_accept(accept);
     replyRequest.set_replymessage(replyMessage);
-    replyResponse =
-        rpc::ImRpc::GetInstance()->getRpc(machineId)->forwardReplyAddFriend(
-            replyRequest);
+    auto rpcNode = rpc::ImRpc::GetInstance()->getRpc(machineId);
+    if (rpcNode == nullptr) {
+      rsp["error"] = ErrorCodes::RPCFailed;
+      rsp["message"] = "RPC目标机器不存在";
+      return rsp;
+    }
+    replyResponse = rpcNode->forwardReplyAddFriend(replyRequest);
     LOG_INFO(
         businessLogger,
         "forwardReplyAddFriend(from: {}, to: {}) to machine: {}, response: {}",
@@ -166,17 +171,10 @@ Json::Value ReplyAddFriend(ChatSession::Ptr session, unsigned int msgID,
       rsp["message"] = "RPC转发异常";
     }
     return rsp;
-  } else {
-    if (sessionKey == -1) {
-      LOG_ERROR(businessLogger,
-                "StoreageReplyAddFriend is failed, from {}, to {}", from, to);
-      rsp["error"] = ErrorCodes::MysqlFailed;
-      rsp["message"] = "数据库修改发送异常";
-    } else {
-      rsp["error"] = ErrorCodes::Success;
-    }
-    return rsp;
   }
+
+  rsp["error"] = ErrorCodes::Success;
+  return rsp;
 }
 
 int StoreageReplyAddFriend(Json::Value &request) {
@@ -193,7 +191,7 @@ int StoreageReplyAddFriend(Json::Value &request) {
   if (accept) {
     LOG_INFO(businessLogger, "accept friend request, from {}, to {}", from, to);
     status = db::FriendApply::Status::Agree;
-    long sessionId = db::RedisDao::GetInstance()->generateSessionId();
+    sessionId = db::RedisDao::GetInstance()->generateSessionId();
     db::Friend::Ptr friendData(new db::Friend(from, to, time, sessionId));
 
     rt = db::MysqlDao::GetInstance()->insertFriend(friendData);

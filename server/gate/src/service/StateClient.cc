@@ -30,6 +30,10 @@ ServerNode StateClient::GetImServer(int uid) {
   state::ConnectUserRsp rsp;
   req.set_id(uid);
   auto caller = rpcPool->getConnection();
+  if (!caller)
+    return ServerNode();
+  Defer defer(
+      [&caller, this]() { rpcPool->returnConnection(std::move(caller)); });
 
   grpc::ClientContext context;
   auto status = caller->GetImServer(&context, req, &rsp);
@@ -46,6 +50,10 @@ ServerNode StateClient::ActiveImBackupServer(int uid) {
   state::ConnectUserRsp rsp;
   req.set_id(uid);
   auto caller = rpcPool->getConnection();
+  if (!caller)
+    return ServerNode();
+  Defer defer(
+      [&caller, this]() { rpcPool->returnConnection(std::move(caller)); });
 
   grpc::ClientContext context;
   auto status = caller->ActiveImBackupServer(&context, req, &rsp);
@@ -61,6 +69,8 @@ std::string StateClient::TestNetworkPing() {
   state::TestNetwork req, rsp;
   req.set_msg("Ping");
   auto caller = rpcPool->getConnection();
+  if (!caller)
+    return "";
   Defer defer(
       [&caller, this]() { rpcPool->returnConnection(std::move(caller)); });
   grpc::ClientContext context;

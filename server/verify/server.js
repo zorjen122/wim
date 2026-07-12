@@ -40,14 +40,18 @@ async function GetVarifyCode(call, callback) {
     let text_str = '您的验证码为' + uniqueId + '请三分钟内完成注册'
     //发送邮件
     let mailOptions = {
-      from: '1839916082@qq.com',
+      from: configModule.email_user,
       to: call.request.email,
       subject: '验证码',
       text: text_str,
     };
 
-    let send_res = await emailModule.SendMail(mailOptions);
-    console.log('send res is ', send_res)
+    if (process.env.WIM_VERIFY_SEND_EMAIL === '0') {
+      console.log('skip email send in local mode, code is ', uniqueId)
+    } else {
+      let send_res = await emailModule.SendMail(mailOptions);
+      console.log('send res is ', send_res)
+    }
 
     callback(
         null, {email: call.request.email, error: const_module.Errors.Success});

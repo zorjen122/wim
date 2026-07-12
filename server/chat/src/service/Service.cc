@@ -14,7 +14,6 @@
 #include <boost/asio/error.hpp>
 #include <boost/asio/steady_timer.hpp>
 #include <boost/system/detail/error_code.hpp>
-#include <cstdio>
 #include <fcntl.h>
 #include <jsoncpp/json/json.h>
 #include <jsoncpp/json/value.h>
@@ -47,7 +46,7 @@ void Service::RegisterHandle(uint32_t msgID, HandleType handle) {
 接口说明:
   1、函数处理分为两类：直接处理或转发处理
   2、直接处理时，单向发送请求者响应包
-  2、转发处理时，先单向的发送请求响应包，再通过rpc换发间接响应目标接收者
+  2、转发处理时，先单向的发送请求响应包，再通过rpc转发间接响应目标接收者
   3、带有转发性质的函数会被复用，复用时请求方会话默认为空，因其已被响应，例如：
       wim::ReplyAddFriend(nullptr, ID_REPLY_ADD_FRIEND_REQ, requestJsonData);
   4、这意味着带有转发性质的函数，不得在函数内部引用session，因其在转发时默认为空
@@ -100,6 +99,7 @@ void Service::Run() {
     uint32_t id = channel->protocolData->id;
     const char *data = channel->protocolData->data;
     uint32_t dataSize = channel->protocolData->getDataSize();
+    int responseId = __getServiceResponseId(ServiceID(id));
 
     auto handleCaller = serviceGroup.find(id);
     if (handleCaller == serviceGroup.end()) {
@@ -107,7 +107,7 @@ void Service::Run() {
 
       Json::Value rsp;
       rsp["error"] = ErrorCodes::NotFound;
-      channel->contextSession->Send(rsp.toStyledString(), id);
+      channel->contextSession->Send(rsp.toStyledString(), responseId);
       messageQueue.pop();
       return;
     }
@@ -115,7 +115,6 @@ void Service::Run() {
     std::string msgData{data, dataSize};
     Json::Reader reader;
     Json::Value request, response;
-    int responseId = __getServiceResponseId(ServiceID(id));
     std::string requestIdMessage = getServiceIdString(id),
                 responseIdMessage = getServiceIdString(responseId);
 
@@ -133,6 +132,12 @@ void Service::Run() {
               requestIdMessage, request.toStyledString());
 
     response = handleCaller->second(channel->contextSession, id, request);
+    if (id == ID_ACK) {
+      LOG_DEBUG(wim::businessLogger, "ACK已处理，不发送响应包: {}",
+                response.toStyledString());
+      messageQueue.pop();
+      return;
+    }
     auto ret = response.toStyledString();
     channel->contextSession->Send(ret, responseId);
 
@@ -163,7 +168,8 @@ Json::Value PingHandle(ChatSession::Ptr session, uint32_t msgID,
   Json::Value rsp;
   int64_t uid = request["uid"].asInt64();
 
-  OnlineUser::GetInstance()->Pong(uid);
+  rsp["uid"] = Json::Value::Int64(uid);
+  rsp["error"] = ErrorCodes::Success;
   return rsp;
 }
 
@@ -174,6 +180,8 @@ Json::Value AckHandle(ChatSession::Ptr session, uint32_t msgID,
   int64_t uid = request["uid"].asInt64();
 
   OnlineUser::GetInstance()->cancelAckTimer(seq, uid);
+  db::MysqlDao::GetInstance()->updateMessage(seq, db::Message::Status::DONE,
+                                             getCurrentDateTime());
   rsp["error"] = ErrorCodes::Success;
   return rsp;
 }
@@ -300,25 +308,38 @@ Json::Value TextSend(ChatSession::Ptr session, uint32_t msgID,
     return rsp;
   }
 
-  std::string userInfo = db::RedisDao::GetInstance()->getOnlineUserInfo(to);
+  Json::Value userInfo =
+      db::RedisDao::GetInstance()->getOnlineUserInfoObject(to);
   bool isLocalMachineOnline = OnlineUser::GetInstance()->isOnline(to);
   bool isOtherMachineOnline =
-      (userInfo.empty() == false && isLocalMachineOnline == false);
+      (!userInfo.empty() && isLocalMachineOnline == false);
   if (isOtherMachineOnline) {
     LOG_INFO(businessLogger, "用户不在本地机器，转发消息到其他机器, 用户ID: {}",
              to);
+    std::string machineId = userInfo["machineId"].asString();
     rpc::TextSendMessageRequest rpcRequest;
     rpc::TextSendMessageResponse rpcResponse;
     rpcRequest.set_from(from);
     rpcRequest.set_to(to);
     rpcRequest.set_text(data);
+    rpcRequest.set_seq(clientSeq);
+    rpcRequest.set_session_key(sessionHashKey);
 
-    rpcResponse = rpc::ImRpc::GetInstance()
-                      ->getRpc(sessionHashKey)
-                      ->forwardTextSendMessage(rpcRequest);
+    auto rpcNode = rpc::ImRpc::GetInstance()->getRpc(machineId);
+    if (rpcNode == nullptr) {
+      LOG_WARN(businessLogger, "未找到目标IM机器的RPC连接, machineId: {}",
+               machineId);
+      rsp["status"] = "wait";
+      rsp["error"] = ErrorCodes::RPCFailed;
+      rsp["message"] = "目标IM机器不可达";
+      return rsp;
+    }
+
+    rpcResponse = rpcNode->forwardTextSendMessage(rpcRequest);
 
     std::string status = rpcResponse.status();
-    LOG_INFO(businessLogger, "转发成功，rpc 响应: {}, 状态码: {}",
+    LOG_INFO(businessLogger,
+             "转发完成，目标机器: {}, rpc 响应: {}, 状态码: {}", machineId,
              rpcResponse.DebugString(), status);
     rsp["status"] = "wait";
     if (status != "success")
@@ -332,9 +353,20 @@ Json::Value TextSend(ChatSession::Ptr session, uint32_t msgID,
   db::RedisDao::GetInstance()->setUserMsgId(from, clientSeq,
                                             MESSAGE_CACHE_EXPIRE_TIME_SECONDS);
   serverMsgSeq = db::RedisDao::GetInstance()->generateMsgId();
+  const std::string sendTime = getCurrentDateTime();
 
   if (isLocalMachineOnline) {
     LOG_INFO(businessLogger, "用户本地在线，发送消息给目标用户，ID: {}", to);
+    db::Message::Ptr message(new db::Message(
+        serverMsgSeq, from, to, std::to_string(sessionHashKey),
+        db::Message::Type::TEXT, data, db::Message::Status::WAIT, sendTime));
+    int sqlStatus = db::MysqlDao::GetInstance()->insertMessage(message);
+    if (sqlStatus == -1) {
+      rsp["error"] = ErrorCodes::MysqlFailed;
+      rsp["message"] = "消息落库失败";
+      return rsp;
+    }
+
     rsp["status"] = "wait";
     rsp["error"] = ErrorCodes::Success;
 
@@ -352,7 +384,7 @@ Json::Value TextSend(ChatSession::Ptr session, uint32_t msgID,
 
   message.reset(new db::Message(
       serverMsgSeq, from, to, std::to_string(sessionHashKey),
-      db::Message::Type::TEXT, data, db::Message::Status::WAIT));
+      db::Message::Type::TEXT, data, db::Message::Status::WAIT, sendTime));
 
   int sqlStatus = db::MysqlDao::GetInstance()->insertMessage(message);
   rsp["status"] = "wait";
@@ -372,7 +404,7 @@ Json::Value UserQuit(ChatSession::Ptr session, uint32_t msgID,
   清理在线资源，网络层资源在对方close关闭时自行清理
   每个用户都有心跳机制，此处默认清理
   */
-  OnlineUser::GetInstance()->ClearUser(uid, uid);
+  OnlineUser::GetInstance()->ClearUser(uid, uid, session);
   return {};
 } // namespace wim
 
@@ -435,6 +467,7 @@ Json::Value OnLogin(ChatSession::Ptr session, uint32_t msgID,
     rsp["error"] = -1;
     return rsp;
   }
+  session->SetUserId(uid);
 
   rsp["uid"] = Json::Value::Int64(userInfo->uid);
   rsp["name"] = userInfo->name;

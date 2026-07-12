@@ -68,7 +68,7 @@ StateServiceImpl::ActiveImBackupServer(grpc::ServerContext *context,
 
   int uid = request->id();
   int imTotal = imNodeName.size();
-  bool onActive;
+  bool onActive = false;
 
   for (int _ = 0; _ < imTotal; ++_) {
     auto nodeIndex = imNodeName[routeCount++];

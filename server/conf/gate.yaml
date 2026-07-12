@@ -1,30 +1,14 @@
 server:
-  self:
-    name : beijing-im
-    host: 0.0.0.0
-    port: 8091
-    rpcPort: 50056
-  im:
-    s1:
-      name: hunan-im
-      host: 127.0.0.1
-      port: 8090
-      rpcPort: 50055
-      rpcCount: 1
-    im-total: 1
-  file:
-    host: 127.0.0.1
-    rpcPort: 51000
-    rpcCount: 1
   gateway:
     host: 127.0.0.1
-    port: 8080
-  verify:
+    port: 18080
+  verifyRPC:
     host: 127.0.0.1
     port: 50051
-  state:
+  stateRPC:
     host: 127.0.0.1
     port: 50052
+    rpcCount: 2
   mysql:
     host: 127.0.0.1
     port: 33060

@@ -19,4 +19,3 @@ function(add_file_test target)
 endfunction()
 
 add_file_test(integration_file_client_test integration/file_client_test.cc)
-add_file_test(unit_demo_test unit/demo.cc)
