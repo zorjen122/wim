@@ -3,12 +3,16 @@
 #include "spdlog/spdlog.h"
 
 namespace wim {
-IocPool::IocPool(std::size_t size) : iocGroup(size), worker(size) {
+IocPool::IocPool(std::size_t size)
+    : iocGroup(size),
+      worker(size),
+      threadPool(std::make_unique<ThreadPool>("io-loop", size)) {
   for (std::size_t i = 0; i < size; ++i)
     worker[i] = std::make_unique<Work>(iocGroup[i].get_executor());
 
-  for (std::size_t i = 0; i < iocGroup.size(); ++i)
-    threadGroup.emplace_back([this, i]() { iocGroup[i].run(); });
+  for (std::size_t i = 0; i < iocGroup.size(); ++i) {
+    threadPool->Post([this, i]() { iocGroup[i].run(); });
+  }
 
   if (iocGroup.size() >= 1)
     LOG_INFO(wim::netLogger, "IocPool created with {} threads",
@@ -38,9 +42,8 @@ void IocPool::Stop() {
   for (auto &work : worker)
     work.reset();
 
-  for (auto &t : threadGroup) {
-    if (t.joinable())
-      t.join();
+  if (threadPool) {
+    threadPool->Stop();
   }
 }
 };  // namespace wim

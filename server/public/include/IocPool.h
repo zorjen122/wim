@@ -1,8 +1,10 @@
 #pragma once
 
 #include "Const.h"
+#include "ThreadPool.h"
 
 #include <boost/asio.hpp>
+#include <memory>
 #include <vector>
 
 namespace wim {
@@ -23,6 +25,6 @@ class IocPool : public Singleton<IocPool> {
   IocPool(std::size_t size = 2);
   std::vector<Service> iocGroup;
   std::vector<WorkPtr> worker;
-  std::vector<std::thread> threadGroup;
+  std::unique_ptr<ThreadPool> threadPool;
 };
 };  // namespace wim

@@ -74,23 +74,23 @@ class ImServiceRunner : public Singleton<ImServiceRunner> {
       LOG_INFO(wim::businessLogger, "IM RPC服务启动成功, 监听端口: {}",
                rpcPort);
 
-      net::io_context &ioc = wim::IocPool::GetInstance()->GetContext();
+      net::io_context acceptIoc;
 
       // 通讯服务
-      imServer = std::make_unique<ChatServer>(ioc, port);
+      imServer = std::make_unique<ChatServer>(acceptIoc, port);
       imServer->Start();
 
       rpcRunThread = std::thread([&]() { rpcServer->Wait(); });
 
-      boost::asio::signal_set signals(ioc, SIGINT, SIGTERM);
-      signals.async_wait(
-          [&ioc](const boost::system::error_code &error, int signalNumber) {
-            if (error)
-              return;
-            ioc.stop();
-          });
+      boost::asio::signal_set signals(acceptIoc, SIGINT, SIGTERM);
+      signals.async_wait([&acceptIoc](const boost::system::error_code &error,
+                                      int signalNumber) {
+        if (error)
+          return;
+        acceptIoc.stop();
+      });
 
-      ioc.run();
+      acceptIoc.run();
       ClearUp();
 
       return true;

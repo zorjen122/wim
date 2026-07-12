@@ -153,7 +153,7 @@ void ChatSession::StartInContext() {
                 static_cast<const char *>(recvStreamBuffer.data().data()),
                 byte);
 
-            Service::GetInstance()->PushService(std::shared_ptr<Channel>(
+            Service::GetInstance()->Dispatch(std::shared_ptr<Channel>(
                 new Channel(shared_from_this(), protocolData)));
             recvStreamBuffer.consume(byte);
 

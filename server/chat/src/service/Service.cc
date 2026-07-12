@@ -14,32 +14,64 @@
 #include <boost/asio/error.hpp>
 #include <boost/asio/steady_timer.hpp>
 #include <boost/system/detail/error_code.hpp>
+#include <algorithm>
+#include <cstdlib>
 #include <fcntl.h>
 #include <jsoncpp/json/value.h>
 #include <memory>
 #include <string>
+#include <thread>
+#include <utility>
 
 namespace wim {
+namespace {
 
-Service::Service() : stopEnable(false) {
+std::size_t ResolveServiceWorkerCount() {
+  if (const char *value = std::getenv("WIM_CHAT_SERVICE_WORKERS")) {
+    int configured = std::atoi(value);
+    if (configured > 0) {
+      return static_cast<std::size_t>(configured);
+    }
+  }
+
+  std::size_t hardware = std::thread::hardware_concurrency();
+  if (hardware == 0) {
+    hardware = 4;
+  }
+  return std::clamp<std::size_t>(hardware / 2, 2, 8);
+}
+
+}  // namespace
+
+Service::Service() {
   Init();
-
-  worker = std::thread(&Service::Run, this);
+  threadPool =
+      std::make_unique<ThreadPool>("chat-biz", ResolveServiceWorkerCount());
 }
 
 Service::~Service() {
-  stopEnable = true;
-  consume.notify_one();
-  worker.join();
+  if (threadPool) {
+    auto stats = threadPool->GetStats();
+    LOG_INFO(businessLogger,
+             "chat service dispatcher stop, workers: {}, queued: {}, light "
+             "direct: {}, heavy dispatched/rejected: {}/{}, thread pool "
+             "submitted/completed/rejected: {}/{}/{}",
+             stats.workerCount, stats.queueSize,
+             lightDispatched.load(std::memory_order_relaxed),
+             heavyDispatched.load(std::memory_order_relaxed),
+             heavyRejected.load(std::memory_order_relaxed), stats.submitted,
+             stats.completed, stats.rejected);
+    threadPool->Stop();
+  }
 }
 
-void Service::RegisterHandle(uint32_t msgID, HandleType handle) {
+void Service::RegisterHandle(uint32_t msgID, TaskType taskType,
+                             HandleType handle) {
   if (serviceGroup.find(msgID) != serviceGroup.end()) {
     LOG_WARN(businessLogger, "该服务已注册,msgID: {}", msgID);
     return;
   }
-  serviceGroup[msgID] = std::bind(handle, std::placeholders::_1,
-                                  std::placeholders::_2, std::placeholders::_3);
+  serviceGroup[msgID] = HandlerEntry{std::move(handle), taskType};
 }
 /*
 接口说明:
@@ -54,107 +86,123 @@ void Service::Init() {
   /* 已成功 */
 
   // 状态
-  RegisterHandle(ID_LOGIN_INIT_REQ, OnLogin);
-  RegisterHandle(ID_USER_QUIT_REQ, UserQuit);
-  RegisterHandle(ID_PING_REQ, PingHandle);
-  RegisterHandle(ID_ACK, AckHandle);
-
+  RegisterHandle(ID_LOGIN_INIT_REQ, TaskType::Heavy, OnLogin);
+  RegisterHandle(ID_USER_QUIT_REQ, TaskType::Heavy, UserQuit);
+  RegisterHandle(ID_PING_REQ, TaskType::Light, PingHandle);
+  RegisterHandle(ID_ACK, TaskType::Light, AckHandle);
   // 传输
-  RegisterHandle(ID_TEXT_SEND_REQ, TextSend);
-  RegisterHandle(ID_FILE_UPLOAD_REQ, UploadFile);
+  RegisterHandle(ID_TEXT_SEND_REQ, TaskType::Heavy, TextSend);
+  RegisterHandle(ID_FILE_UPLOAD_REQ, TaskType::Heavy, UploadFile);
 
   // 好友
-  RegisterHandle(ID_NOTIFY_ADD_FRIEND_REQ, NotifyAddFriend);
-  RegisterHandle(ID_REPLY_ADD_FRIEND_REQ, ReplyAddFriend);
+  RegisterHandle(ID_NOTIFY_ADD_FRIEND_REQ, TaskType::Heavy, NotifyAddFriend);
+  RegisterHandle(ID_REPLY_ADD_FRIEND_REQ, TaskType::Heavy, ReplyAddFriend);
 
   // 拉取
-  RegisterHandle(ID_PULL_FRIEND_LIST_REQ, pullFriendList);
-  RegisterHandle(ID_PULL_FRIEND_APPLY_LIST_REQ, pullFriendApplyList);
-  RegisterHandle(ID_PULL_SESSION_MESSAGE_LIST_REQ, pullSessionMessageList);
-  RegisterHandle(ID_PULL_MESSAGE_LIST_REQ, pullMessageList);
+  RegisterHandle(ID_PULL_FRIEND_LIST_REQ, TaskType::Heavy, pullFriendList);
+  RegisterHandle(ID_PULL_FRIEND_APPLY_LIST_REQ, TaskType::Heavy,
+                 pullFriendApplyList);
+  RegisterHandle(ID_PULL_SESSION_MESSAGE_LIST_REQ, TaskType::Heavy,
+                 pullSessionMessageList);
+  RegisterHandle(ID_PULL_MESSAGE_LIST_REQ, TaskType::Heavy, pullMessageList);
 
   // 群聊
-  RegisterHandle(ID_GROUP_CREATE_REQ, GroupCreate);
-  RegisterHandle(ID_GROUP_NOTIFY_JOIN_REQ, GroupNotifyJoin);
-  RegisterHandle(ID_GROUP_REPLY_JOIN_REQ, GroupReplyJoin);
+  RegisterHandle(ID_GROUP_CREATE_REQ, TaskType::Heavy, GroupCreate);
+  RegisterHandle(ID_GROUP_NOTIFY_JOIN_REQ, TaskType::Heavy, GroupNotifyJoin);
+  RegisterHandle(ID_GROUP_REPLY_JOIN_REQ, TaskType::Heavy, GroupReplyJoin);
 
   /* 待实现 */
-  RegisterHandle(ID_GROUP_TEXT_SEND_REQ, GroupTextSend);
-  RegisterHandle(ID_FILE_SEND_REQ, FileSend);
+  RegisterHandle(ID_GROUP_TEXT_SEND_REQ, TaskType::Heavy, GroupTextSend);
+  RegisterHandle(ID_FILE_SEND_REQ, TaskType::Heavy, FileSend);
 }
 
-void Service::PushService(std::shared_ptr<Channel> msg) {
-  std::unique_lock<std::mutex> lock(_mutex);
-  messageQueue.push(msg);
-  if (messageQueue.size() == 1) {
-    lock.unlock();
-    consume.notify_one();
+void Service::Dispatch(std::shared_ptr<Channel> msg) {
+  auto channel = std::move(msg);
+  uint32_t id = channel->protocolData->id;
+  auto handleCaller = serviceGroup.find(id);
+  TaskType taskType = handleCaller == serviceGroup.end()
+                          ? TaskType::Light
+                          : handleCaller->second.taskType;
+
+  if (taskType == TaskType::Light) {
+    lightDispatched.fetch_add(1, std::memory_order_relaxed);
+    ProcessChannel(channel);
+    return;
   }
+
+  bool accepted =
+      threadPool->Post([this, channel]() { ProcessChannel(channel); });
+  if (!accepted) {
+    heavyRejected.fetch_add(1, std::memory_order_relaxed);
+    HandleRejectedChannel(channel);
+    return;
+  }
+
+  heavyDispatched.fetch_add(1, std::memory_order_relaxed);
 }
 
-void Service::Run() {
-  auto processChannel = [&](const Channel::Ptr &channel) {
-    uint32_t id = channel->protocolData->id;
-    const char *data = channel->protocolData->data;
-    uint32_t dataSize = channel->protocolData->getDataSize();
-    int responseId = __getServiceResponseId(ServiceID(id));
+void Service::ProcessChannel(const Channel::Ptr &channel) {
+  uint32_t id = channel->protocolData->id;
+  const char *data = channel->protocolData->data;
+  uint32_t dataSize = channel->protocolData->getDataSize();
+  int responseId = __getServiceResponseId(ServiceID(id));
 
-    auto handleCaller = serviceGroup.find(id);
-    if (handleCaller == serviceGroup.end()) {
-      LOG_INFO(wim::businessLogger, "没有这样的服务，ID： {}, ", id);
+  auto handleCaller = serviceGroup.find(id);
+  if (handleCaller == serviceGroup.end()) {
+    LOG_INFO(wim::businessLogger, "没有这样的服务，ID： {}, ", id);
 
-      TcpPacket rsp = MakeErrorPacket(ErrorCodes::NotFound);
-      channel->contextSession->Send(SerializeTcpPacket(rsp), responseId);
-      return;
-    }
-
-    std::string msgData{data, dataSize};
-    TcpPacket request, response;
-    std::string requestIdMessage = getServiceIdString(id),
-                responseIdMessage = getServiceIdString(responseId);
-
-    bool parserSuccess = ParseTcpPacket(msgData, request);
-    if (!parserSuccess) {
-      LOG_WARN(wim::businessLogger, "消息解析失败, 请求服务: {}，消息：{}",
-               requestIdMessage, msgData);
-      TcpPacket rsp = MakeErrorPacket(ErrorCodes::JsonParser);
-      channel->contextSession->Send(SerializeTcpPacket(rsp), responseId);
-      return;
-    }
-    LOG_DEBUG(wim::businessLogger, "解析成功，请求服务: {}, 请求数据: {}",
-              requestIdMessage, TcpPacketDebugString(request));
-
-    response = handleCaller->second(channel->contextSession, id, request);
-    if (id == ID_ACK) {
-      LOG_DEBUG(wim::businessLogger, "ACK已处理，不发送响应包: {}",
-                TcpPacketDebugString(response));
-      return;
-    }
-    auto ret = SerializeTcpPacket(response);
-    channel->contextSession->Send(ret, responseId);
-
-    LOG_DEBUG(wim::businessLogger, "响应服务: {}, 响应数据: {}",
-              responseIdMessage, TcpPacketDebugString(response));
-  };
-
-  for (;;) {
-    Channel::Ptr channel;
-    {
-      std::unique_lock<std::mutex> lock(_mutex);
-      consume.wait(lock, [&]() { return stopEnable || !messageQueue.empty(); });
-
-      if (messageQueue.empty()) {
-        if (stopEnable)
-          break;
-        continue;
-      }
-
-      channel = messageQueue.front();
-      messageQueue.pop();
-    }
-
-    processChannel(channel);
+    TcpPacket rsp = MakeErrorPacket(ErrorCodes::NotFound);
+    channel->contextSession->Send(SerializeTcpPacket(rsp), responseId);
+    return;
   }
+
+  std::string msgData{data, dataSize};
+  TcpPacket request, response;
+  std::string requestIdMessage = getServiceIdString(id),
+              responseIdMessage = getServiceIdString(responseId);
+
+  bool parserSuccess = ParseTcpPacket(msgData, request);
+  if (!parserSuccess) {
+    LOG_WARN(wim::businessLogger, "消息解析失败, 请求服务: {}，消息：{}",
+             requestIdMessage, msgData);
+    TcpPacket rsp = MakeErrorPacket(ErrorCodes::JsonParser);
+    channel->contextSession->Send(SerializeTcpPacket(rsp), responseId);
+    return;
+  }
+  LOG_DEBUG(wim::businessLogger, "解析成功，请求服务: {}, 请求数据: {}",
+            requestIdMessage, TcpPacketDebugString(request));
+
+  response = handleCaller->second.handle(channel->contextSession, id, request);
+  if (id == ID_ACK) {
+    LOG_DEBUG(wim::businessLogger, "ACK已处理，不发送响应包: {}",
+              TcpPacketDebugString(response));
+    return;
+  }
+  auto ret = SerializeTcpPacket(response);
+  channel->contextSession->Send(ret, responseId);
+
+  LOG_DEBUG(wim::businessLogger, "响应服务: {}, 响应数据: {}",
+            responseIdMessage, TcpPacketDebugString(response));
+}
+
+void Service::HandleRejectedChannel(const Channel::Ptr &channel) {
+  uint32_t id = channel->protocolData->id;
+  if (id == ID_ACK) {
+    LOG_WARN(wim::businessLogger, "ACK任务被拒绝，当前业务线程池已满");
+    return;
+  }
+
+  int responseId = __getServiceResponseId(ServiceID(id));
+  TcpPacket rsp = MakeErrorPacket(ErrorCodes::InternalError);
+  rsp.set_message("业务线程池已满");
+  channel->contextSession->Send(SerializeTcpPacket(rsp), responseId);
+}
+
+bool Service::PostBackgroundTask(ThreadPool::Task task) {
+  if (!threadPool) {
+    return false;
+  }
+  return threadPool->Post(std::move(task));
 }
 
 TcpPacket PingHandle(ChatSession::Ptr session, uint32_t msgID,
@@ -168,14 +216,21 @@ TcpPacket PingHandle(ChatSession::Ptr session, uint32_t msgID,
 }
 
 TcpPacket AckHandle(ChatSession::Ptr session, uint32_t msgID,
-                    TcpPacket &request) {
+                             TcpPacket &request) {
   TcpPacket rsp;
   int64_t seq = request.seq();
   int64_t uid = request.uid();
 
   OnlineUser::GetInstance()->cancelAckTimer(seq, uid);
-  db::MysqlDao::GetInstance()->updateMessage(seq, db::Message::Status::DONE,
-                                             getCurrentDateTime());
+  bool accepted = Service::GetInstance()->PostBackgroundTask([seq]() {
+    db::MysqlDao::GetInstance()->updateMessage(seq, db::Message::Status::DONE,
+                                               getCurrentDateTime());
+  });
+  if (!accepted) {
+    LOG_WARN(wim::businessLogger, "ACK数据库更新任务投递失败, seq: {}, uid: {}",
+             seq, uid);
+  }
+
   rsp.set_error(ErrorCodes::Success);
   return rsp;
 }

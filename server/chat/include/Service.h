@@ -1,13 +1,14 @@
 #pragma once
+#include <atomic>
 #include <functional>
 #include <map>
-#include <queue>
+#include <memory>
 #include <spdlog/spdlog.h>
-#include <thread>
 
 #include "ChatSession.h"
 #include "Const.h"
 #include "TcpMessageCodec.h"
+#include "ThreadPool.h"
 
 namespace wim {
 
@@ -19,21 +20,27 @@ class Service : public Singleton<Service> {
       std::function<TcpPacket(ChatSession::Ptr, uint32_t, TcpPacket &)>;
 
   ~Service();
-  void PushService(std::shared_ptr<Channel> package);
+  void Dispatch(std::shared_ptr<Channel> package);
+  bool PostBackgroundTask(ThreadPool::Task task);
 
  private:
-  Service();
-  void Run();
-  void Init();
-  void PopHandler();
-  void RegisterHandle(uint32_t msgID, HandleType handle);
+  enum class TaskType { Light, Heavy };
+  struct HandlerEntry {
+    HandleType handle;
+    TaskType taskType{TaskType::Heavy};
+  };
 
-  std::thread worker;
-  std::queue<std::shared_ptr<Channel>> messageQueue;
-  std::mutex _mutex;
-  std::condition_variable consume;
-  bool stopEnable;
-  std::map<uint32_t, HandleType> serviceGroup;
+  Service();
+  void Init();
+  void ProcessChannel(const Channel::Ptr &channel);
+  void HandleRejectedChannel(const Channel::Ptr &channel);
+  void RegisterHandle(uint32_t msgID, TaskType taskType, HandleType handle);
+
+  std::unique_ptr<ThreadPool> threadPool;
+  std::atomic<uint64_t> lightDispatched{0};
+  std::atomic<uint64_t> heavyDispatched{0};
+  std::atomic<uint64_t> heavyRejected{0};
+  std::map<uint32_t, HandlerEntry> serviceGroup;
 };
 
 // 已成功
@@ -42,6 +49,9 @@ TcpPacket OnLogin(ChatSession::Ptr session, uint32_t msgID, TcpPacket &request);
 
 TcpPacket PingHandle(ChatSession::Ptr session, uint32_t msgID,
                      TcpPacket &request);
+
+TcpPacket AckHandle(ChatSession::Ptr session, uint32_t msgID,
+                    TcpPacket &request);
 
 TcpPacket TextSend(ChatSession::Ptr session, uint32_t msgID,
                    TcpPacket &request);
@@ -65,8 +75,4 @@ TcpPacket UserQuit(ChatSession::Ptr session, uint32_t msgID,
 
 TcpPacket SerachUser(ChatSession::Ptr session, uint32_t msgID,
                      TcpPacket &request);
-
-TcpPacket AckHandle(ChatSession::Ptr session, uint32_t msgID,
-                    TcpPacket &request);
-
 };  // namespace wim

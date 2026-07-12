@@ -132,7 +132,7 @@ enum ServiceID {
   ID_FILE_UPLOAD_RSP,
 
   ID_ACK,   // 确认消息
-  ID_NULL,  // ACK确认的响应包无用，仅因Service::Run回包将自动发送
+  ID_NULL,  // ACK确认的响应包无用，仅因Service响应包将自动发送
 
   /* 群组 */
   ID_GROUP_CREATE_REQ,  // 创建群组
