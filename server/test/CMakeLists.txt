@@ -30,9 +30,14 @@ if(NOT TARGET imPublic)
 endif()
 
 add_executable(imTest ${SOURCE})
+add_executable(imPerf src/perf/im_perf.cc)
 
 target_include_directories(
   imTest PUBLIC "${CMAKE_CURRENT_LIST_DIR}/../public/include"
+                "${CMAKE_CURRENT_LIST_DIR}/include")
+
+target_include_directories(
+  imPerf PUBLIC "${CMAKE_CURRENT_LIST_DIR}/../public/include"
                 "${CMAKE_CURRENT_LIST_DIR}/include")
 
 target_link_libraries(
@@ -50,6 +55,14 @@ target_link_libraries(
          jsoncpp
          rdkafka
          rdkafka++)
+
+target_link_libraries(
+  imPerf
+  PUBLIC imPublic
+         Threads::Threads
+         protobuf::libprotobuf
+         Boost::filesystem
+         fmt::fmt)
 
 # find_package(GTest REQUIRED) include(CTest)
 

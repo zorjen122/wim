@@ -21,6 +21,7 @@ BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/build/wim}"
 : "${WIM_STATE_CONFIG:=$ROOT_DIR/server/conf/state-single.yaml}"
 : "${WIM_GATE_CONFIG:=$ROOT_DIR/server/conf/gate.yaml}"
 : "${WIM_CHAT_CONFIGS:=$ROOT_DIR/server/conf/chat-hunan-im.yaml}"
+: "${WIM_CHAT_LOG_LEVEL:=--debug}"
 
 for exe in "$BUILD_DIR/state/state" "$BUILD_DIR/file/file" "$BUILD_DIR/chat/chat" "$BUILD_DIR/gate/gate" "$BUILD_DIR/test/imTest"; do
   if [[ ! -x "$exe" ]]; then
@@ -80,7 +81,7 @@ start_service state "$ROOT_DIR/server/state" env WIM_CONFIG="$WIM_STATE_CONFIG" 
 start_service file "$ROOT_DIR/server/file" "$BUILD_DIR/file/file"
 chat_index=1
 for chat_config in $WIM_CHAT_CONFIGS; do
-  start_service "chat-$chat_index" "$ROOT_DIR/server/chat" "$BUILD_DIR/chat/chat" "$chat_config" --normal --debug
+  start_service "chat-$chat_index" "$ROOT_DIR/server/chat" "$BUILD_DIR/chat/chat" "$chat_config" --normal "$WIM_CHAT_LOG_LEVEL"
   chat_index=$((chat_index + 1))
 done
 start_service gate "$ROOT_DIR/server/gate" env WIM_CONFIG="$WIM_GATE_CONFIG" "$BUILD_DIR/gate/gate"

@@ -6,10 +6,10 @@
 #include <boost/beast/http.hpp>
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <mutex>
 #include <queue>
 #include <unistd.h>
 
@@ -90,6 +90,10 @@ class ChatSession : public std::enable_shared_from_this<ChatSession> {
  private:
   enum ParseState { WAIT_HEADER, WAIT_BODY };
 
+  void StartInContext();
+  void DoSend(std::string msgData, uint32_t msgID);
+  void StartWrite();
+  void DoClose();
   void HandleWrite(const net::error_code &ec, ChatSession::Ptr sharedSelf);
   void HandleError(net::error_code ec);
 
@@ -102,12 +106,11 @@ class ChatSession : public std::enable_shared_from_this<ChatSession> {
   net::streambuf recvStreamBuffer;
 
   ChatServer *chatServer;
-  bool closeEnable;
+  std::atomic_bool closeEnable;
 
   ParseState parseState;
 
   std::queue<Tlv::Ptr> sendQueue;
-  std::mutex sendMutex;
 
   Tlv::Ptr protocolData;
   net::io_context &ioContext;

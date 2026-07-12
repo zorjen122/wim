@@ -93,8 +93,7 @@ void Service::PushService(std::shared_ptr<Channel> msg) {
 }
 
 void Service::Run() {
-  auto lam = [&]() {
-    auto channel = messageQueue.front();
+  auto processChannel = [&](const Channel::Ptr &channel) {
     uint32_t id = channel->protocolData->id;
     const char *data = channel->protocolData->data;
     uint32_t dataSize = channel->protocolData->getDataSize();
@@ -106,7 +105,6 @@ void Service::Run() {
 
       TcpPacket rsp = MakeErrorPacket(ErrorCodes::NotFound);
       channel->contextSession->Send(SerializeTcpPacket(rsp), responseId);
-      messageQueue.pop();
       return;
     }
 
@@ -121,7 +119,6 @@ void Service::Run() {
                requestIdMessage, msgData);
       TcpPacket rsp = MakeErrorPacket(ErrorCodes::JsonParser);
       channel->contextSession->Send(SerializeTcpPacket(rsp), responseId);
-      messageQueue.pop();
       return;
     }
     LOG_DEBUG(wim::businessLogger, "解析成功，请求服务: {}, 请求数据: {}",
@@ -131,7 +128,6 @@ void Service::Run() {
     if (id == ID_ACK) {
       LOG_DEBUG(wim::businessLogger, "ACK已处理，不发送响应包: {}",
                 TcpPacketDebugString(response));
-      messageQueue.pop();
       return;
     }
     auto ret = SerializeTcpPacket(response);
@@ -139,23 +135,25 @@ void Service::Run() {
 
     LOG_DEBUG(wim::businessLogger, "响应服务: {}, 响应数据: {}",
               responseIdMessage, TcpPacketDebugString(response));
-
-    messageQueue.pop();
   };
 
   for (;;) {
-    std::unique_lock<std::mutex> lock(_mutex);
-    while (messageQueue.empty() && !stopEnable) {
-      consume.wait(lock);
+    Channel::Ptr channel;
+    {
+      std::unique_lock<std::mutex> lock(_mutex);
+      consume.wait(lock, [&]() { return stopEnable || !messageQueue.empty(); });
+
+      if (messageQueue.empty()) {
+        if (stopEnable)
+          break;
+        continue;
+      }
+
+      channel = messageQueue.front();
+      messageQueue.pop();
     }
 
-    if (stopEnable) {
-      while (!messageQueue.empty()) {
-        lam();
-      }
-      break;
-    }
-    lam();
+    processChannel(channel);
   }
 }
 

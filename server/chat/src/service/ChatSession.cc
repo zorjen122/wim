@@ -11,9 +11,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <exception>
-#include <mutex>
 #include <spdlog/spdlog.h>
 #include <string>
+#include <utility>
 
 #include "Const.h"
 #include <boost/asio/detail/socket_ops.hpp>
@@ -76,7 +76,6 @@ ChatSession::ChatSession(boost::asio::io_context &ioContext, ChatServer *server,
       chatServer(server),
       closeEnable(false),
       parseState(WAIT_HEADER),
-      sendMutex{},
       ioContext(ioContext) {
   recvStreamBuffer.prepare(PROTOCOL_DATA_MTU);
   LOG_INFO(netLogger, "ChatSession::ChatSession, sessionId: {}", sessionId);
@@ -87,6 +86,14 @@ ChatSession::~ChatSession() {
 }
 
 void ChatSession::Start() {
+  auto self = shared_from_this();
+  net::post(socket.get_executor(), [self]() { self->StartInContext(); });
+}
+
+void ChatSession::StartInContext() {
+  if (closeEnable.load())
+    return;
+
   switch (parseState) {
     case WAIT_HEADER: {
       boost::asio::async_read(
@@ -104,12 +111,12 @@ void ChatSession::Start() {
                     sizeof(uint32_t));
 
             // 验证长度有效性
-            uint32_t temp = htons(expectedBodyLen);
-            if (temp > PROTOCOL_RECV_MSS) {
+            uint32_t bodyLen = ntohl(expectedBodyLen);
+            if (bodyLen > PROTOCOL_RECV_MSS) {
               LOG_WARN(netLogger,
                        "无效长度，超出了协议规定的最大长度: {} > "
                        "PROTOCOL_RECV_MSS({})",
-                       temp, PROTOCOL_RECV_MSS);
+                       bodyLen, PROTOCOL_RECV_MSS);
               recvStreamBuffer.consume(PROTOCOL_HEADER_TOTAL);
               parseState = WAIT_HEADER;
               return;
@@ -120,7 +127,7 @@ void ChatSession::Start() {
 
             recvStreamBuffer.consume(PROTOCOL_HEADER_TOTAL);
             parseState = ParseState::WAIT_BODY;
-            Start();
+            StartInContext();
           });
       break;
     }
@@ -139,7 +146,7 @@ void ChatSession::Start() {
                         "数据长度和预期长度不匹配, 预期长度:{}, 实际长度:{}",
                         byte, protocolData->getDataSize());
               recvStreamBuffer.consume(byte);
-              Start();
+              StartInContext();
             }
 
             protocolData->setData(
@@ -152,7 +159,7 @@ void ChatSession::Start() {
 
             // 回到头解析状态
             parseState = ParseState::WAIT_HEADER;
-            Start();
+            StartInContext();
           });
       break;
     }
@@ -165,21 +172,35 @@ void ChatSession::HandleError(net::error_code ec) {
     eof：表示对端关闭了连接
     connection_reset：表示对方异常断开连接
   */
-  if (closeEnable)
+  if (closeEnable.exchange(true))
     return;
-  closeEnable = true;
 
   LOG_INFO(netLogger, "异常信息: {} | 会话ID: {}", ec.message(), sessionId);
 
   if (userId > 0) {
     OnlineUser::GetInstance()->ClearUser(userId, userId, shared_from_this());
   }
-  socket.close();
+  net::error_code closeEc;
+  socket.close(closeEc);
   chatServer->ClearSession(sessionId);
 }
 
 void ChatSession::Send(char *msgData, uint32_t maxSize, uint32_t msgID) {
-  std::lock_guard<std::mutex> lock(sendMutex);
+  Send(std::string(msgData, maxSize), msgID);
+}
+
+void ChatSession::Send(std::string msgData, uint32_t msgID) {
+  auto self = shared_from_this();
+  net::post(socket.get_executor(),
+            [self, msgData = std::move(msgData), msgID]() mutable {
+              self->DoSend(std::move(msgData), msgID);
+            });
+}
+
+void ChatSession::DoSend(std::string msgData, uint32_t msgID) {
+  if (closeEnable.load())
+    return;
+
   auto senderSize = sendQueue.size();
   if (senderSize > PROTOCOL_QUEUE_MAX_SIZE) {
     LOG_ERROR(netLogger,
@@ -190,8 +211,15 @@ void ChatSession::Send(char *msgData, uint32_t maxSize, uint32_t msgID) {
     return;
   }
 
-  sendQueue.push(std::make_shared<Tlv>(msgID, maxSize, msgData));
+  sendQueue.push(std::make_shared<Tlv>(msgID, msgData.size(), msgData.data()));
   if (senderSize > 0)
+    return;
+
+  StartWrite();
+}
+
+void ChatSession::StartWrite() {
+  if (closeEnable.load() || sendQueue.empty())
     return;
 
   // 按<id, total, data>协议回包
@@ -201,27 +229,33 @@ void ChatSession::Send(char *msgData, uint32_t maxSize, uint32_t msgID) {
   boost::asio::async_write(
       socket,
       boost::asio::buffer(responsePackage->data, responsePackage->total),
-      std::bind(&ChatSession::HandleWrite, this, std::placeholders::_1,
-                shared_from_this()));
-}
-
-void ChatSession::Send(std::string msgData, uint32_t msgID) {
-  ChatSession::Send(msgData.data(), msgData.length(), msgID);
+      [this, self = shared_from_this()](const net::error_code &ec, size_t) {
+        HandleWrite(ec, self);
+      });
 }
 
 void ChatSession::Close() {
-  if (closeEnable)
+  auto self = shared_from_this();
+  net::post(socket.get_executor(), [self]() { self->DoClose(); });
+}
+
+void ChatSession::DoClose() {
+  if (closeEnable.exchange(true))
     return;
-  closeEnable = true;
-  socket.close();
+
+  net::error_code closeEc;
+  socket.close(closeEc);
 }
 
 void ChatSession::HandleWrite(const net::error_code &ec,
                               ChatSession::Ptr sharedSelf) {
   try {
-    std::lock_guard<std::mutex> lock(sendMutex);
     if (ec)
       return HandleError(ec);
+
+    if (sendQueue.empty())
+      return;
+
     auto &responsePackage = sendQueue.front();
     LOG_DEBUG(netLogger, "发送成功！会话ID: {}, 服务ID: {}, 总长: {}",
               sessionId, getServiceIdString(responsePackage->id),
@@ -230,12 +264,7 @@ void ChatSession::HandleWrite(const net::error_code &ec,
     sendQueue.pop();
 
     if (!sendQueue.empty()) {
-      auto &responsePackage = sendQueue.front();
-      boost::asio::async_write(
-          socket,
-          boost::asio::buffer(responsePackage->data, responsePackage->total),
-          std::bind(&ChatSession::HandleWrite, this, std::placeholders::_1,
-                    sharedSelf));
+      StartWrite();
     }
 
   } catch (std::exception &e) {
@@ -261,6 +290,6 @@ void ChatSession::ClearSession() {
 }
 
 bool ChatSession::IsConnected() {
-  return !closeEnable;
+  return !closeEnable.load();
 }
 };  // namespace wim
