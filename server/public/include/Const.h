@@ -75,7 +75,9 @@ enum ErrorCodes {
   GroupAlreadyExists,
   GroupNotExists,
   GroupNotifyFailed,
-  GroupReplyFailed
+  GroupReplyFailed,
+  AuthenticationRequired,
+  MessageOwnershipInvalid
 };
 
 enum ServiceID {
@@ -175,7 +177,9 @@ static std::unordered_map<int, std::string> errorCodesMap = {
     {FileTypeError, "FileTypeError"},
     {InternalError, "InternalError"},
     {GroupAlreadyExists, "GroupAlreadyExists"},
-    {GroupNotExists, "GroupNotExists"}};
+    {GroupNotExists, "GroupNotExists"},
+    {AuthenticationRequired, "AuthenticationRequired"},
+    {MessageOwnershipInvalid, "MessageOwnershipInvalid"}};
 
 inline std::string getErrorCodeMsg(int code) {
   if (errorCodesMap.find(code) != errorCodesMap.end()) {

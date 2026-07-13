@@ -78,11 +78,13 @@ class ChatSession : public std::enable_shared_from_this<ChatSession> {
   void Close();
   void ClearSession();
   Ptr GetSharedSelf();
-  void SetUserId(int64_t uid) {
-    userId = uid;
-  }
+  // 认证后只允许首次绑定或同 uid 幂等重入，禁止连接换绑身份。
+  bool BindUserId(int64_t uid);
   int64_t GetUserId() const {
-    return userId;
+    return userId.load(std::memory_order_acquire);
+  }
+  bool IsAuthenticated() const {
+    return GetUserId() > 0;
   }
 
   bool IsConnected();
@@ -99,7 +101,7 @@ class ChatSession : public std::enable_shared_from_this<ChatSession> {
 
  private:
   uint64_t sessionId;
-  int64_t userId{0};
+  std::atomic<int64_t> userId{0};
   tcp::socket socket;
 
   char recvBuffer[PROTOCOL_DATA_MTU];

@@ -158,5 +158,7 @@ check when running against older clang-format versions.
   and smoke-test details.
 - [docs/feature-verification.md](docs/feature-verification.md): feature list,
   verification status, code indexes, and manual test ideas.
+- [CHANGELOG.md](CHANGELOG.md): verified baseline and subsequent architectural
+  changes.
 - [server/conf/README.md](server/conf/README.md): configuration naming and
   override rules.

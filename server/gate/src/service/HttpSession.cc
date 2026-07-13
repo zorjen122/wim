@@ -162,9 +162,7 @@ void HttpSession::WriteResponse() {
   auto self = shared_from_this();
 
   response->content_length(response->body().size());
-  spdlog::info("Write response, source is {}, size is {}",
-               beast::buffers_to_string(response->body().data()),
-               response->body().size());
+  spdlog::info("Write response, size is {}", response->body().size());
   http::async_write(socket, *response,
                     [self](beast::error_code ec, std::size_t) {
                       if (ec.failed()) {

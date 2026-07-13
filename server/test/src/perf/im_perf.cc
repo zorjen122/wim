@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <mutex>
@@ -19,6 +20,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 namespace wim::perf {
@@ -46,6 +48,8 @@ struct Options {
   int payloadBytes{64};
   int64_t fromBase{500000};
   int64_t toBase{600000};
+  std::string authTokenFile{};
+  std::unordered_map<int64_t, std::string> authTokens{};
 };
 
 struct PacketResult {
@@ -139,6 +143,8 @@ void printUsage(const char *program) {
          "Default: 600000\n"
       << "  --timeout-ms N                             Per request timeout. "
          "Default: 5000\n\n"
+      << "  --auth-token-file PATH                    Lines formatted as: uid "
+         "token.\n\n"
       << "Cluster text example:\n"
       << "  " << program
       << " --mode text --endpoints 127.0.0.1:8090,127.0.0.1:8091 "
@@ -183,6 +189,8 @@ Options parseOptions(int argc, char **argv) {
       options.toBase = std::stoll(requireValue(arg));
     } else if (arg == "--timeout-ms") {
       options.timeoutMs = std::stoi(requireValue(arg));
+    } else if (arg == "--auth-token-file") {
+      options.authTokenFile = requireValue(arg);
     } else {
       throw std::runtime_error("unknown argument: " + arg);
     }
@@ -202,7 +210,29 @@ Options parseOptions(int argc, char **argv) {
   if (options.receiverEndpoints.empty()) {
     options.receiverEndpoints = options.endpoints;
   }
+  if (options.authTokenFile.empty()) {
+    throw std::runtime_error("--auth-token-file is required");
+  }
+  std::ifstream tokenFile(options.authTokenFile);
+  if (!tokenFile) {
+    throw std::runtime_error("cannot open auth token file: " +
+                             options.authTokenFile);
+  }
+  int64_t tokenUid = 0;
+  std::string token;
+  while (tokenFile >> tokenUid >> token) {
+    options.authTokens[tokenUid] = token;
+  }
   return options;
+}
+
+const std::string &authTokenFor(const Options &options, int64_t uid) {
+  auto iter = options.authTokens.find(uid);
+  if (iter == options.authTokens.end()) {
+    throw std::runtime_error("no chat auth token for uid " +
+                             std::to_string(uid));
+  }
+  return iter->second;
 }
 
 // Small blocking TCP client for the WIM packet protocol.
@@ -228,10 +258,11 @@ class SyncClient {
   }
 
   // Logs in an existing perf user, creating its userInfo row if needed.
-  bool login(int64_t uid) {
+  bool login(int64_t uid, const std::string &authToken) {
     TcpPacket request;
     request.set_uid(uid);
     request.set_init(false);
+    request.set_auth_token(authToken);
     auto response =
         requestPacket(ID_LOGIN_INIT_REQ, request, ID_LOGIN_INIT_RSP, timeoutMs);
     if (response.has_value() &&
@@ -242,6 +273,7 @@ class SyncClient {
     TcpPacket initRequest;
     initRequest.set_uid(uid);
     initRequest.set_init(true);
+    initRequest.set_auth_token(authToken);
     initRequest.set_name("perf-" + std::to_string(uid));
     initRequest.set_age(18);
     initRequest.set_sex("perf");
@@ -259,10 +291,10 @@ class SyncClient {
   }
 
   // Acknowledges an asynchronously pushed text message.
-  void ack(int64_t uid, int64_t seq) {
+  void ack(int64_t seq) {
     TcpPacket request;
-    request.set_uid(uid);
     request.set_seq(seq);
+    request.set_receipt_type(protocol::RECEIPT_TYPE_DELIVERED);
     sendPacket(ID_ACK, request);
   }
 
@@ -358,7 +390,7 @@ class SyncClient {
         return result;
       }
       if (result->serviceId == ID_TEXT_SEND_REQ && result->packet.has_seq()) {
-        ack(packet.uid(), result->packet.seq());
+        ack(result->packet.seq());
       }
     }
     return std::nullopt;
@@ -414,7 +446,7 @@ void receiverWorker(const Options &options, int index, std::atomic<bool> &stop,
   try {
     SyncClient client(endpoint, 250);
     client.connect();
-    if (!client.login(uid)) {
+    if (!client.login(uid, authTokenFor(options, uid))) {
       std::cerr << "receiver login failed uid=" << uid
                 << " endpoint=" << endpoint.toString() << "\n";
       ready.fetch_add(1);
@@ -428,7 +460,7 @@ void receiverWorker(const Options &options, int index, std::atomic<bool> &stop,
         continue;
       }
       if (packet->serviceId == ID_TEXT_SEND_REQ && packet->packet.has_seq()) {
-        client.ack(uid, packet->packet.seq());
+        client.ack(packet->packet.seq());
         received.fetch_add(1);
       }
     }
@@ -452,7 +484,7 @@ Stats senderWorker(const Options &options, int index,
   try {
     SyncClient client(endpoint, options.timeoutMs);
     client.connect();
-    if (!client.login(uid)) {
+    if (!client.login(uid, authTokenFor(options, uid))) {
       stats.failed += options.requestsPerConnection;
       stats.attempted += options.requestsPerConnection;
       return stats;

@@ -233,13 +233,13 @@ class MysqlDao : public Singleton<MysqlDao>,
       if (!mysqlPool->Empty()) {
         LOG_INFO(wim::dbLogger,
                  "Mysql-Client pool init success! | host: {}, port: {}, "
-                 "user: {}, passwd: {}, schema: {}, poolSize: {}",
-                 host, port, user, password, schema, mysqlPool->Size());
+                 "user: {}, schema: {}, poolSize: {}",
+                 host, port, user, schema, mysqlPool->Size());
       } else {
         LOG_WARN(wim::dbLogger,
                  "Mysql-Client pool init failed! | host: {}, port: {}, "
-                 "user: {}, passwd: {}, schema: {}, poolSize: {}",
-                 host, port, user, password, schema, mysqlPool->Size());
+                 "user: {}, schema: {}, poolSize: {}",
+                 host, port, user, schema, mysqlPool->Size());
       }
     } catch (std::exception &e) {
       LOG_ERROR(wim::dbLogger, "MysqlDao init error: {}", e.what());
@@ -601,6 +601,46 @@ class MysqlDao : public Singleton<MysqlDao>,
       }
 
       return 0;
+    });
+  }
+
+  // 返回 1 表示幂等成功，0 表示消息不存在，-2 表示 receiver 不匹配。
+  // 状态按数值单调推进，重复 READ 不覆盖首次 readDateTime。
+  int updateMessageForReceiver(long messageId, long receiverId, short status,
+                               const std::string &readDateTime = "") {
+    return executeTemplate([&](std::unique_ptr<mysqlx::Session> &session)
+                               -> int {
+      auto ownerResult =
+          session->sql(R"(SELECT receiverId FROM messages WHERE messageId = ?)")
+              .bind(messageId)
+              .execute();
+      auto ownerRow = ownerResult.fetchOne();
+      if (!ownerRow)
+        return 0;
+      if (ownerRow[0].get<int64_t>() != receiverId)
+        return -2;
+
+      if (readDateTime.empty()) {
+        session
+            ->sql(
+                R"(UPDATE messages SET status = GREATEST(status, ?) WHERE messageId = ? AND receiverId = ?)")
+            .bind(status)
+            .bind(messageId)
+            .bind(receiverId)
+            .execute();
+        return 1;
+      }
+
+      session
+          ->sql(
+              R"(UPDATE messages SET readDateTime = CASE WHEN status < ? OR readDateTime IS NULL OR readDateTime = '' THEN ? ELSE readDateTime END, status = GREATEST(status, ?) WHERE messageId = ? AND receiverId = ?)")
+          .bind(status)
+          .bind(readDateTime)
+          .bind(status)
+          .bind(messageId)
+          .bind(receiverId)
+          .execute();
+      return 1;
     });
   }
   FriendApply::FriendApplyGroup getFriendApplyList(long from) {

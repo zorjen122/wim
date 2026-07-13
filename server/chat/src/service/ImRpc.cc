@@ -75,9 +75,7 @@ TextSendMessageResponse ImRpcNode::forwardTextSendMessage(
   TextSendMessageResponse response;
 
   grpc::Status status = rpc->TextSendMessage(&context, request, &response);
-  if (status.ok()) {
-    response.set_status("success");
-  } else {
+  if (!status.ok()) {
     response.set_status("failed");
     LOG_DEBUG(netLogger, "Failed to forward NotifyAddFriendRequest: {}",
               status.error_message());

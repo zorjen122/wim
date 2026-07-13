@@ -1,3 +1,4 @@
+import json
 import pathlib
 import socket
 import struct
@@ -5,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.request
 
 
 ROOT_DIR = pathlib.Path(__file__).resolve().parents[2]
@@ -55,6 +57,10 @@ FIELD_MAP = {
     "readDateTime": "read_date_time",
     "joinTime": "join_time",
     "text": "data",
+    "authToken": "auth_token",
+    "messageId": "message_id",
+    "messageState": "message_state",
+    "receiptType": "receipt_type",
 }
 
 
@@ -125,6 +131,11 @@ def decode_packet(data):
         ("join_time", "joinTime"),
         ("role", "role"),
         ("speech", "speech"),
+        ("auth_token", "authToken"),
+        ("message_id", "messageId"),
+        ("message_state", "messageState"),
+        ("receipt_type", "receiptType"),
+        ("retryable", "retryable"),
     ]
 
     for proto_name, json_name in scalar_fields:
@@ -187,9 +198,26 @@ def require(condition, message):
         raise AssertionError(message)
 
 
+def request_chat_auth(username, password, gate_url="http://127.0.0.1:18080"):
+    body = json.dumps({"username": username, "password": password}).encode()
+    request = urllib.request.Request(
+        f"{gate_url.rstrip('/')}/post-signIn",
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=5) as response:
+        payload = json.loads(response.read().decode())
+    require(payload.get("error") == 0, f"gate sign-in failed: {payload}")
+    require(payload.get("chatToken"), f"gate response has no chat token: {payload}")
+    return payload
+
+
 class WimClient:
-    def __init__(self, uid, host, port, timeout=5, async_ack_ids=None, auto_ack=False):
+    def __init__(self, uid, host, port, timeout=5, async_ack_ids=None,
+                 auto_ack=False, auth_token=None):
         self.uid = uid
+        self.auth_token = auth_token
         self.sock = socket.create_connection((host, port), timeout=timeout)
         self.sock.settimeout(timeout)
         self.pending = []
@@ -229,12 +257,13 @@ class WimClient:
         finally:
             self.sock.settimeout(old_timeout)
 
-    def ack(self, seq):
-        self.send_packet(ID_ACK, {"seq": seq, "uid": self.uid})
+    def ack(self, seq, receipt_type=1):
+        self.send_packet(ID_ACK, {"seq": seq, "receiptType": receipt_type})
 
     def ack_async(self, service_id, payload):
         if service_id in self.async_ack_ids and "seq" in payload:
-            self.ack(payload["seq"])
+            receipt_type = 1 if service_id == 1027 else 3
+            self.ack(payload["seq"], receipt_type)
             return True
         return False
 
@@ -260,6 +289,22 @@ class WimClient:
 
         raise TimeoutError(f"uid {self.uid} did not receive service {expected_id}")
 
+    def request_with_retry(self, service_id, body, attempts=3, timeout=5,
+                           base_delay=0.2, expected_id=None):
+        """Retry one logical command without changing its idempotency fields."""
+        last_error = None
+        for attempt in range(attempts):
+            try:
+                response = self.request(service_id, body, expected_id, timeout)
+                if not response.get("retryable", False):
+                    return response
+                last_error = RuntimeError(f"retryable response: {response}")
+            except TimeoutError as error:
+                last_error = error
+            if attempt + 1 < attempts:
+                time.sleep(base_delay * (2 ** attempt))
+        raise last_error
+
     def expect_async(self, service_id, predicate=lambda payload: True, timeout=5):
         for idx, (service, payload) in enumerate(self.pending):
             if service == service_id and predicate(payload):
@@ -280,7 +325,7 @@ class WimClient:
         raise TimeoutError(f"uid {self.uid} did not receive async service {service_id}")
 
     def login(self, init=None):
-        body = {"uid": self.uid}
+        body = {"uid": self.uid, "authToken": self.auth_token or ""}
         if init is not None:
             body["init"] = init
         rsp = self.request(ID_LOGIN_INIT_REQ, body)

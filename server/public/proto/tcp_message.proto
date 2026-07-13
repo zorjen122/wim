@@ -2,6 +2,22 @@ syntax = "proto3";
 
 package wim.protocol;
 
+// 对外消息生命周期；状态只能从 ACCEPTED 向 READ 单调推进。
+enum MessageState {
+  MESSAGE_STATE_UNSPECIFIED = 0;
+  MESSAGE_STATE_ACCEPTED = 1;
+  MESSAGE_STATE_DELIVERED = 2;
+  MESSAGE_STATE_READ = 3;
+}
+
+// TRANSPORT 只确认通知传输，DELIVERED/READ 才更新消息状态。
+enum ReceiptType {
+  RECEIPT_TYPE_UNSPECIFIED = 0;
+  RECEIPT_TYPE_DELIVERED = 1;
+  RECEIPT_TYPE_READ = 2;
+  RECEIPT_TYPE_TRANSPORT = 3;
+}
+
 message UserInfo {
   int64 uid = 1;
   string name = 2;
@@ -77,6 +93,13 @@ message Packet {
   optional int32 role = 36;
   optional int32 speech = 37;
   optional bool skip_storage = 38;
+  // Gate 签发的短期登录凭证，仅在 Chat 登录请求中使用。
+  optional string auth_token = 39;
+  // 服务端稳定消息 ID；与客户端幂等命令 seq 分离。
+  optional int64 message_id = 40;
+  optional MessageState message_state = 41;
+  optional ReceiptType receipt_type = 42;
+  optional bool retryable = 43;
 
   repeated UserInfo friend_list = 50;
   repeated FriendApply apply_list = 51;

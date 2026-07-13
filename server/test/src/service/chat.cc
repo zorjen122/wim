@@ -122,7 +122,7 @@ void Chat::replyAddFriendRecvierHandle(const TcpPacket &response) {
       return;
     TcpPacket ack;
     ack.set_seq(response.seq());
-    ack.set_uid(user->uid);
+    ack.set_receipt_type(protocol::RECEIPT_TYPE_TRANSPORT);
     chat->Send(SerializeTcpPacket(ack), ID_ACK);
   }
 
@@ -171,14 +171,18 @@ void Chat::loginInitHandle(const TcpPacket &response) {
   {
     std::lock_guard<std::mutex> lock(loginMutex);
     loginInitDone = true;
-    loginInitOk = errcode != -1;
+    loginInitOk = errcode == ErrorCodes::Success;
   }
   loginCv.notify_all();
 
-  if (errcode == -1) {
+  if (errcode != ErrorCodes::Success) {
     LOG_INFO(businessLogger, "登录失败，请重试");
     return;
   }
+
+  pullFriendList();
+  pullFriendApplyList();
+  pullMessageList();
 
   std::string name = response.name();
   short age = response.age();
@@ -290,7 +294,7 @@ void Chat::textRecvierHandle(const TcpPacket &response) {
 
   TcpPacket ack;
   ack.set_seq(response.seq());
-  ack.set_uid(user->uid);
+  ack.set_receipt_type(protocol::RECEIPT_TYPE_DELIVERED);
   chat->Send(SerializeTcpPacket(ack), ID_ACK);
 }
 void Chat::uploadFileHandle(const TcpPacket &response) {}
@@ -343,11 +347,10 @@ void Chat::initUserInfoHandle(const TcpPacket &response) {
 bool Chat::login(bool isFirstLogin) {
   TcpPacket loginRequest;
   loginRequest.set_uid(user->uid);
+  loginRequest.set_init(isFirstLogin);
+  loginRequest.set_auth_token(authToken);
 
   chat->Send(SerializeTcpPacket(loginRequest), ID_LOGIN_INIT_REQ);
-  pullFriendList();
-  pullFriendApplyList();
-  pullMessageList();
   return true;
 }
 
@@ -640,7 +643,7 @@ void Chat::joinGroupRecvierHandle(TcpPacket &response) {
 
     TcpPacket ack;
     ack.set_seq(response.seq());
-    ack.set_uid(user->uid);
+    ack.set_receipt_type(protocol::RECEIPT_TYPE_TRANSPORT);
     chat->Send(SerializeTcpPacket(ack), ID_ACK);
   } catch (std::exception &e) {
     LOG_ERROR(businessLogger, "异常：{}", e.what());
@@ -655,7 +658,7 @@ void Chat::replyJoinGroupRecvierHandle(TcpPacket &response) {
   }
   TcpPacket ack;
   ack.set_seq(response.seq());
-  ack.set_uid(user->uid);
+  ack.set_receipt_type(protocol::RECEIPT_TYPE_TRANSPORT);
   chat->Send(SerializeTcpPacket(ack), ID_ACK);
 }
 

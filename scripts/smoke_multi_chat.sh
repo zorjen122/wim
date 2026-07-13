@@ -4,7 +4,7 @@ set -euo pipefail
 # 作用：
 #   验证两个 chat 节点同时运行时的跨节点核心流程。
 #   用户 A 登录 chat-1，用户 B 登录 chat-2，脚本检查 Redis 在线路由、
-#   跨节点文本投递与 ACK 落库、跨节点好友申请/回复、好友拉取和消息拉取。
+#   跨节点文本 ACCEPTED/投递/ACK 落库、跨节点好友申请/回复、好友拉取和消息拉取。
 # 前置条件：
 #   使用 server/conf/state-multi.yaml 和两个 chat config 启动服务。
 #   典型启动方式见 --help 输出。
@@ -26,7 +26,8 @@ Requires two chat services and shared dependencies to be running, for example:
 Verifies the currently supported multi-chat path:
   - user A logs in to chat node 1, user B logs in to chat node 2
   - Redis records both users on different IM machines
-  - cross-node text delivery reaches the receiver and is ACKed in MySQL
+  - cross-node text returns ACCEPTED with a stable message_id
+  - delivery reaches the receiver and is ACKed as DELIVERED in MySQL
   - cross-node friend apply/reply succeeds and can be pulled
   - session and user message pulls can see the delivered text
 EOF
@@ -53,6 +54,7 @@ fi
 : "${CHAT_B_PORT:=8091}"
 : "${CHAT_A_MACHINE:=hunan-im}"
 : "${CHAT_B_MACHINE:=beijing-im}"
+: "${GATE_URL:=http://127.0.0.1:18080}"
 
 check_chat_port() {
   local label="$1"
@@ -143,6 +145,8 @@ SQL
 
 UID_A="$uid_a" \
 UID_B="$uid_b" \
+USER_A="$user_a" \
+USER_B="$user_b" \
 FRIEND_MSG="$friend_msg" \
 FRIEND_REPLY="$friend_reply" \
 TEXT_PAYLOAD="$text_payload" \
@@ -152,6 +156,7 @@ CHAT_B_HOST="$CHAT_B_HOST" \
 CHAT_B_PORT="$CHAT_B_PORT" \
 CHAT_A_MACHINE="$CHAT_A_MACHINE" \
 CHAT_B_MACHINE="$CHAT_B_MACHINE" \
+GATE_URL="$GATE_URL" \
 WIM_REDIS_HOST="$WIM_REDIS_HOST" \
 WIM_REDIS_PORT="$WIM_REDIS_PORT" \
 WIM_REDIS_PASSWORD="$WIM_REDIS_PASSWORD" \
@@ -163,10 +168,12 @@ import os
 import subprocess
 import time
 
-from wim_tcp_client import WimClient, require
+from wim_tcp_client import WimClient, request_chat_auth, require
 
 UID_A = int(os.environ["UID_A"])
 UID_B = int(os.environ["UID_B"])
+USER_A = os.environ["USER_A"]
+USER_B = os.environ["USER_B"]
 FRIEND_MSG = os.environ["FRIEND_MSG"]
 FRIEND_REPLY = os.environ["FRIEND_REPLY"]
 TEXT_PAYLOAD = os.environ["TEXT_PAYLOAD"]
@@ -180,6 +187,7 @@ REDIS_HOST = os.environ["WIM_REDIS_HOST"]
 REDIS_PORT = os.environ["WIM_REDIS_PORT"]
 REDIS_PASSWORD = os.environ["WIM_REDIS_PASSWORD"]
 RESULT_FILE = os.environ["RESULT_FILE"]
+GATE_URL = os.environ["GATE_URL"]
 
 ID_PULL_FRIEND_LIST_REQ = 1001
 ID_PULL_FRIEND_APPLY_LIST_REQ = 1003
@@ -209,8 +217,12 @@ def redis_machine(uid):
     require(output, f"redis online info missing for uid {uid}")
     return json.loads(output)["machineId"]
 
-a = WimClient(UID_A, CHAT_A_HOST, CHAT_A_PORT)
-b = WimClient(UID_B, CHAT_B_HOST, CHAT_B_PORT)
+auth_a = request_chat_auth(USER_A, "123456", GATE_URL)
+auth_b = request_chat_auth(USER_B, "123456", GATE_URL)
+a = WimClient(UID_A, CHAT_A_HOST, CHAT_A_PORT,
+              auth_token=auth_a["chatToken"])
+b = WimClient(UID_B, CHAT_B_HOST, CHAT_B_PORT,
+              auth_token=auth_b["chatToken"])
 server_seq = 0
 try:
     a.login(init=False)
@@ -234,6 +246,9 @@ try:
         },
     )
     require(text_rsp.get("error") == 0, f"cross-node text response failed: {text_rsp}")
+    require(text_rsp.get("seq") == client_seq, f"cross-node client seq changed: {text_rsp}")
+    require(text_rsp.get("messageState") == 1, f"cross-node text was not accepted: {text_rsp}")
+    require(text_rsp.get("messageId", 0) > 0, f"cross-node message id missing: {text_rsp}")
 
     text_push = b.expect_async(
         ID_TEXT_SEND_REQ,
@@ -242,6 +257,8 @@ try:
         and payload.get("data") == TEXT_PAYLOAD,
     )
     server_seq = int(text_push["seq"])
+    require(text_rsp["messageId"] == server_seq,
+            f"response/push message id mismatch: {text_rsp}, {text_push}")
     b.ack(server_seq)
     print("cross-node text push ok")
 
@@ -325,16 +342,16 @@ PY
 server_seq="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["server_seq"])' "$result_file")"
 
 for _ in {1..10}; do
-  text_count="$(mysql_scalar "SELECT COUNT(*) FROM messages WHERE messageId = $server_seq AND senderId = $uid_a AND receiverId = $uid_b AND sessionKey = '0' AND content = '$text_payload' AND status = 2 AND readDateTime <> '';")"
+  text_count="$(mysql_scalar "SELECT COUNT(*) FROM messages WHERE messageId = $server_seq AND senderId = $uid_a AND receiverId = $uid_b AND sessionKey = '0' AND content = '$text_payload' AND status = 2 AND COALESCE(readDateTime, '') = '';")"
   if [[ "$text_count" == "1" ]]; then
-    echo "cross-node text mysql ack ok"
+    echo "cross-node text mysql DELIVERED ack ok"
     break
   fi
   sleep 1
 done
 
 if [[ "${text_count:-0}" != "1" ]]; then
-  echo "cross-node text row was not persisted as DONE"
+  echo "cross-node text row was not persisted as DELIVERED"
   mysql_exec -e "SELECT * FROM messages WHERE messageId = $server_seq;" || true
   exit 1
 fi

@@ -14,18 +14,16 @@ int main(int argc, char *argv[]) {
   bool loadSuccess = Configer::loadConfig(
       configPath ? configPath : "../conf/test-client.yaml");
   YAML::Node node = Configer::getNode("server");
-  if (!loadSuccess || node.IsNull())
-  {
+  if (!loadSuccess || node.IsNull()) {
     spdlog::info("This is expected, currently load config is not supported");
   }
 
   net::io_context ioContext;
   auto work = net::make_work_guard(ioContext);
 
-  // auto gateHost = config["gateway"]["host"].as<std::string>();
-  // auto gatePort = config["gateway"]["port"].as<std::string>();
-  // spdlog::info("gate host: {}, port: {}", gateHost, gatePort);
-  // wim::Gate gate(ioContext, gateHost, gatePort);
+  auto gateHost = node["gateway"]["host"].as<std::string>();
+  auto gatePort = node["gateway"]["port"].as<std::string>();
+  wim::Gate gate(ioContext, gateHost, gatePort);
 
   // // gate.signUp("test", "123456", "1001@qq.com");
   // spdlog::info("sign up...");
@@ -62,8 +60,10 @@ int main(int argc, char *argv[]) {
   user->password = password;
   auto chat = wim::Chat::GetInstance();
   chat->setUser(user);
-  LOG_INFO(wim::businessLogger, "uid: {}, username: {}, password: {}",
-           user->uid, user->username, user->password);
+  gate.signIn(username, password);
+  chat->setAuthToken(gate.authTokens.at(username));
+  LOG_INFO(wim::businessLogger, "uid: {}, username: {}", user->uid,
+           user->username);
 
   wim::ChatSession::Ptr session = nullptr;
   std::thread t([&]() {

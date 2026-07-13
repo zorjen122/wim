@@ -1,4 +1,7 @@
 server:
+  gateway:
+    host: 127.0.0.1
+    port: 18080
   mysql:
     host: 127.0.0.1
     port: 33060

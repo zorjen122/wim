@@ -204,7 +204,8 @@ TcpPacket GroupReplyJoin(ChatSession::Ptr session, unsigned int msgID,
   rsp.set_gid(request.gid());
 
   int64_t gid = request.gid();
-  int64_t managerUid = request.manager_uid();
+  // 群管理操作的 actor 来自入口注入的 principal，而非客户端 manager_uid。
+  int64_t managerUid = request.uid();
   int64_t requestorUid = request.requestor_uid();
   bool accept = request.accept();
 

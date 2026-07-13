@@ -85,6 +85,16 @@ ChatSession::~ChatSession() {
   LOG_INFO(netLogger, "ChatSession::~ChatSession, sessionId: {}", sessionId);
 }
 
+bool ChatSession::BindUserId(int64_t uid) {
+  if (uid <= 0)
+    return false;
+
+  int64_t expected = 0;
+  if (userId.compare_exchange_strong(expected, uid, std::memory_order_acq_rel))
+    return true;
+  return expected == uid;
+}
+
 void ChatSession::Start() {
   auto self = shared_from_this();
   net::post(socket.get_executor(), [self]() { self->StartInContext(); });

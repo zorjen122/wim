@@ -14,7 +14,7 @@
 namespace wim {
 
 int StoreageNotifyAddFriend(TcpPacket &request) {
-  long from = request.from();
+  long from = request.uid();
   long to = request.to();
   std::string requestMessage = request.request_message();
   db::FriendApply::Ptr friendApply(new db::FriendApply(
@@ -28,9 +28,11 @@ TcpPacket NotifyAddFriend(ChatSession::Ptr session, unsigned int msgID,
                           TcpPacket &request) {
   TcpPacket rsp;
 
-  long from = request.from();
+  long from = request.uid();
   long to = request.to();
   bool skipStorage = request.skip_storage();
+  // actor 只取 canonical uid，from 仅作为接收端兼容展示字段。
+  request.set_from(from);
 
   int ret = skipStorage ? 0 : StoreageNotifyAddFriend(request);
   rsp.set_uid(to);
@@ -100,11 +102,13 @@ TcpPacket ReplyAddFriend(ChatSession::Ptr session, unsigned int msgID,
                          TcpPacket &request) {
   TcpPacket rsp;
 
-  long from = request.from();
+  long from = request.uid();
   long to = request.to();
   bool accept = request.accept();
   std::string replyMessage = request.reply_message();
   bool skipStorage = request.skip_storage();
+  // RPC/TCP 入口都已规范化 uid，业务层不再从 session 推导身份。
+  request.set_from(from);
 
   rsp.set_uid(to);
 
@@ -176,7 +180,7 @@ TcpPacket ReplyAddFriend(ChatSession::Ptr session, unsigned int msgID,
 }
 
 int StoreageReplyAddFriend(TcpPacket &request) {
-  long from = request.from();
+  long from = request.uid();
   long to = request.to();
   bool accept = request.accept();
   std::string replyMessage = request.reply_message();

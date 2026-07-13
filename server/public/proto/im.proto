@@ -37,7 +37,12 @@ message TextSendMessageRequest {
   int64 session_key = 5;
 }
 
-message TextSendMessageResponse { string status = 1; }
+message TextSendMessageResponse {
+  string status = 1;
+  int32 error = 2;
+  // 目标 Chat 生成的 ID 必须透传回入口 Chat 和发送客户端。
+  int64 message_id = 3;
+}
 
 service ImService {
   rpc ActiveService(ActiveRequest) returns (ActiveResponse);

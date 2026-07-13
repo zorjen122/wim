@@ -15,6 +15,9 @@
 
 namespace wim::rpc {
 // ImRpcService.cpp
+
+// RPC 适配器将来源用户规范化为业务 uid；部署到非可信网络前必须由
+// mTLS 节点身份约束哪些 Chat 节点有权声明该来源。
 grpc::Status ImRpcService::ActiveService(ServerContext *context,
                                          const ActiveRequest *request,
                                          ActiveResponse *response) {
@@ -30,6 +33,7 @@ grpc::Status ImRpcService::NotifyAddFriend(
   std::string message = request->requestmessage();
 
   TcpPacket requestData;
+  requestData.set_uid(from);
   requestData.set_from(from);
   requestData.set_to(to);
   requestData.set_request_message(message);
@@ -55,6 +59,7 @@ grpc::Status ImRpcService::ReplyAddFriend(ServerContext *context,
   std::string message = request->replymessage();
 
   TcpPacket requestData;
+  requestData.set_uid(from);
   requestData.set_from(from);
   requestData.set_to(to);
   requestData.set_accept(accept);
@@ -80,6 +85,7 @@ grpc::Status ImRpcService::TextSendMessage(
   std::string text = request->text();
   TcpPacket requestData;
   requestData.set_seq(request->seq());
+  requestData.set_uid(from);
   requestData.set_from(from);
   requestData.set_to(to);
   requestData.set_data(text);
@@ -89,11 +95,15 @@ grpc::Status ImRpcService::TextSendMessage(
       wim::TextSend(nullptr, ID_TEXT_SEND_REQ, requestData);
 
   int ec = TcpPacketError(localServiceResponse);
+  response->set_error(ec);
+  if (localServiceResponse.has_message_id())
+    response->set_message_id(localServiceResponse.message_id());
   if (ec != 0) {
     LOG_INFO(businessLogger, "error: {}", ec);
     return grpc::Status::CANCELLED;
   }
 
+  response->set_status("success");
   return grpc::Status::OK;
 }
 };  // namespace wim::rpc

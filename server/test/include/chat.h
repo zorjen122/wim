@@ -23,6 +23,9 @@ struct Chat : Singleton<Chat> {
   void setUser(db::User::Ptr user) {
     this->user = user;
   }
+  void setAuthToken(std::string token) {
+    authToken = std::move(token);
+  }
   bool login(bool isFirstLogin = true);
   bool waitLoginReady(int timeoutSeconds = 5);
   void quit();
@@ -71,6 +74,7 @@ struct Chat : Singleton<Chat> {
 
   db::User::Ptr user{};
   db::UserInfo::Ptr userInfo{};
+  std::string authToken{};
 
   std::queue<Tlv> requestQueue{};
   ChatSession::Ptr chat{};

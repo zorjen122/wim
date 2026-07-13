@@ -35,6 +35,7 @@ struct Gate {
   http::request<http::string_body> request;
   http::response<http::dynamic_body> response;
   std::map<std::string, db::User::Ptr> users;
+  std::map<std::string, std::string> authTokens;
   tcp::resolver::results_type endpoint;
 
   bool onConnected;

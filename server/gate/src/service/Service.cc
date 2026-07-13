@@ -13,9 +13,20 @@
 #include <jsoncpp/json/json.h>
 #include <jsoncpp/json/value.h>
 #include <yaml-cpp/parser.h>
+#include <boost/uuid/uuid_generators.hpp>
+#include <boost/uuid/uuid_io.hpp>
 
 namespace wim {
 namespace {
+// Gate 生成短期随机凭证，仅用于把已认证 uid 安全交接给 Chat。
+std::string GenerateChatAuthToken() {
+  boost::uuids::random_generator generator;
+  return boost::uuids::to_string(generator()) +
+         boost::uuids::to_string(generator());
+}
+
+constexpr long kChatAuthTokenTtlSeconds = 15 * 60;
+
 int requestVerifyCode(const std::string &email) {
   auto config = Configer::getNode("server");
   if (!config || !config["verifyRPC"]) {
@@ -173,15 +184,14 @@ bool Service::verifycode(HttpSession::ResponsePtr response,
 
 bool Service::signUp(HttpSession::ResponsePtr response,
                      Json::Value &requestData) {
-  businessLogger->info("[signUp]: start, requestData as {}",
-                       requestData.toStyledString());
-
   Json::Value rspInfo;
   Defer _([&]() { responseWrite(response, rspInfo.toStyledString()); });
 
   auto username = requestData["username"].asString();
   auto password = requestData["password"].asString();
   auto email = requestData["email"].asString();
+  businessLogger->info("[signUp]: start, username: {}, email: {}", username,
+                       email);
 
   std::string verifycode = "1234";
   // verifycode logic...
@@ -211,13 +221,11 @@ bool Service::signUp(HttpSession::ResponsePtr response,
 
   // verifycode logic...
   businessLogger->info(
-      "[signUp]: success! uid as {}, username as {}, password as {}, "
-      "email as {}",
-      uid, username, password, email);
+      "[signUp]: success! uid as {}, username as {}, email as {}", uid,
+      username, email);
   rspInfo["error"] = 0;
   rspInfo["uid"] = Json::Value::Int64(uid);
   rspInfo["username"] = username;
-  rspInfo["password"] = password;
   rspInfo["email"] = email;
 
   return true;
@@ -225,13 +233,12 @@ bool Service::signUp(HttpSession::ResponsePtr response,
 
 bool Service::signIn(HttpSession::ResponsePtr response,
                      Json::Value &requestData) {
-  businessLogger->info("[signIn]: start, requestData as {}",
-                       requestData.toStyledString());
   Json::Value rspInfo;
   Defer _([&]() { responseWrite(response, rspInfo.toStyledString()); });
 
   auto username = requestData["username"].asString();
   auto password = requestData["password"].asString();
+  businessLogger->info("[signIn]: start, username: {}", username);
 
   auto user = wim::db::MysqlDao::GetInstance()->getUser(username);
   if (user == nullptr) {
@@ -264,6 +271,19 @@ bool Service::signIn(HttpSession::ResponsePtr response,
   rspInfo["uid"] = Json::Value::Int64(user->uid);
   rspInfo["ip"] = node.ip;
   rspInfo["port"] = node.port;
+
+  // token 按 uid 覆盖并设置 TTL；持久化失败时不得返回可用登录结果。
+  std::string chatAuthToken = GenerateChatAuthToken();
+  if (!db::RedisDao::GetInstance()->setChatAuthToken(
+          user->uid, chatAuthToken, kChatAuthTokenTtlSeconds)) {
+    businessLogger->warn("[signIn] failed to persist chat auth token, uid: {}",
+                         user->uid);
+    rspInfo.clear();
+    rspInfo["error"] = ErrorCodes::InternalError;
+    return false;
+  }
+  rspInfo["chatToken"] = chatAuthToken;
+  rspInfo["chatTokenExpiresIn"] = Json::Value::Int64(kChatAuthTokenTtlSeconds);
 
   return true;
 }
@@ -346,7 +366,7 @@ bool Service::forgetPassword(HttpSession::ResponsePtr response,
     return false;
   }
 
-  businessLogger->info("success! new password is {}", user->password);
+  businessLogger->info("password updated for username: {}", username);
 
   rspInfo["error"] = 0;
   rspInfo["username"] = username;

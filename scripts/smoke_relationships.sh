@@ -37,6 +37,7 @@ fi
 : "${WIM_DB_PASSWORD:=root}"
 : "${CHAT_HOST:=127.0.0.1}"
 : "${CHAT_PORT:=8090}"
+: "${GATE_URL:=http://127.0.0.1:18080}"
 
 stamp="$(date +%s%N)"
 uid_a=$((300000 + stamp % 100000))
@@ -92,6 +93,8 @@ SQL
 
 UID_A="$uid_a" \
 UID_B="$uid_b" \
+USER_A="$user_a" \
+USER_B="$user_b" \
 FRIEND_MSG="$friend_msg" \
 FRIEND_REPLY="$friend_reply" \
 GROUP_NAME="$group_name" \
@@ -99,16 +102,19 @@ JOIN_MSG="$join_msg" \
 PULL_PAYLOAD="$pull_payload" \
 CHAT_HOST="$CHAT_HOST" \
 CHAT_PORT="$CHAT_PORT" \
+GATE_URL="$GATE_URL" \
 RESULT_FILE="$result_file" \
 PYTHONPATH="$ROOT_DIR/scripts/lib${PYTHONPATH:+:$PYTHONPATH}" \
 python3 - <<'PY'
 import json
 import os
 
-from wim_tcp_client import WimClient, require
+from wim_tcp_client import WimClient, request_chat_auth, require
 
 UID_A = int(os.environ["UID_A"])
 UID_B = int(os.environ["UID_B"])
+USER_A = os.environ["USER_A"]
+USER_B = os.environ["USER_B"]
 FRIEND_MSG = os.environ["FRIEND_MSG"]
 FRIEND_REPLY = os.environ["FRIEND_REPLY"]
 GROUP_NAME = os.environ["GROUP_NAME"]
@@ -117,6 +123,7 @@ PULL_PAYLOAD = os.environ["PULL_PAYLOAD"]
 CHAT_HOST = os.environ["CHAT_HOST"]
 CHAT_PORT = int(os.environ["CHAT_PORT"])
 RESULT_FILE = os.environ["RESULT_FILE"]
+GATE_URL = os.environ["GATE_URL"]
 
 ID_PULL_FRIEND_LIST_REQ = 1001
 ID_PULL_FRIEND_APPLY_LIST_REQ = 1003
@@ -138,7 +145,10 @@ ASYNC_IDS = {
 
 
 def with_client(uid, func):
-    client = WimClient(uid, CHAT_HOST, CHAT_PORT, async_ack_ids=ASYNC_IDS, auto_ack=True)
+    username = USER_A if uid == UID_A else USER_B
+    auth = request_chat_auth(username, "123456", GATE_URL)
+    client = WimClient(uid, CHAT_HOST, CHAT_PORT, async_ack_ids=ASYNC_IDS,
+                       auto_ack=True, auth_token=auth["chatToken"])
     try:
         client.login()
         return func(client)

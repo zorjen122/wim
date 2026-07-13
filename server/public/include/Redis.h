@@ -191,13 +191,13 @@ class RedisDao : public Singleton<RedisDao>,
     if (!redisPool->Empty()) {
       LOG_INFO(dbLogger,
                "redis connection pool init success | host: {}, port: "
-               "{}, password: {}, clientCount: {}, machineId: {}",
-               host, port, password, clientCount, machine);
+               "{}, clientCount: {}, machineId: {}",
+               host, port, clientCount, machine);
     } else {
       LOG_WARN(dbLogger,
                "redis connection pool init failed | host: {}, port: "
-               "{}, password: {}, clientCount: {}, machineId: {}",
-               host, port, password, clientCount, machine);
+               "{}, clientCount: {}, machineId: {}",
+               host, port, clientCount, machine);
     }
     inited = true;
   }
@@ -250,6 +250,27 @@ class RedisDao : public Singleton<RedisDao>,
   const std::string PrefixOnlineUserInfo = "im:user:";
   std::string getPrefixOnlineUserInfo() {
     return PrefixOnlineUserInfo;
+  }
+
+  // Gate -> Chat 的短期身份交接凭证；token 值不得写入日志。
+  const std::string PrefixChatAuthToken = "im:chatAuth:";
+  bool setChatAuthToken(long uid, const std::string &token, long ttlSeconds) {
+    if (uid <= 0 || token.empty() || ttlSeconds <= 0)
+      return false;
+    return executeTemplate([&](std::unique_ptr<sw::redis::Redis> &redis) {
+      redis->setex(PrefixChatAuthToken + std::to_string(uid), ttlSeconds,
+                   token);
+      return true;
+    });
+  }
+
+  bool validateChatAuthToken(long uid, const std::string &token) {
+    if (uid <= 0 || token.empty())
+      return false;
+    return executeTemplate([&](std::unique_ptr<sw::redis::Redis> &redis) {
+      auto stored = redis->get(PrefixChatAuthToken + std::to_string(uid));
+      return stored.has_value() && stored.value() == token;
+    });
   }
 
   const std::string __prefixUid = "im:userId";

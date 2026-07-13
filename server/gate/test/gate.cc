@@ -42,8 +42,7 @@ Gate::Gate(net::io_context &iocontext, const std::string &host,
 
 std::pair<Endpoint, int> Gate::signIn(const std::string &username,
                                       const std::string &password) {
-  LOG_INFO(wim::businessLogger, "sign in as {}, password as {}", username,
-           password);
+  LOG_INFO(wim::businessLogger, "sign in as {}", username);
 
   Defer _([this]() { __clearStatusMessage(); });
 
@@ -69,7 +68,7 @@ std::pair<Endpoint, int> Gate::signIn(const std::string &username,
     throw std::runtime_error("read failed: " + ec.message());
 
   auto stringBody = __parseResponse();
-  LOG_INFO(wim::businessLogger, "response status: {}", stringBody);
+  LOG_INFO(wim::businessLogger, "gate sign-in response received");
 
   Json::Reader reader;
   Json::Value responseData;
@@ -89,8 +88,7 @@ std::pair<Endpoint, int> Gate::signIn(const std::string &username,
 
 bool Gate::signUp(const std::string &username, const std::string &password,
                   const std::string &email) {
-  LOG_INFO(wim::businessLogger, "sign in as {}, password as {}", username,
-           password);
+  LOG_INFO(wim::businessLogger, "sign up as {}", username);
 
   Defer _([this]() { __clearStatusMessage(); });
 
@@ -110,8 +108,7 @@ bool Gate::signUp(const std::string &username, const std::string &password,
   request.body() = requestData.toStyledString();
   request.prepare_payload();
 
-  LOG_INFO(wim::businessLogger, "http-write({}): request body: {}",
-           request.target(), (request.body().data()));
+  LOG_INFO(wim::businessLogger, "http-write({})", request.target());
   http::write(stream, request, ec);
   if (ec.failed())
     throw std::runtime_error("write failed: " + ec.message());
