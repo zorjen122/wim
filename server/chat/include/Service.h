@@ -7,9 +7,15 @@
 
 #include "ChatSession.h"
 #include "Const.h"
+#include "DeliveryService.h"
+#include "FileService.h"
+#include "FriendService.h"
+#include "GroupService.h"
+#include "MessageService.h"
 #include "RequestContext.h"
 #include "TcpMessageCodec.h"
 #include "ThreadPool.h"
+#include "UserService.h"
 
 namespace wim {
 
@@ -23,6 +29,8 @@ class Service : public Singleton<Service> {
   ~Service();
   void Dispatch(std::shared_ptr<Channel> package);
   bool PostBackgroundTask(ThreadPool::Task task);
+  DeliveryService &Deliveries();
+  MessageService &Messages();
 
  private:
   enum class TaskType { Light, Heavy };
@@ -38,7 +46,14 @@ class Service : public Singleton<Service> {
                              ThreadPool::PostStatus status,
                              const RequestContext &context);
   void RegisterHandle(uint32_t msgID, TaskType taskType, HandleType handle);
+  TcpPacket Ping(ChatSession::Ptr session, uint32_t msgID, TcpPacket &request);
 
+  DeliveryService deliveryService;
+  UserService userService;
+  FriendService friendService;
+  GroupService groupService;
+  MessageService messageService;
+  FileService fileService;
   std::unique_ptr<ThreadPool> threadPool;
   std::atomic<uint64_t> lightDispatched{0};
   std::atomic<uint64_t> heavyDispatched{0};
@@ -47,37 +62,4 @@ class Service : public Singleton<Service> {
   std::chrono::milliseconds queueAcquireTimeout{2};
   std::map<uint32_t, HandlerEntry> serviceGroup;
 };
-
-// 已成功
-
-TcpPacket OnLogin(ChatSession::Ptr session, uint32_t msgID, TcpPacket &request);
-
-TcpPacket PingHandle(ChatSession::Ptr session, uint32_t msgID,
-                     TcpPacket &request);
-
-TcpPacket AckHandle(ChatSession::Ptr session, uint32_t msgID,
-                    TcpPacket &request);
-
-TcpPacket TextSend(ChatSession::Ptr session, uint32_t msgID,
-                   TcpPacket &request);
-
-TcpPacket UploadFile(ChatSession::Ptr session, uint32_t msgID,
-                     TcpPacket &request);
-
-TcpPacket FileSend(ChatSession::Ptr session, uint32_t msgID,
-                   TcpPacket &request);
-
-TcpPacket pullFriendApplyList(ChatSession::Ptr session, uint32_t msgID,
-                              TcpPacket &request);
-TcpPacket pullFriendList(ChatSession::Ptr session, uint32_t msgID,
-                         TcpPacket &request);
-TcpPacket pullSessionMessageList(ChatSession::Ptr session, uint32_t msgID,
-                                 TcpPacket &request);
-TcpPacket pullMessageList(ChatSession::Ptr session, uint32_t msgID,
-                          TcpPacket &request);
-TcpPacket UserQuit(ChatSession::Ptr session, uint32_t msgID,
-                   TcpPacket &request);
-
-TcpPacket SerachUser(ChatSession::Ptr session, uint32_t msgID,
-                     TcpPacket &request);
 };  // namespace wim

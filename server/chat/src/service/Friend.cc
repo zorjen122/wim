@@ -1,19 +1,20 @@
-#include "Friend.h"
+#include "FriendService.h"
 #include "DbGlobal.h"
-#include "ImRpc.h"
+#include "DeliveryService.h"
 
 #include "Const.h"
 #include "Logger.h"
 #include "Mysql.h"
-#include "OnlineUser.h"
 #include "Redis.h"
 
-#include <jsoncpp/json/value.h>
 #include <spdlog/spdlog.h>
 #include <string>
 namespace wim {
 
-int StoreageNotifyAddFriend(TcpPacket &request) {
+FriendService::FriendService(DeliveryService &deliveryService)
+    : deliveryService(deliveryService) {}
+
+int FriendService::StoreNotifyAddFriend(TcpPacket &request) {
   long from = request.uid();
   long to = request.to();
   std::string requestMessage = request.request_message();
@@ -24,17 +25,17 @@ int StoreageNotifyAddFriend(TcpPacket &request) {
   return ret;
 }
 
-TcpPacket NotifyAddFriend(ChatSession::Ptr session, unsigned int msgID,
-                          TcpPacket &request) {
+TcpPacket FriendService::NotifyAddFriend(ChatSession::Ptr session,
+                                         unsigned int msgID,
+                                         TcpPacket &request) {
   TcpPacket rsp;
 
   long from = request.uid();
   long to = request.to();
-  bool skipStorage = request.skip_storage();
   // actor 只取 canonical uid，from 仅作为接收端兼容展示字段。
   request.set_from(from);
 
-  int ret = skipStorage ? 0 : StoreageNotifyAddFriend(request);
+  int ret = StoreNotifyAddFriend(request);
   rsp.set_uid(to);
   if (ret == -1) {
     LOG_INFO(businessLogger,
@@ -45,47 +46,35 @@ TcpPacket NotifyAddFriend(ChatSession::Ptr session, unsigned int msgID,
     return rsp;
   }
 
-  auto toSession = OnlineUser::GetInstance()->GetUserSession(to);
-  bool isLocalMachineOnline = OnlineUser::GetInstance()->isOnline(to);
-  if (isLocalMachineOnline) {
+  auto target = deliveryService.Locate(to);
+  if (target.location == DeliveryService::Location::Local) {
     // 本地在线推送
     TcpPacket senderRsp = request;
     senderRsp.clear_skip_storage();
-    toSession->Send(SerializeTcpPacket(senderRsp), ID_NOTIFY_ADD_FRIEND_REQ);
+    deliveryService.SendLocal(to, SerializeTcpPacket(senderRsp),
+                              ID_NOTIFY_ADD_FRIEND_REQ);
 
     rsp.set_error(ErrorCodes::Success);
     return rsp;
   }
 
   // 全局查找在线用户，所有设备中的在线用户都存放在redis中
-  Json::Value userOnlineInfo =
-      db::RedisDao::GetInstance()->getOnlineUserInfoObject(to);
-  bool isOtherMachineOnline = !userOnlineInfo.empty();
-  if (isOtherMachineOnline) {
-    LOG_DEBUG(wim::businessLogger, "OfflineAddFriend to userinfo-{}",
-              userOnlineInfo.toStyledString());
-
+  if (target.location == DeliveryService::Location::Remote) {
     // rpc转发
-    auto machineId = userOnlineInfo["machineId"].asString();
-    rpc::NotifyAddFriendRequest notifyRequest;
-    rpc::NotifyAddFriendResponse notifyResponse;
-    notifyRequest.set_from(from);
-    notifyRequest.set_to(to);
-    notifyRequest.set_requestmessage(request.request_message());
-
+    auto machineId = target.machineId;
     // 通过MachineID路由到对应的机器，并转发
     LOG_INFO(wim::businessLogger,
              "forwardNotifyAddFriend(from: {}, to: {}) to machine: {}", from,
              to, machineId);
-    auto rpcNode = rpc::ImRpc::GetInstance()->getRpc(machineId);
-    if (rpcNode == nullptr) {
+    auto deliveryResult = deliveryService.ForwardFriendApply(
+        machineId, from, to, request.request_message());
+    if (!deliveryResult.nodeFound) {
       rsp.set_message("RPC目标机器不存在");
       rsp.set_error(ErrorCodes::RPCFailed);
       return rsp;
     }
-    notifyResponse = rpcNode->forwardNotifyAddFriend(notifyRequest);
 
-    if (notifyResponse.status() == "success") {
+    if (deliveryResult.success) {
       rsp.set_error(ErrorCodes::Success);
     } else {
       rsp.set_message("RPC转发异常");
@@ -98,22 +87,21 @@ TcpPacket NotifyAddFriend(ChatSession::Ptr session, unsigned int msgID,
   return rsp;
 }
 
-TcpPacket ReplyAddFriend(ChatSession::Ptr session, unsigned int msgID,
-                         TcpPacket &request) {
+TcpPacket FriendService::ReplyAddFriend(ChatSession::Ptr session,
+                                        unsigned int msgID,
+                                        TcpPacket &request) {
   TcpPacket rsp;
 
   long from = request.uid();
   long to = request.to();
   bool accept = request.accept();
   std::string replyMessage = request.reply_message();
-  bool skipStorage = request.skip_storage();
-  // RPC/TCP 入口都已规范化 uid，业务层不再从 session 推导身份。
+  // actor 只取入口注入的 canonical uid，不从 session 或 from 推导。
   request.set_from(from);
 
   rsp.set_uid(to);
 
-  long sessionKey =
-      skipStorage ? request.session_key() : StoreageReplyAddFriend(request);
+  long sessionKey = StoreReplyAddFriend(request);
   if (sessionKey == -1) {
     LOG_ERROR(businessLogger,
               "StoreageReplyAddFriend is failed, from {}, to {}", from, to);
@@ -122,8 +110,8 @@ TcpPacket ReplyAddFriend(ChatSession::Ptr session, unsigned int msgID,
     return rsp;
   }
 
-  bool isLocalMachineOnline = OnlineUser::GetInstance()->isOnline(to);
-  if (isLocalMachineOnline) {
+  auto target = deliveryService.Locate(to);
+  if (target.location == DeliveryService::Location::Local) {
     TcpPacket senderRsp{};
     senderRsp.set_from(from);
     senderRsp.set_to(to);
@@ -132,41 +120,29 @@ TcpPacket ReplyAddFriend(ChatSession::Ptr session, unsigned int msgID,
     senderRsp.set_accept(accept);
     senderRsp.set_reply_message(replyMessage);
 
-    auto toSession = OnlineUser::GetInstance()->GetUserSession(to);
-    toSession->Send(SerializeTcpPacket(senderRsp), ID_REPLY_ADD_FRIEND_REQ);
+    deliveryService.SendLocal(to, SerializeTcpPacket(senderRsp),
+                              ID_REPLY_ADD_FRIEND_REQ);
 
     rsp.set_error(ErrorCodes::Success);
     return rsp;
   }
 
-  Json::Value userInfo =
-      db::RedisDao::GetInstance()->getOnlineUserInfoObject(to);
+  if (target.location == DeliveryService::Location::Remote) {
+    std::string machineId = target.machineId;
 
-  bool isOtherMachineOnline = !userInfo.empty();
-  if (isOtherMachineOnline) {
-    LOG_INFO(businessLogger, "userinfo {}", userInfo.toStyledString());
-
-    std::string machineId = userInfo["machineId"].asString();
-
-    rpc::ReplyAddFriendRequest replyRequest;
-    rpc::ReplyAddFriendResponse replyResponse;
-    replyRequest.set_from(from);
-    replyRequest.set_to(to);
-    replyRequest.set_accept(accept);
-    replyRequest.set_replymessage(replyMessage);
-    auto rpcNode = rpc::ImRpc::GetInstance()->getRpc(machineId);
-    if (rpcNode == nullptr) {
+    auto deliveryResult = deliveryService.ForwardFriendReply(
+        machineId, from, to, accept, replyMessage);
+    if (!deliveryResult.nodeFound) {
       rsp.set_error(ErrorCodes::RPCFailed);
       rsp.set_message("RPC目标机器不存在");
       return rsp;
     }
-    replyResponse = rpcNode->forwardReplyAddFriend(replyRequest);
     LOG_INFO(
         businessLogger,
         "forwardReplyAddFriend(from: {}, to: {}) to machine: {}, response: {}",
-        from, to, machineId, replyResponse.status());
+        from, to, machineId, deliveryResult.status);
 
-    if (replyResponse.status() == "success") {
+    if (deliveryResult.success) {
       rsp.set_error(ErrorCodes::Success);
     } else {
       rsp.set_error(ErrorCodes::RPCFailed);
@@ -179,7 +155,7 @@ TcpPacket ReplyAddFriend(ChatSession::Ptr session, unsigned int msgID,
   return rsp;
 }
 
-int StoreageReplyAddFriend(TcpPacket &request) {
+int FriendService::StoreReplyAddFriend(TcpPacket &request) {
   long from = request.uid();
   long to = request.to();
   bool accept = request.accept();
@@ -215,5 +191,63 @@ int StoreageReplyAddFriend(TcpPacket &request) {
   }
   // 暂用
   return rt == -1 ? -1 : sessionId;
+}
+
+TcpPacket FriendService::PullFriendApplyList(ChatSession::Ptr session,
+                                             uint32_t msgID,
+                                             TcpPacket &request) {
+  TcpPacket rsp;
+
+  int64_t uid = request.uid();
+  db::FriendApply::FriendApplyGroup applyList =
+      db::MysqlDao::GetInstance()->getFriendApplyList(uid);
+  if (applyList == nullptr) {
+    LOG_INFO(businessLogger, "回应表为空, uid: {}", uid);
+    rsp.set_error(ErrorCodes::Success);
+    return rsp;
+  }
+
+  for (auto applyObject : *applyList) {
+    auto *apply = rsp.add_apply_list();
+    apply->set_from(applyObject->from);
+    apply->set_to(applyObject->to);
+    apply->set_status(applyObject->status);
+    apply->set_content(applyObject->content);
+    apply->set_apply_date_time(applyObject->createTime);
+  }
+  rsp.set_error(ErrorCodes::Success);
+  return rsp;
+}
+
+TcpPacket FriendService::PullFriendList(ChatSession::Ptr session,
+                                        uint32_t msgID, TcpPacket &request) {
+  TcpPacket rsp;
+
+  int64_t uid = request.uid();
+  db::Friend::FriendGroup friendList =
+      db::MysqlDao::GetInstance()->getFriendList(uid);
+
+  if (friendList == nullptr) {
+    LOG_INFO(wim::businessLogger, "好友表为空, uid-{}", uid);
+    rsp.set_error(ErrorCodes::Success);
+    return rsp;
+  }
+
+  for (auto friendObject : *friendList) {
+    int64_t friendUid = friendObject->uidB;
+    db::UserInfo::Ptr friendInfo =
+        db::MysqlDao::GetInstance()->getUserInfo(friendUid);
+    if (friendInfo != nullptr) {
+      auto *info = rsp.add_friend_list();
+      info->set_uid(friendUid);
+      info->set_name(friendInfo->name);
+      info->set_age(friendInfo->age);
+      info->set_sex(friendInfo->sex);
+      info->set_head_image_url(friendInfo->headImageURL);
+    }
+  }
+
+  rsp.set_error(ErrorCodes::Success);
+  return rsp;
 }
 };  // namespace wim

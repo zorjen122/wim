@@ -1,19 +1,20 @@
-#include "Group.h"
+#include "GroupService.h"
 
 #include "Const.h"
 #include "DbGlobal.h"
-#include "ImRpc.h"
+#include "DeliveryService.h"
 #include "Logger.h"
 #include "Mysql.h"
-#include "OnlineUser.h"
 #include "Redis.h"
 #include <cstdint>
-#include <jsoncpp/json/value.h>
 #include <spdlog/spdlog.h>
 namespace wim {
 
-TcpPacket GroupCreate(ChatSession::Ptr session, unsigned int msgID,
-                      TcpPacket &request) {
+GroupService::GroupService(DeliveryService &deliveryService)
+    : deliveryService(deliveryService) {}
+
+TcpPacket GroupService::Create(ChatSession::Ptr session, unsigned int msgID,
+                               TcpPacket &request) {
   TcpPacket rsp;
 
   int ret{};
@@ -51,26 +52,19 @@ TcpPacket GroupCreate(ChatSession::Ptr session, unsigned int msgID,
   return rsp;
 }
 
-int NotifyMemberJoin(int64_t uid, int64_t gid,
-                     const std::string &requestMessage) {
+int GroupService::NotifyMemberJoin(int64_t uid, int64_t gid,
+                                   const std::string &requestMessage) {
   db::GroupMember::MemberList managerList =
       db::MysqlDao::GetInstance()->getGroupRoleMemberList(
           gid, db::GroupMember::Role::Manager);
   for (auto manager : managerList) {
-    bool isLocalMachineOnline =
-        OnlineUser::GetInstance()->isOnline(manager->uid);
-
-    Json::Value userInfo =
-        db::RedisDao::GetInstance()->getOnlineUserInfoObject(manager->uid);
-    bool isOtherMachineOnline =
-        isLocalMachineOnline == false && !userInfo.empty();
-    if (isOtherMachineOnline) {
+    auto target = deliveryService.Locate(manager->uid);
+    if (target.location == DeliveryService::Location::Remote) {
       // rpc
       LOG_INFO(businessLogger, "RPC转发通知群成员加入请求，待实现");
       continue;
     }
-    if (isLocalMachineOnline) {
-      auto user = OnlineUser::GetInstance()->GetUserSession(manager->uid);
+    if (target.location == DeliveryService::Location::Local) {
       int64_t serverSeq = db::RedisDao::GetInstance()->generateMsgId();
       TcpPacket notifyRequest;
       notifyRequest.set_uid(uid);
@@ -80,16 +74,16 @@ int NotifyMemberJoin(int64_t uid, int64_t gid,
       notifyRequest.set_error(ErrorCodes::Success);
 
       // 同好友申请一样，通知REQ发送到客户端则表示通知接收者
-      OnlineUser::GetInstance()->onReWrite(
-          OnlineUser::ReWriteType::Message, serverSeq, manager->uid,
-          SerializeTcpPacket(notifyRequest), ID_GROUP_NOTIFY_JOIN_REQ);
+      deliveryService.SendLocalReliable(manager->uid, serverSeq,
+                                        SerializeTcpPacket(notifyRequest),
+                                        ID_GROUP_NOTIFY_JOIN_REQ);
     }
   }
   return 0;
 }
 
-TcpPacket GroupNotifyJoin(ChatSession::Ptr session, unsigned int msgID,
-                          TcpPacket &request) {
+TcpPacket GroupService::NotifyJoin(ChatSession::Ptr session, unsigned int msgID,
+                                   TcpPacket &request) {
   TcpPacket rsp;
 
   int64_t uid = request.uid();
@@ -133,8 +127,8 @@ TcpPacket GroupNotifyJoin(ChatSession::Ptr session, unsigned int msgID,
   return rsp;
 }
 
-TcpPacket GroupPullNotify(ChatSession::Ptr session, unsigned int msgID,
-                          TcpPacket &request) {
+TcpPacket GroupService::PullNotify(ChatSession::Ptr session, unsigned int msgID,
+                                   TcpPacket &request) {
   TcpPacket rsp;
   rsp.set_gid(request.gid());
 
@@ -162,25 +156,18 @@ TcpPacket GroupPullNotify(ChatSession::Ptr session, unsigned int msgID,
   rsp.set_error(ErrorCodes::Success);
   return rsp;
 }
-int NotifyMemberReply(int64_t gid, int64_t managerUid, int64_t requestorUid,
-                      bool accept) {
+int GroupService::NotifyMemberReply(int64_t gid, int64_t managerUid,
+                                    int64_t requestorUid, bool accept) {
   db::GroupMember::MemberList memberList =
       db::MysqlDao::GetInstance()->getGroupMemberList(gid);
   for (auto member : memberList) {
-    bool isLocalMachineOnline =
-        OnlineUser::GetInstance()->isOnline(member->uid);
-
-    Json::Value userInfo =
-        db::RedisDao::GetInstance()->getOnlineUserInfoObject(member->uid);
-    bool isOtherMachineOnline =
-        isLocalMachineOnline == false && !userInfo.empty();
-    if (isOtherMachineOnline) {
+    auto target = deliveryService.Locate(member->uid);
+    if (target.location == DeliveryService::Location::Remote) {
       // rpc
       LOG_INFO(businessLogger, "RPC转发通知群成员加入请求，待实现");
       continue;
     }
-    if (isLocalMachineOnline) {
-      auto user = OnlineUser::GetInstance()->GetUserSession(member->uid);
+    if (target.location == DeliveryService::Location::Local) {
       int64_t serverSeq = db::RedisDao::GetInstance()->generateMsgId();
       TcpPacket notifyRequest;
       notifyRequest.set_requestor_uid(requestorUid);
@@ -190,16 +177,16 @@ int NotifyMemberReply(int64_t gid, int64_t managerUid, int64_t requestorUid,
       notifyRequest.set_seq(serverSeq);
 
       // 同好友申请一样，通知REQ发送到客户端则表示通知接收者
-      OnlineUser::GetInstance()->onReWrite(
-          OnlineUser::ReWriteType::Message, serverSeq, member->uid,
-          SerializeTcpPacket(notifyRequest), ID_GROUP_REPLY_JOIN_REQ);
+      deliveryService.SendLocalReliable(member->uid, serverSeq,
+                                        SerializeTcpPacket(notifyRequest),
+                                        ID_GROUP_REPLY_JOIN_REQ);
     }
   }
 
   return 0;
 }
-TcpPacket GroupReplyJoin(ChatSession::Ptr session, unsigned int msgID,
-                         TcpPacket &request) {
+TcpPacket GroupService::ReplyJoin(ChatSession::Ptr session, unsigned int msgID,
+                                  TcpPacket &request) {
   TcpPacket rsp;
   rsp.set_gid(request.gid());
 
@@ -259,21 +246,10 @@ TcpPacket GroupReplyJoin(ChatSession::Ptr session, unsigned int msgID,
   return rsp;
 }
 
-TcpPacket GroupQuit(ChatSession::Ptr session, unsigned int msgID,
-                    TcpPacket &request) {
+TcpPacket GroupService::Quit(ChatSession::Ptr session, unsigned int msgID,
+                             TcpPacket &request) {
   TcpPacket rsp;
   return rsp;
 }
 
-/*
-  1.检查群聊
-  2.建立<seq, [member1, member2,
-  ...]>映射，一条消息对应一个seq，一个seq对应多个成员
-  3.转发到群聊所分配的会话服务器，由其生成seq，得到所有成员并按在线离线状态分发消息
-*/
-TcpPacket GroupTextSend(ChatSession::Ptr session, unsigned int msgID,
-                        TcpPacket &request) {
-  TcpPacket rsp;
-  return rsp;
-}
 };  // namespace wim

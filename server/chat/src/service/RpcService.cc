@@ -3,8 +3,6 @@
 #include "Const.h"
 #include "ImActiver.h"
 #include "Logger.h"
-#include "Mysql.h"
-#include "OnlineUser.h"
 #include "RequestContext.h"
 #include <algorithm>
 #include <chrono>
@@ -15,15 +13,14 @@
 #include <grpcpp/server_context.h>
 #include <grpcpp/support/status.h>
 
-#include "Friend.h"
 #include "Service.h"
 
 namespace wim::rpc {
 namespace {
 
 RequestContext MakeRpcContext(ServerContext *serverContext,
-                              std::string requestId,
-                              std::string operation, int64_t actor) {
+                              std::string requestId, std::string operation,
+                              int64_t actor) {
   auto deadline = RequestContext::Deadline::max();
   auto grpcDeadline = serverContext->deadline();
   if (grpcDeadline != std::chrono::system_clock::time_point::max()) {
@@ -54,27 +51,14 @@ grpc::Status ImRpcService::NotifyAddFriend(
     ServerContext *context, const NotifyAddFriendRequest *request,
     NotifyAddFriendResponse *response) {
   long from = request->from();
-  auto requestContext = MakeRpcContext(
-      context, {}, "NotifyAddFriend", static_cast<int64_t>(from));
+  auto requestContext = MakeRpcContext(context, {}, "NotifyAddFriend",
+                                       static_cast<int64_t>(from));
   RequestContextScope contextScope(requestContext);
   long to = request->to();
   std::string message = request->requestmessage();
 
-  TcpPacket requestData;
-  requestData.set_uid(from);
-  requestData.set_from(from);
-  requestData.set_to(to);
-  requestData.set_request_message(message);
-  requestData.set_skip_storage(true);
-
-  auto localServiceResponse =
-      wim::NotifyAddFriend(NULL, ID_NOTIFY_ADD_FRIEND_REQ, requestData);
-
-  int ec = TcpPacketError(localServiceResponse);
-  if (ec < 0) {
-    LOG_INFO(businessLogger, "error: {}", ec);
-    return grpc::Status::CANCELLED;
-  }
+  wim::Service::GetInstance()->Deliveries().DeliverFriendApplyLocal(from, to,
+                                                                    message);
   return grpc::Status::OK;
 }
 
@@ -82,29 +66,15 @@ grpc::Status ImRpcService::ReplyAddFriend(ServerContext *context,
                                           const ReplyAddFriendRequest *request,
                                           ReplyAddFriendResponse *response) {
   long from = request->from();
-  auto requestContext = MakeRpcContext(
-      context, {}, "ReplyAddFriend", static_cast<int64_t>(from));
+  auto requestContext =
+      MakeRpcContext(context, {}, "ReplyAddFriend", static_cast<int64_t>(from));
   RequestContextScope contextScope(requestContext);
   long to = request->to();
   bool accept = request->accept();
   std::string message = request->replymessage();
 
-  TcpPacket requestData;
-  requestData.set_uid(from);
-  requestData.set_from(from);
-  requestData.set_to(to);
-  requestData.set_accept(accept);
-  requestData.set_reply_message(message);
-  requestData.set_skip_storage(true);
-
-  auto localServiceResponse =
-      wim::ReplyAddFriend(nullptr, ID_REPLY_ADD_FRIEND_REQ, requestData);
-
-  int ec = TcpPacketError(localServiceResponse);
-  if (ec < 0) {
-    LOG_INFO(businessLogger, "error: ", ec);
-    return grpc::Status::CANCELLED;
-  }
+  wim::Service::GetInstance()->Deliveries().DeliverFriendReplyLocal(
+      from, to, accept, message);
   return grpc::Status::OK;
 }
 
@@ -112,8 +82,8 @@ grpc::Status ImRpcService::TextSendMessage(
     ServerContext *context, const TextSendMessageRequest *request,
     TextSendMessageResponse *response) {
   long from = request->from();
-  auto requestContext = MakeRpcContext(context, request->request_id(),
-                                       "TextSendMessage", from);
+  auto requestContext =
+      MakeRpcContext(context, request->request_id(), "TextSendMessage", from);
   RequestContextScope contextScope(requestContext);
   long to = request->to();
   std::string text = request->text();
@@ -125,8 +95,8 @@ grpc::Status ImRpcService::TextSendMessage(
   requestData.set_data(text);
   requestData.set_session_key(request->session_key());
 
-  auto localServiceResponse =
-      wim::TextSend(nullptr, ID_TEXT_SEND_REQ, requestData);
+  auto localServiceResponse = wim::Service::GetInstance()->Messages().SendText(
+      nullptr, ID_TEXT_SEND_REQ, requestData);
 
   // 仅供故障测试：模拟目标节点已经接收消息，但 RPC 响应超过调用方 deadline。
   // 后续重试必须由持久幂等返回同一个 message_id。

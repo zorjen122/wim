@@ -1,25 +1,13 @@
 #include "Service.h"
+
 #include "ChatSession.h"
 #include "Const.h"
-#include "DbGlobal.h"
-#include "FileRpc.h"
-#include "Friend.h"
-#include "Group.h"
-#include "ImRpc.h"
 #include "Logger.h"
-#include "Mysql.h"
 #include "Metrics.h"
-#include "OnlineUser.h"
-#include "Redis.h"
 #include "RequestContext.h"
 
-#include <boost/asio/error.hpp>
-#include <boost/asio/steady_timer.hpp>
-#include <boost/system/detail/error_code.hpp>
 #include <algorithm>
 #include <cstdlib>
-#include <fcntl.h>
-#include <jsoncpp/json/value.h>
 #include <memory>
 #include <string>
 #include <thread>
@@ -56,7 +44,10 @@ std::chrono::milliseconds ResolvePositiveMilliseconds(const char *name,
 
 }  // namespace
 
-Service::Service() {
+Service::Service()
+    : friendService(deliveryService),
+      groupService(deliveryService),
+      messageService(deliveryService) {
   Init();
   requestTimeout =
       ResolvePositiveMilliseconds("WIM_CHAT_REQUEST_TIMEOUT_MS", 3000);
@@ -96,48 +87,90 @@ void Service::RegisterHandle(uint32_t msgID, TaskType taskType,
   }
   serviceGroup[msgID] = HandlerEntry{std::move(handle), taskType};
 }
-/*
-接口说明:
-  1、函数处理分为两类：直接处理或转发处理
-  2、直接处理时，单向发送请求者响应包
-  2、转发处理时，先单向的发送请求响应包，再通过rpc转发间接响应目标接收者
-  3、带有转发性质的函数会被复用，复用时请求方会话默认为空，因其已被响应，例如：
-      wim::ReplyAddFriend(nullptr, ID_REPLY_ADD_FRIEND_REQ, requestJsonData);
-  4、TCP 和 RPC 入口必须在调用业务函数前将可信 actor 写入 uid；业务函数不得从
-     session 或 from/manager_uid 等兼容字段重新推导 actor
-*/
-void Service::Init() {
-  /* 已成功 */
 
+void Service::Init() {
   // 状态
-  RegisterHandle(ID_LOGIN_INIT_REQ, TaskType::Heavy, OnLogin);
-  RegisterHandle(ID_USER_QUIT_REQ, TaskType::Heavy, UserQuit);
-  RegisterHandle(ID_PING_REQ, TaskType::Light, PingHandle);
-  RegisterHandle(ID_ACK, TaskType::Heavy, AckHandle);
-  // 传输
-  RegisterHandle(ID_TEXT_SEND_REQ, TaskType::Heavy, TextSend);
-  RegisterHandle(ID_FILE_UPLOAD_REQ, TaskType::Heavy, UploadFile);
+  RegisterHandle(ID_LOGIN_INIT_REQ, TaskType::Heavy,
+                 [this](auto session, auto msgID, auto &request) {
+                   return userService.Login(session, msgID, request);
+                 });
+  RegisterHandle(ID_USER_QUIT_REQ, TaskType::Heavy,
+                 [this](auto session, auto msgID, auto &request) {
+                   return userService.Quit(session, msgID, request);
+                 });
+  RegisterHandle(ID_PING_REQ, TaskType::Light,
+                 [this](auto session, auto msgID, auto &request) {
+                   return Ping(session, msgID, request);
+                 });
+  RegisterHandle(ID_ACK, TaskType::Heavy,
+                 [this](auto session, auto msgID, auto &request) {
+                   return messageService.Ack(session, msgID, request);
+                 });
+
+  // 消息与文件
+  RegisterHandle(ID_TEXT_SEND_REQ, TaskType::Heavy,
+                 [this](auto session, auto msgID, auto &request) {
+                   return messageService.SendText(session, msgID, request);
+                 });
+  RegisterHandle(ID_FILE_UPLOAD_REQ, TaskType::Heavy,
+                 [this](auto session, auto msgID, auto &request) {
+                   return fileService.Upload(session, msgID, request);
+                 });
 
   // 好友
-  RegisterHandle(ID_NOTIFY_ADD_FRIEND_REQ, TaskType::Heavy, NotifyAddFriend);
-  RegisterHandle(ID_REPLY_ADD_FRIEND_REQ, TaskType::Heavy, ReplyAddFriend);
-
-  // 拉取
-  RegisterHandle(ID_PULL_FRIEND_LIST_REQ, TaskType::Heavy, pullFriendList);
+  RegisterHandle(ID_NOTIFY_ADD_FRIEND_REQ, TaskType::Heavy,
+                 [this](auto session, auto msgID, auto &request) {
+                   return friendService.NotifyAddFriend(session, msgID,
+                                                        request);
+                 });
+  RegisterHandle(ID_REPLY_ADD_FRIEND_REQ, TaskType::Heavy,
+                 [this](auto session, auto msgID, auto &request) {
+                   return friendService.ReplyAddFriend(session, msgID, request);
+                 });
+  RegisterHandle(ID_PULL_FRIEND_LIST_REQ, TaskType::Heavy,
+                 [this](auto session, auto msgID, auto &request) {
+                   return friendService.PullFriendList(session, msgID, request);
+                 });
   RegisterHandle(ID_PULL_FRIEND_APPLY_LIST_REQ, TaskType::Heavy,
-                 pullFriendApplyList);
+                 [this](auto session, auto msgID, auto &request) {
+                   return friendService.PullFriendApplyList(session, msgID,
+                                                            request);
+                 });
+
+  // 消息拉取
   RegisterHandle(ID_PULL_SESSION_MESSAGE_LIST_REQ, TaskType::Heavy,
-                 pullSessionMessageList);
-  RegisterHandle(ID_PULL_MESSAGE_LIST_REQ, TaskType::Heavy, pullMessageList);
+                 [this](auto session, auto msgID, auto &request) {
+                   return messageService.PullSessionMessages(session, msgID,
+                                                             request);
+                 });
+  RegisterHandle(ID_PULL_MESSAGE_LIST_REQ, TaskType::Heavy,
+                 [this](auto session, auto msgID, auto &request) {
+                   return messageService.PullMessages(session, msgID, request);
+                 });
 
   // 群聊
-  RegisterHandle(ID_GROUP_CREATE_REQ, TaskType::Heavy, GroupCreate);
-  RegisterHandle(ID_GROUP_NOTIFY_JOIN_REQ, TaskType::Heavy, GroupNotifyJoin);
-  RegisterHandle(ID_GROUP_REPLY_JOIN_REQ, TaskType::Heavy, GroupReplyJoin);
+  RegisterHandle(ID_GROUP_CREATE_REQ, TaskType::Heavy,
+                 [this](auto session, auto msgID, auto &request) {
+                   return groupService.Create(session, msgID, request);
+                 });
+  RegisterHandle(ID_GROUP_NOTIFY_JOIN_REQ, TaskType::Heavy,
+                 [this](auto session, auto msgID, auto &request) {
+                   return groupService.NotifyJoin(session, msgID, request);
+                 });
+  RegisterHandle(ID_GROUP_REPLY_JOIN_REQ, TaskType::Heavy,
+                 [this](auto session, auto msgID, auto &request) {
+                   return groupService.ReplyJoin(session, msgID, request);
+                 });
 
   /* 待实现 */
-  RegisterHandle(ID_GROUP_TEXT_SEND_REQ, TaskType::Heavy, GroupTextSend);
-  RegisterHandle(ID_FILE_SEND_REQ, TaskType::Heavy, FileSend);
+  RegisterHandle(ID_GROUP_TEXT_SEND_REQ, TaskType::Heavy,
+                 [this](auto session, auto msgID, auto &request) {
+                   return messageService.SendGroupText(session, msgID, request);
+                 });
+  RegisterHandle(ID_FILE_SEND_REQ, TaskType::Heavy,
+                 [this](auto session, auto msgID, auto &request) {
+                   return messageService.SendFile(session, msgID, request);
+                 });
 }
 
 void Service::Dispatch(std::shared_ptr<Channel> msg) {
@@ -187,9 +220,10 @@ void Service::ProcessChannel(const Channel::Ptr &channel,
   if (context.Expired()) {
     Metrics::Increment(Metric::RequestsExpired);
     Metrics::Increment(Metric::RequestsFailed);
-    LOG_WARN(businessLogger,
-             "请求在线程池排队期间过期, requestId: {}, operation: {}, actor: {}",
-             context.requestId, context.operation, context.actor);
+    LOG_WARN(
+        businessLogger,
+        "请求在线程池排队期间过期, requestId: {}, operation: {}, actor: {}",
+        context.requestId, context.operation, context.actor);
     if (id != ID_ACK) {
       TcpPacket rsp = MakeErrorPacket(ErrorCodes::DeadlineExceeded,
                                       "request deadline exceeded in queue");
@@ -224,8 +258,8 @@ void Service::ProcessChannel(const Channel::Ptr &channel,
   }
   if (request.has_request_timeout_ms() && request.request_timeout_ms() > 0) {
     // 客户端只能缩短服务端预算，不能通过超大 timeout 延长请求生命周期。
-    auto clientDeadline =
-        context.startedAt + std::chrono::milliseconds(request.request_timeout_ms());
+    auto clientDeadline = context.startedAt + std::chrono::milliseconds(
+                                                  request.request_timeout_ms());
     context.deadline = std::min(context.deadline, clientDeadline);
   }
   if (request.has_request_id() && !request.request_id().empty()) {
@@ -298,10 +332,11 @@ void Service::HandleRejectedChannel(const Channel::Ptr &channel,
                                     ThreadPool::PostStatus status,
                                     const RequestContext &context) {
   uint32_t id = channel->protocolData->id;
-  LOG_WARN(businessLogger,
-           "业务请求入队失败, requestId: {}, operation: {}, actor: {}, status: {}",
-           context.requestId, context.operation, context.actor,
-           status == ThreadPool::PostStatus::TimedOut ? "timeout" : "stopped");
+  LOG_WARN(
+      businessLogger,
+      "业务请求入队失败, requestId: {}, operation: {}, actor: {}, status: {}",
+      context.requestId, context.operation, context.actor,
+      status == ThreadPool::PostStatus::TimedOut ? "timeout" : "stopped");
   if (id == ID_ACK) {
     LOG_WARN(wim::businessLogger, "ACK任务被拒绝，当前业务线程池已满");
     return;
@@ -322,542 +357,20 @@ bool Service::PostBackgroundTask(ThreadPool::Task task) {
   return threadPool->Post(std::move(task));
 }
 
-TcpPacket PingHandle(ChatSession::Ptr session, uint32_t msgID,
-                     TcpPacket &request) {
-  TcpPacket rsp;
-  int64_t uid = request.uid();
+DeliveryService &Service::Deliveries() {
+  return deliveryService;
+}
 
-  rsp.set_uid(uid);
+MessageService &Service::Messages() {
+  return messageService;
+}
+
+TcpPacket Service::Ping(ChatSession::Ptr session, uint32_t msgID,
+                        TcpPacket &request) {
+  TcpPacket rsp;
+  rsp.set_uid(request.uid());
   rsp.set_error(ErrorCodes::Success);
   return rsp;
 }
 
-TcpPacket AckHandle(ChatSession::Ptr session, uint32_t msgID,
-                    TcpPacket &request) {
-  TcpPacket rsp;
-  int64_t seq = request.seq();
-  int64_t uid = request.uid();
-  if (seq <= 0) {
-    rsp.set_error(ErrorCodes::JsonParser);
-    return rsp;
-  }
-  bool legacyReceipt =
-      !request.has_receipt_type() ||
-      request.receipt_type() == protocol::RECEIPT_TYPE_UNSPECIFIED;
-  auto receiptType =
-      legacyReceipt ? protocol::RECEIPT_TYPE_DELIVERED : request.receipt_type();
-  // 通知类 transport ACK 只结束重传，不参与消息生命周期状态。
-  if (receiptType == protocol::RECEIPT_TYPE_TRANSPORT) {
-    OnlineUser::GetInstance()->cancelAckTimer(seq, uid);
-    rsp.set_error(ErrorCodes::Success);
-    return rsp;
-  }
-  if (receiptType != protocol::RECEIPT_TYPE_DELIVERED &&
-      receiptType != protocol::RECEIPT_TYPE_READ) {
-    rsp.set_error(ErrorCodes::JsonParser);
-    return rsp;
-  }
-  short status = receiptType == protocol::RECEIPT_TYPE_READ
-                     ? db::Message::Status::READ
-                     : db::Message::Status::DELIVERED;
-  std::string readTime = receiptType == protocol::RECEIPT_TYPE_READ
-                             ? getCurrentDateTime()
-                             : std::string{};
-
-  // 先完成 receiver 所有权校验和持久化，再取消重传定时器。
-  int updated = db::MysqlDao::GetInstance()->updateMessageForReceiver(
-      seq, uid, status, readTime);
-  if (updated == 0 && legacyReceipt) {
-    OnlineUser::GetInstance()->cancelAckTimer(seq, uid);
-    rsp.set_error(ErrorCodes::Success);
-    return rsp;
-  }
-  if (updated <= 0) {
-    LOG_WARN(wim::businessLogger,
-             "ACK所有权校验失败或消息不存在, seq: {}, principal: {}", seq, uid);
-    rsp.set_error(updated == -1 ? ErrorCodes::MysqlFailed
-                                : ErrorCodes::MessageOwnershipInvalid);
-    return rsp;
-  }
-
-  OnlineUser::GetInstance()->cancelAckTimer(seq, uid);
-  rsp.set_error(ErrorCodes::Success);
-  rsp.set_message_id(seq);
-  rsp.set_message_state(receiptType == protocol::RECEIPT_TYPE_READ
-                            ? protocol::MESSAGE_STATE_READ
-                            : protocol::MESSAGE_STATE_DELIVERED);
-  return rsp;
-}
-
-TcpPacket SerachUser(ChatSession::Ptr session, uint32_t msgID,
-                     TcpPacket &request) {
-  TcpPacket rsp;
-  auto username = request.username();
-  auto user = db::MysqlDao::GetInstance()->getUser(username);
-  if (user == nullptr) {
-    rsp.set_error(-1);
-    return rsp;
-  }
-  auto userInfo = db::MysqlDao::GetInstance()->getUserInfo(user->uid);
-  if (userInfo == nullptr) {
-    rsp.set_error(-1);
-    return rsp;
-  }
-  rsp.set_uid(userInfo->uid);
-  rsp.set_username(user->username);
-  rsp.set_age(userInfo->age);
-  rsp.set_head_image_url(userInfo->headImageURL);
-  rsp.set_error(0);
-
-  return rsp;
-}
-
-TcpPacket UploadFile(ChatSession::Ptr session, uint32_t msgID,
-                     TcpPacket &request) {
-  TcpPacket rsp;
-  int64_t clientSeq = request.seq();
-  int64_t uid = request.uid();
-  std::string data = request.data();
-  std::string fileName = request.file_name();
-  rpc::FileType type;
-
-  rsp.set_seq(clientSeq);
-
-  bool hasUserMsgId = db::RedisDao::GetInstance()->getUserMsgId(uid, clientSeq);
-  static short __expireUserMsgId = 10;
-  if (hasUserMsgId) {
-    LOG_INFO(businessLogger, "重复消息, 客户端消息序列号为: {}", clientSeq);
-    db::RedisDao::GetInstance()->expireUserMsgId(uid, clientSeq,
-                                                 __expireUserMsgId);
-    rsp.set_error(ErrorCodes::RepeatMessage);
-    rsp.set_message("重复消息");
-    return rsp;
-  }
-
-  std::string tmpType = request.file_type();
-  if (tmpType == "TEXT") {
-    type = rpc::FileType::TEXT;
-  } else if (tmpType == "IMAGE") {
-    type = rpc::FileType::IMAGE;
-  } else {
-    LOG_ERROR(businessLogger, "文件传输错误");
-    rsp.set_error(ErrorCodes::FileTypeError);
-    rsp.set_message("文件类型错误");
-    return rsp;
-  }
-
-  rpc::UploadRequest rpcRequest;
-  rpc::UploadResponse rpcResponse;
-
-  // 当set_allocated_chunk时，protobuf会自动管理 chunk 内存
-  rpc::FileChunk *fileChunk = new rpc::FileChunk();
-  fileChunk->set_seq(clientSeq);
-  fileChunk->set_filename(fileName);
-  fileChunk->set_type(type);
-  fileChunk->set_data(data);
-
-  rpcRequest.set_user_id(uid);
-  rpcRequest.set_allocated_chunk(fileChunk);
-
-  try {
-    grpc::Status status =
-        rpc::FileRpc::GetInstance()->forwardUpload(rpcRequest, rpcResponse);
-
-    if (status.ok()) {
-      rsp.set_error(ErrorCodes::Success);
-    } else {
-      rsp.set_error(ErrorCodes::RPCFailed);
-      rsp.set_message("RPC 失败: " + status.error_message());
-    }
-  } catch (const std::exception &e) {
-    rsp.set_error(ErrorCodes::InternalError);
-    rsp.set_message("系统异常: " + std::string(e.what()));
-  }
-
-  return rsp;
-}
-
-TcpPacket FileSend(ChatSession::Ptr session, uint32_t msgID,
-                   TcpPacket &request) {
-  /* 一面推送消息，一面存储消息，其中离线情况，
-  message表中的content对文件消息而言无作用，因其存储在文件系统
-  存储规则目前暂为：fileService/uid/[seq].txt
-*/
-  return {};
-}
-
-TcpPacket TextSend(ChatSession::Ptr session, uint32_t msgID,
-                   TcpPacket &request) {
-  TcpPacket rsp;
-
-  int64_t clientSeq = request.seq();
-  // uid 是入口注入的 canonical actor；from 仅用于兼容下行协议。
-  int64_t from = request.uid();
-  int64_t to = request.to();
-  int64_t sessionHashKey = request.session_key();
-  std::string data = request.data();
-
-  // 发送者回应包中包含它的消息序列号，表示已接收并处理了请求
-  rsp.set_seq(clientSeq);
-
-  if (clientSeq <= 0 || to <= 0 || data.empty()) {
-    rsp.set_error(ErrorCodes::JsonParser);
-    rsp.set_message("seq, to and data are required");
-    rsp.set_retryable(false);
-    return rsp;
-  }
-
-  request.set_from(from);
-
-  bool missMessageCache =
-      db::RedisDao::GetInstance()->getUserMsgId(from, clientSeq);
-  if (missMessageCache) {
-    LOG_INFO(businessLogger, "重复消息, 客户端消息序列号为: {}", clientSeq);
-    db::RedisDao::GetInstance()->expireUserMsgId(
-        from, clientSeq, MESSAGE_CACHE_EXPIRE_TIME_SECONDS);
-    rsp.set_error(ErrorCodes::RepeatMessage);
-    rsp.set_message("重复消息");
-    return rsp;
-  }
-
-  Json::Value userInfo =
-      db::RedisDao::GetInstance()->getOnlineUserInfoObject(to);
-  bool isLocalMachineOnline = OnlineUser::GetInstance()->isOnline(to);
-  bool isOtherMachineOnline =
-      (!userInfo.empty() && isLocalMachineOnline == false);
-  if (isOtherMachineOnline) {
-    LOG_INFO(businessLogger, "用户不在本地机器，转发消息到其他机器, 用户ID: {}",
-             to);
-    std::string machineId = userInfo["machineId"].asString();
-    rpc::TextSendMessageRequest rpcRequest;
-    rpc::TextSendMessageResponse rpcResponse;
-    rpcRequest.set_from(from);
-    rpcRequest.set_to(to);
-    rpcRequest.set_text(data);
-    rpcRequest.set_seq(clientSeq);
-    rpcRequest.set_session_key(sessionHashKey);
-    if (auto *context = RequestContextScope::Current()) {
-      rpcRequest.set_request_id(context->requestId);
-    }
-
-    auto rpcNode = rpc::ImRpc::GetInstance()->getRpc(machineId);
-    if (rpcNode == nullptr) {
-      LOG_WARN(businessLogger, "未找到目标IM机器的RPC连接, machineId: {}",
-               machineId);
-      rsp.set_status("wait");
-      rsp.set_error(ErrorCodes::RPCFailed);
-      rsp.set_message("目标IM机器不可达");
-      rsp.set_retryable(true);
-      return rsp;
-    }
-
-    rpcResponse = rpcNode->forwardTextSendMessage(rpcRequest);
-
-    std::string status = rpcResponse.status();
-    LOG_INFO(businessLogger, "转发完成，目标机器: {}, rpc 响应: {}, 状态码: {}",
-             machineId, rpcResponse.DebugString(), status);
-    rsp.set_status(status == "success" ? "accepted" : "wait");
-    if (status != "success") {
-      int error = rpcResponse.error() == ErrorCodes::Success
-                      ? ErrorCodes::RPCFailed
-                      : rpcResponse.error();
-      rsp.set_error(error);
-      rsp.set_retryable(isRetryableError(error));
-    } else {
-      rsp.set_error(ErrorCodes::Success);
-      rsp.set_message_id(rpcResponse.message_id());
-      rsp.set_message_state(protocol::MESSAGE_STATE_ACCEPTED);
-      rsp.set_retryable(false);
-    }
-    return rsp;
-  }
-
-  int64_t serverMsgSeq = 0;
-  db::RedisDao::GetInstance()->setUserMsgId(from, clientSeq,
-                                            MESSAGE_CACHE_EXPIRE_TIME_SECONDS);
-  serverMsgSeq = db::RedisDao::GetInstance()->generateMsgId();
-  const std::string sendTime = getCurrentDateTime();
-
-  if (isLocalMachineOnline) {
-    LOG_INFO(businessLogger, "用户本地在线，发送消息给目标用户，ID: {}", to);
-    db::Message::Ptr message(new db::Message(
-        serverMsgSeq, from, to, std::to_string(sessionHashKey),
-        db::Message::Type::TEXT, data, db::Message::Status::WAIT, sendTime));
-    int sqlStatus = db::MysqlDao::GetInstance()->insertMessage(message);
-    if (sqlStatus == -1) {
-      rsp.set_error(ErrorCodes::MysqlFailed);
-      rsp.set_message("消息落库失败");
-      rsp.set_retryable(true);
-      return rsp;
-    }
-
-    rsp.set_status("accepted");
-    rsp.set_error(ErrorCodes::Success);
-    rsp.set_message_id(serverMsgSeq);
-    rsp.set_message_state(protocol::MESSAGE_STATE_ACCEPTED);
-    rsp.set_retryable(false);
-
-    // 替换成服务端消息序列号，因需维护服务端道接收者的消息查收状态
-    request.set_seq(serverMsgSeq);
-    request.set_message_id(serverMsgSeq);
-    request.set_message_state(protocol::MESSAGE_STATE_ACCEPTED);
-    OnlineUser::GetInstance()->onReWrite(
-        OnlineUser::ReWriteType::Message, serverMsgSeq, to,
-        SerializeTcpPacket(request), ID_TEXT_SEND_REQ);
-
-    return rsp;
-  }
-
-  LOG_INFO(businessLogger, "用户不在线，存储离线消息, 用户ID: {}", to);
-  db::Message::Ptr message = nullptr;
-
-  message.reset(new db::Message(
-      serverMsgSeq, from, to, std::to_string(sessionHashKey),
-      db::Message::Type::TEXT, data, db::Message::Status::WAIT, sendTime));
-
-  int sqlStatus = db::MysqlDao::GetInstance()->insertMessage(message);
-  rsp.set_status("accepted");
-  if (sqlStatus != -1) {
-    rsp.set_error(ErrorCodes::Success);
-    rsp.set_message_id(serverMsgSeq);
-    rsp.set_message_state(protocol::MESSAGE_STATE_ACCEPTED);
-    rsp.set_retryable(false);
-  } else {
-    rsp.set_error(ErrorCodes::MysqlFailed);
-    rsp.set_retryable(true);
-  }
-
-  return rsp;
-}
-
-TcpPacket UserQuit(ChatSession::Ptr session, uint32_t msgID,
-                   TcpPacket &request) {
-  auto uid = request.uid();
-
-  /*
-  清理在线资源，网络层资源在对方close关闭时自行清理
-  每个用户都有心跳机制，此处默认清理
-  */
-  OnlineUser::GetInstance()->ClearUser(uid, uid, session);
-  return {};
 }  // namespace wim
-
-TcpPacket ReLogin(int64_t uid, ChatSession::Ptr oldSession,
-                  ChatSession::Ptr newSession) {
-  TcpPacket rsp;
-
-  return rsp;
-}
-
-TcpPacket OnLogin(ChatSession::Ptr session, uint32_t msgID,
-                  TcpPacket &request) {
-  TcpPacket rsp;
-  int64_t uid = request.uid();
-  bool isFirstLogin = request.init();
-  int status = 0;
-
-  if (!session || uid <= 0) {
-    rsp.set_error(ErrorCodes::UidInvalid);
-    return rsp;
-  }
-
-  // token 校验和一次性绑定必须早于在线路由等用户态副作用。
-  if (session->IsAuthenticated()) {
-    if (session->GetUserId() != uid) {
-      rsp.set_error(ErrorCodes::UidInvalid);
-      rsp.set_message("session is already bound to another user");
-      return rsp;
-    }
-  } else if (!request.has_auth_token() ||
-             !db::RedisDao::GetInstance()->validateChatAuthToken(
-                 uid, request.auth_token())) {
-    rsp.set_error(ErrorCodes::TokenInvalid);
-    rsp.set_message("invalid or expired chat auth token");
-    return rsp;
-  }
-  if (!session->BindUserId(uid)) {
-    rsp.set_error(ErrorCodes::UidInvalid);
-    rsp.set_message("session is already bound to another user");
-    return rsp;
-  }
-
-  // 待实现，先不做处理
-  status = OnlineUser::GetInstance()->isOnline(uid);
-  if (false && status == false) {
-    rsp.set_error(ErrorCodes::UserOnline);
-    auto oldSession = OnlineUser::GetInstance()->GetUserSession(uid);
-    ReLogin(uid, oldSession, session);
-  }
-
-  status = db::RedisDao::GetInstance()->getOnlineUserInfo(uid).empty();
-  // 分布式情况，待实现
-  if (false && status) {
-    rsp.set_error(ErrorCodes::Success);
-  }
-
-  // 用户信息处理
-  db::UserInfo::Ptr userInfo;
-  if (isFirstLogin) {
-    // 首次登录，需要同步用户信息
-    std::string name = request.name();
-    short age = request.age();
-    std::string sex = request.sex();
-    userInfo.reset(new db::UserInfo(uid, name, age, sex, {}));
-
-    status = db::MysqlDao::GetInstance()->insertUserInfo(userInfo);
-    if (status != 0) {
-      LOG_WARN(wim::businessLogger, "插入用户信息失败, uid-{} ", uid);
-      rsp.set_error(-1);
-      return rsp;
-    }
-  } else {
-    userInfo = db::MysqlDao::GetInstance()->getUserInfo(uid);
-    if (userInfo == nullptr) {
-      LOG_WARN(wim::businessLogger, "获取用户信息失败, uid-{} ", uid);
-      rsp.set_error(-1);
-      return rsp;
-    }
-  }
-
-  // 建立<userInfo, session>用户网络线路映射
-  status = OnlineUser::GetInstance()->MapUser(userInfo, session);
-  if (status == false) {
-    rsp.set_error(-1);
-    return rsp;
-  }
-  rsp.set_uid(userInfo->uid);
-  rsp.set_name(userInfo->name);
-  rsp.set_age(userInfo->age);
-  rsp.set_sex(userInfo->sex);
-  rsp.set_head_image_url(userInfo->headImageURL);
-  rsp.set_error(ErrorCodes::Success);
-  return rsp;
-}
-
-TcpPacket pullFriendApplyList(ChatSession::Ptr session, uint32_t msgID,
-                              TcpPacket &request) {
-  TcpPacket rsp;
-
-  int64_t uid = request.uid();
-  db::FriendApply::FriendApplyGroup applyList =
-      db::MysqlDao::GetInstance()->getFriendApplyList(uid);
-  if (applyList == nullptr) {
-    LOG_INFO(businessLogger, "回应表为空, uid: {}", uid);
-    rsp.set_error(ErrorCodes::Success);
-    return rsp;
-  }
-
-  for (auto applyObject : *applyList) {
-    auto *apply = rsp.add_apply_list();
-    apply->set_from(applyObject->from);
-    apply->set_to(applyObject->to);
-    apply->set_status(applyObject->status);
-    apply->set_content(applyObject->content);
-    apply->set_apply_date_time(applyObject->createTime);
-  }
-  rsp.set_error(ErrorCodes::Success);
-
-  return rsp;
-}
-
-TcpPacket pullFriendList(ChatSession::Ptr session, uint32_t msgID,
-                         TcpPacket &request) {
-  TcpPacket rsp;
-
-  int64_t uid = request.uid();
-  db::Friend::FriendGroup friendList =
-      db::MysqlDao::GetInstance()->getFriendList(uid);
-
-  if (friendList == nullptr) {
-    LOG_INFO(wim::businessLogger, "好友表为空, uid-{}", uid);
-    rsp.set_error(ErrorCodes::Success);
-    return rsp;
-  }
-
-  for (auto friendObject : *friendList) {
-    int64_t friendUid = friendObject->uidB;
-    db::UserInfo::Ptr friendInfo =
-        db::MysqlDao::GetInstance()->getUserInfo(friendUid);
-    if (friendInfo != nullptr) {
-      auto *info = rsp.add_friend_list();
-      info->set_uid(friendUid);
-      info->set_name(friendInfo->name);
-      info->set_age(friendInfo->age);
-      info->set_sex(friendInfo->sex);
-      info->set_head_image_url(friendInfo->headImageURL);
-    }
-  }
-
-  rsp.set_error(ErrorCodes::Success);
-  return rsp;
-}
-TcpPacket pullSessionMessageList(ChatSession::Ptr session, uint32_t msgID,
-                                 TcpPacket &request) {
-  TcpPacket rsp;
-
-  int64_t from = request.from();
-  int64_t to = request.to();
-  int64_t lastMsgId = request.last_msg_id();
-  int limit = request.limit();
-
-  auto messageList = db::MysqlDao::GetInstance()->getSessionMessage(
-      from, to, lastMsgId, limit);
-  if (messageList == nullptr) {
-    LOG_INFO(wim::businessLogger,
-             "消息表为空, from: {}, to: {}, lastMsgId: {}, limit: {}", from, to,
-             lastMsgId, limit);
-
-    rsp.set_error(ErrorCodes::Success);
-    return rsp;
-  }
-
-  rsp.set_uid(to);
-  for (auto message : *messageList) {
-    auto *item = rsp.add_message_list();
-    item->set_message_id(message->messageId);
-    item->set_type(message->type);
-    item->set_content(message->content);
-    item->set_status(message->status);
-    item->set_send_date_time(message->sendDateTime);
-    item->set_read_date_time(message->readDateTime);
-  }
-  rsp.set_error(ErrorCodes::Success);
-
-  return rsp;
-}
-
-TcpPacket pullMessageList(ChatSession::Ptr session, uint32_t msgID,
-                          TcpPacket &request) {
-  TcpPacket rsp;
-
-  int64_t uid = request.uid();
-  int64_t lastMsgId = request.last_msg_id();
-  int limit = request.limit();
-
-  rsp.set_uid(uid);
-
-  auto messageList =
-      db::MysqlDao::GetInstance()->getUserMessage(uid, lastMsgId, limit);
-  if (messageList == nullptr) {
-    LOG_INFO(wim::businessLogger,
-             "消息表为空,  uid: {}, lastMsgId: {}, limit: {}", uid, lastMsgId,
-             limit);
-
-    rsp.set_error(ErrorCodes::Success);
-    return rsp;
-  }
-
-  for (auto message : *messageList) {
-    auto *item = rsp.add_message_list();
-    item->set_message_id(message->messageId);
-    item->set_type(message->type);
-    item->set_content(message->content);
-    item->set_status(message->status);
-    item->set_send_date_time(message->sendDateTime);
-    item->set_read_date_time(message->readDateTime);
-  }
-  rsp.set_error(ErrorCodes::Success);
-
-  return rsp;
-}
-};  // namespace wim
