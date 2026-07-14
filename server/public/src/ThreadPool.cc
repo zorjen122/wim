@@ -1,6 +1,7 @@
 #include "ThreadPool.h"
 
 #include "Logger.h"
+#include "Metrics.h"
 
 #include <algorithm>
 #include <exception>
@@ -67,26 +68,45 @@ ThreadPool::~ThreadPool() {
 }
 
 bool ThreadPool::Post(Task task) {
+  return PostUntil(std::move(task), RequestContext::Clock::now(),
+                   RequestContextScope::CurrentDeadline()) ==
+         PostStatus::Accepted;
+}
+
+ThreadPool::PostStatus ThreadPool::PostUntil(
+    Task task, RequestContext::Deadline acquireDeadline,
+    RequestContext::Deadline taskDeadline) {
   if (!task) {
-    return false;
+    return PostStatus::Stopped;
   }
 
   {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::unique_lock<std::mutex> lock(mutex);
     if (stopping) {
-      return false;
+      return PostStatus::Stopped;
     }
 
-    if (queue.size() >= options.maxQueueSize) {
+    if (queue.size() >= options.maxQueueSize &&
+        !queueSpace.wait_until(lock, acquireDeadline, [this]() {
+          return stopping || queue.size() < options.maxQueueSize;
+        })) {
       rejected.fetch_add(1, std::memory_order_relaxed);
-      return false;
+      acquireTimeouts.fetch_add(1, std::memory_order_relaxed);
+      Metrics::Increment(Metric::ThreadPoolAcquireTimeout);
+      LOG_WARN(businessLogger,
+               "线程池获取队列容量超时, pool: {}, queueSize: {}, capacity: {}",
+               name, queue.size(), options.maxQueueSize);
+      return PostStatus::TimedOut;
     }
-    queue.push(std::move(task));
+    if (stopping) {
+      return PostStatus::Stopped;
+    }
+    queue.push(TaskEntry{std::move(task), taskDeadline});
     submitted.fetch_add(1, std::memory_order_relaxed);
   }
 
   condition.notify_one();
-  return true;
+  return PostStatus::Accepted;
 }
 
 void ThreadPool::Stop() {
@@ -99,6 +119,7 @@ void ThreadPool::Stop() {
   }
 
   condition.notify_all();
+  queueSpace.notify_all();
   for (auto &worker : workers) {
     if (worker.joinable()) {
       worker.join();
@@ -117,6 +138,8 @@ ThreadPoolStats ThreadPool::GetStats() const {
   stats.submitted = submitted.load(std::memory_order_relaxed);
   stats.completed = completed.load(std::memory_order_relaxed);
   stats.rejected = rejected.load(std::memory_order_relaxed);
+  stats.acquireTimeouts = acquireTimeouts.load(std::memory_order_relaxed);
+  stats.expired = expired.load(std::memory_order_relaxed);
   return stats;
 }
 
@@ -124,13 +147,21 @@ void ThreadPool::WorkerLoop(std::size_t index) {
   SetCurrentThreadName(name, index);
 
   for (;;) {
-    Task task;
+    TaskEntry task;
     if (!PopTask(task)) {
       return;
     }
 
+    if (task.deadline != RequestContext::Deadline::max() &&
+        RequestContext::Clock::now() >= task.deadline) {
+      // 仍执行任务，让上层有机会返回明确的 DeadlineExceeded，而不是静默丢弃。
+      expired.fetch_add(1, std::memory_order_relaxed);
+      Metrics::Increment(Metric::ThreadPoolTaskExpired);
+      LOG_WARN(businessLogger, "线程池任务开始执行时已过期, pool: {}", name);
+    }
+
     try {
-      task();
+      task.task();
     } catch (const std::exception &error) {
       LOG_ERROR(businessLogger, "ThreadPool {} task failed: {}", name,
                 error.what());
@@ -143,7 +174,7 @@ void ThreadPool::WorkerLoop(std::size_t index) {
   }
 }
 
-bool ThreadPool::PopTask(Task &task) {
+bool ThreadPool::PopTask(TaskEntry &task) {
   std::unique_lock<std::mutex> lock(mutex);
   condition.wait(lock, [this]() { return stopping || !queue.empty(); });
 
@@ -153,6 +184,7 @@ bool ThreadPool::PopTask(Task &task) {
 
   task = std::move(queue.front());
   queue.pop();
+  queueSpace.notify_one();
   return true;
 }
 

@@ -26,7 +26,7 @@ Requires two chat services and shared dependencies to be running, for example:
 Verifies the currently supported multi-chat path:
   - user A logs in to chat node 1, user B logs in to chat node 2
   - Redis records both users on different IM machines
-  - cross-node text returns ACCEPTED with a stable message_id
+  - cross-node text returns ACCEPTED with a message_id
   - delivery reaches the receiver and is ACKed as DELIVERED in MySQL
   - cross-node friend apply/reply succeeds and can be pulled
   - session and user message pulls can see the delivered text
@@ -224,6 +224,7 @@ a = WimClient(UID_A, CHAT_A_HOST, CHAT_A_PORT,
 b = WimClient(UID_B, CHAT_B_HOST, CHAT_B_PORT,
               auth_token=auth_b["chatToken"])
 server_seq = 0
+delayed_server_seq = 0
 try:
     a.login(init=False)
     b.login(init=False)
@@ -261,6 +262,34 @@ try:
             f"response/push message id mismatch: {text_rsp}, {text_push}")
     b.ack(server_seq)
     print("cross-node text push ok")
+
+    if os.environ.get("WIM_TEST_RPC_DELAY") == "1":
+        delayed_client_seq = client_seq + 1
+        delayed_body = {
+            "from": UID_A,
+            "to": UID_B,
+            "seq": delayed_client_seq,
+            "sessionKey": 0,
+            "data": "rpc_delay_after_accept",
+            "requestTimeoutMs": 100,
+        }
+        delayed_first = a.request(ID_TEXT_SEND_REQ, delayed_body)
+        require(delayed_first.get("error", 0) != 0 and
+                delayed_first.get("retryable") is True,
+                f"delayed RPC did not time out retryably: {delayed_first}")
+        delayed_push = b.expect_async(
+            ID_TEXT_SEND_REQ,
+            lambda payload: payload.get("data") == "rpc_delay_after_accept",
+        )
+        delayed_server_seq = int(delayed_push["seq"])
+
+        delayed_body["requestTimeoutMs"] = 2000
+        delayed_retry = a.request(ID_TEXT_SEND_REQ, delayed_body)
+        require(delayed_retry.get("error", 0) != 0 and
+                delayed_retry.get("retryable") is False,
+                f"delayed RPC retry was not rejected as duplicate: {delayed_retry}")
+        b.ack(delayed_server_seq)
+        print("RPC deadline duplicate suppression ok")
 
     apply_rsp = a.request(
         ID_NOTIFY_ADD_FRIEND_REQ,
@@ -336,10 +365,12 @@ finally:
         b.quit(wait_response=True)
 
 with open(RESULT_FILE, "w", encoding="utf-8") as fp:
-    json.dump({"server_seq": server_seq}, fp)
+    json.dump({"server_seq": server_seq,
+               "delayed_server_seq": delayed_server_seq}, fp)
 PY
 
 server_seq="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["server_seq"])' "$result_file")"
+delayed_server_seq="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["delayed_server_seq"])' "$result_file")"
 
 for _ in {1..10}; do
   text_count="$(mysql_scalar "SELECT COUNT(*) FROM messages WHERE messageId = $server_seq AND senderId = $uid_a AND receiverId = $uid_b AND sessionKey = '0' AND content = '$text_payload' AND status = 2 AND COALESCE(readDateTime, '') = '';")"
@@ -354,6 +385,13 @@ if [[ "${text_count:-0}" != "1" ]]; then
   echo "cross-node text row was not persisted as DELIVERED"
   mysql_exec -e "SELECT * FROM messages WHERE messageId = $server_seq;" || true
   exit 1
+fi
+
+if [[ "$delayed_server_seq" != "0" ]]; then
+  expect_count \
+    "RPC timeout retry single row" \
+    "SELECT COUNT(*) FROM messages WHERE messageId = $delayed_server_seq AND senderId = $uid_a AND receiverId = $uid_b;" \
+    "1"
 fi
 
 expect_count \

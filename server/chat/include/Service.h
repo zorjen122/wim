@@ -7,6 +7,7 @@
 
 #include "ChatSession.h"
 #include "Const.h"
+#include "RequestContext.h"
 #include "TcpMessageCodec.h"
 #include "ThreadPool.h"
 
@@ -32,14 +33,18 @@ class Service : public Singleton<Service> {
 
   Service();
   void Init();
-  void ProcessChannel(const Channel::Ptr &channel);
-  void HandleRejectedChannel(const Channel::Ptr &channel);
+  void ProcessChannel(const Channel::Ptr &channel, RequestContext context);
+  void HandleRejectedChannel(const Channel::Ptr &channel,
+                             ThreadPool::PostStatus status,
+                             const RequestContext &context);
   void RegisterHandle(uint32_t msgID, TaskType taskType, HandleType handle);
 
   std::unique_ptr<ThreadPool> threadPool;
   std::atomic<uint64_t> lightDispatched{0};
   std::atomic<uint64_t> heavyDispatched{0};
   std::atomic<uint64_t> heavyRejected{0};
+  std::chrono::milliseconds requestTimeout{3000};
+  std::chrono::milliseconds queueAcquireTimeout{2};
   std::map<uint32_t, HandlerEntry> serviceGroup;
 };
 

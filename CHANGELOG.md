@@ -3,6 +3,21 @@
 This file records the verified project baseline and subsequent architectural
 changes.
 
+## 2026-07-14 - Request Deadlines and Resource Controls
+
+- Added a shared request context carrying request identity, canonical actor,
+  source, and a monotonic deadline across TCP handlers, RPC clients, RPC
+  services, and storage calls.
+- Added stable timeout, resource exhaustion, dependency, and idempotency error
+  classes plus process-level counters for requests, pool waits, RPC deadlines,
+  and idempotency outcomes.
+- Added timed acquisition to the ThreadPool, MySQL, Redis, and RPC pools; gRPC
+  calls now inherit the request deadline.
+- Retained the existing Redis short-window `getUserMsgId` / `setUserMsgId`
+  duplicate-message handling.
+- Added deterministic pool exhaustion tests and delayed RPC response coverage.
+- Bulkhead splitting, TCP/File queue limits, and outbox delivery remain deferred.
+
 ## 2026-07-14 - Authenticated Message Lifecycle
 
 - Defined distinct client command and server message identifiers, plus explicit

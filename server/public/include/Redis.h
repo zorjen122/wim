@@ -1,6 +1,7 @@
 #pragma once
 
 #include <boost/asio/deadline_timer.hpp>
+#include <chrono>
 #include <memory>
 #include <sw/redis++/redis.h>
 
@@ -10,9 +11,12 @@
 #include "Const.h"
 #include "DbGlobal.h"
 #include "Logger.h"
+#include "Metrics.h"
+#include "RequestContext.h"
 #include <condition_variable>
 #include <jsoncpp/json/json.h>
 #include <mutex>
+#include <string>
 #include <queue>
 #include <spdlog/spdlog.h>
 #include <thread>
@@ -28,9 +32,7 @@ class RedisPool {
       : stopEnable(false), host(host), port(port), password(password) {
     for (size_t i = 0; i < poolSize; ++i) {
       try {
-        std::string url = "tcp://" + host + ":" + std::to_string(port);
-        std::unique_ptr<sw::redis::Redis> session(new sw::redis::Redis(url));
-        session->auth(password);
+        auto session = CreateConnection();
         connections.push(std::move(session));
       } catch (sw::redis::Error &e) {
         LOG_DEBUG(wim::dbLogger,
@@ -82,13 +84,25 @@ class RedisPool {
   }
 
   std::unique_ptr<sw::redis::Redis> GetConnection() {
+    return GetConnectionUntil(RequestContextScope::CurrentDeadlineOr(
+        std::chrono::milliseconds(1000)));
+  }
+
+  std::unique_ptr<sw::redis::Redis> GetConnectionUntil(
+      RequestContext::Deadline deadline) {
     std::unique_lock<std::mutex> lock(poolMutex);
-    condVar.wait(lock, [this] {
+    bool ready = condVar.wait_until(lock, deadline, [this] {
       if (stopEnable) {
         return true;
       }
       return !connections.empty();
     });
+    if (!ready) {
+      Metrics::Increment(Metric::RedisAcquireTimeout);
+      LOG_WARN(wim::dbLogger, "Redis连接池获取超时, available: {}",
+               connections.size());
+      return nullptr;
+    }
     if (stopEnable || connections.empty()) {
       return nullptr;
     }
@@ -123,6 +137,18 @@ class RedisPool {
   }
 
  private:
+  std::unique_ptr<sw::redis::Redis> CreateConnection() const {
+    // socket 上限防止已借出的 Redis 连接无限挂起；连接池获取仍服从当前请求
+    // 更短的 deadline，两层限制分别约束排队时间和网络时间。
+    sw::redis::ConnectionOptions options;
+    options.host = host;
+    options.port = static_cast<int>(port);
+    options.password = password;
+    options.connect_timeout = std::chrono::milliseconds(1000);
+    options.socket_timeout = std::chrono::milliseconds(1000);
+    return std::make_unique<sw::redis::Redis>(options);
+  }
+
   void keepConnectionHandle() {
     std::lock_guard<std::mutex> lock(poolMutex);
 
@@ -142,14 +168,12 @@ class RedisPool {
         LOG_DEBUG(wim::dbLogger, "redis connection is error: {}, reconnect....",
                   e.what());
         con.reset();
-        std::string url = "tcp://" + host + ":" + std::to_string(port);
         try {
-          std::unique_ptr<sw::redis::Redis> session(new sw::redis::Redis(url));
-          session->auth(password);
+          auto session = CreateConnection();
           connections.push(std::move(session));
         } catch (sw::redis::Error &e) {
-          spdlog::warn("redis reconnection is error: {} | url: {}", e.what(),
-                       url);
+          spdlog::warn("redis reconnection is error: {} | host: {}, port: {}",
+                       e.what(), host, port);
         }
       }
     }
@@ -172,6 +196,7 @@ class RedisDao : public Singleton<RedisDao>,
 
  public:
   using Ptr = std::shared_ptr<RedisDao>;
+
   RedisDao() {
     static bool inited = false;
     if (inited) {

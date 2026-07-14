@@ -8,8 +8,10 @@
 #include "ImRpc.h"
 #include "Logger.h"
 #include "Mysql.h"
+#include "Metrics.h"
 #include "OnlineUser.h"
 #include "Redis.h"
+#include "RequestContext.h"
 
 #include <boost/asio/error.hpp>
 #include <boost/asio/steady_timer.hpp>
@@ -41,10 +43,25 @@ std::size_t ResolveServiceWorkerCount() {
   return std::clamp<std::size_t>(hardware / 2, 2, 8);
 }
 
+std::chrono::milliseconds ResolvePositiveMilliseconds(const char *name,
+                                                      int fallback) {
+  if (const char *value = std::getenv(name)) {
+    int configured = std::atoi(value);
+    if (configured > 0) {
+      return std::chrono::milliseconds(configured);
+    }
+  }
+  return std::chrono::milliseconds(fallback);
+}
+
 }  // namespace
 
 Service::Service() {
   Init();
+  requestTimeout =
+      ResolvePositiveMilliseconds("WIM_CHAT_REQUEST_TIMEOUT_MS", 3000);
+  queueAcquireTimeout =
+      ResolvePositiveMilliseconds("WIM_CHAT_QUEUE_ACQUIRE_MS", 2);
   threadPool =
       std::make_unique<ThreadPool>("chat-biz", ResolveServiceWorkerCount());
 }
@@ -55,12 +72,18 @@ Service::~Service() {
     LOG_INFO(businessLogger,
              "chat service dispatcher stop, workers: {}, queued: {}, light "
              "direct: {}, heavy dispatched/rejected: {}/{}, thread pool "
-             "submitted/completed/rejected: {}/{}/{}",
+             "submitted/completed/rejected/acquire-timeout/expired: "
+             "{}/{}/{}/{}/{}, requests started/succeeded/failed/expired: "
+             "{}/{}/{}/{}",
              stats.workerCount, stats.queueSize,
              lightDispatched.load(std::memory_order_relaxed),
              heavyDispatched.load(std::memory_order_relaxed),
              heavyRejected.load(std::memory_order_relaxed), stats.submitted,
-             stats.completed, stats.rejected);
+             stats.completed, stats.rejected, stats.acquireTimeouts,
+             stats.expired, Metrics::Get(Metric::RequestsStarted),
+             Metrics::Get(Metric::RequestsSucceeded),
+             Metrics::Get(Metric::RequestsFailed),
+             Metrics::Get(Metric::RequestsExpired));
     threadPool->Stop();
   }
 }
@@ -120,6 +143,10 @@ void Service::Init() {
 void Service::Dispatch(std::shared_ptr<Channel> msg) {
   auto channel = std::move(msg);
   uint32_t id = channel->protocolData->id;
+  auto context = RequestContext::WithTimeout(
+      RequestContext::NextRequestId(), getServiceIdString(id),
+      RequestSource::Tcp, channel->contextSession->GetUserId(), requestTimeout);
+  Metrics::Increment(Metric::RequestsStarted);
   auto handleCaller = serviceGroup.find(id);
   TaskType taskType = handleCaller == serviceGroup.end()
                           ? TaskType::Light
@@ -127,26 +154,49 @@ void Service::Dispatch(std::shared_ptr<Channel> msg) {
 
   if (taskType == TaskType::Light) {
     lightDispatched.fetch_add(1, std::memory_order_relaxed);
-    ProcessChannel(channel);
+    ProcessChannel(channel, std::move(context));
     return;
   }
 
-  bool accepted =
-      threadPool->Post([this, channel]() { ProcessChannel(channel); });
-  if (!accepted) {
+  // I/O 线程只给入队一个很短预算，避免业务池拥塞反向阻塞网络循环。
+  auto acquireDeadline = std::min(
+      context.deadline, RequestContext::Clock::now() + queueAcquireTimeout);
+  auto status = threadPool->PostUntil(
+      [this, channel, context]() mutable {
+        ProcessChannel(channel, std::move(context));
+      },
+      acquireDeadline, context.deadline);
+  if (status != ThreadPool::PostStatus::Accepted) {
     heavyRejected.fetch_add(1, std::memory_order_relaxed);
-    HandleRejectedChannel(channel);
+    Metrics::Increment(Metric::RequestsFailed);
+    HandleRejectedChannel(channel, status, context);
     return;
   }
 
   heavyDispatched.fetch_add(1, std::memory_order_relaxed);
 }
 
-void Service::ProcessChannel(const Channel::Ptr &channel) {
+void Service::ProcessChannel(const Channel::Ptr &channel,
+                             RequestContext context) {
+  RequestContextScope contextScope(context);
   uint32_t id = channel->protocolData->id;
   const char *data = channel->protocolData->data;
   uint32_t dataSize = channel->protocolData->getDataSize();
   int responseId = __getServiceResponseId(ServiceID(id));
+
+  if (context.Expired()) {
+    Metrics::Increment(Metric::RequestsExpired);
+    Metrics::Increment(Metric::RequestsFailed);
+    LOG_WARN(businessLogger,
+             "请求在线程池排队期间过期, requestId: {}, operation: {}, actor: {}",
+             context.requestId, context.operation, context.actor);
+    if (id != ID_ACK) {
+      TcpPacket rsp = MakeErrorPacket(ErrorCodes::DeadlineExceeded,
+                                      "request deadline exceeded in queue");
+      channel->contextSession->Send(SerializeTcpPacket(rsp), responseId);
+    }
+    return;
+  }
 
   auto handleCaller = serviceGroup.find(id);
   if (handleCaller == serviceGroup.end()) {
@@ -154,6 +204,7 @@ void Service::ProcessChannel(const Channel::Ptr &channel) {
 
     TcpPacket rsp = MakeErrorPacket(ErrorCodes::NotFound);
     channel->contextSession->Send(SerializeTcpPacket(rsp), responseId);
+    Metrics::Increment(Metric::RequestsFailed);
     return;
   }
 
@@ -168,6 +219,29 @@ void Service::ProcessChannel(const Channel::Ptr &channel) {
              requestIdMessage, dataSize);
     TcpPacket rsp = MakeErrorPacket(ErrorCodes::JsonParser);
     channel->contextSession->Send(SerializeTcpPacket(rsp), responseId);
+    Metrics::Increment(Metric::RequestsFailed);
+    return;
+  }
+  if (request.has_request_timeout_ms() && request.request_timeout_ms() > 0) {
+    // 客户端只能缩短服务端预算，不能通过超大 timeout 延长请求生命周期。
+    auto clientDeadline =
+        context.startedAt + std::chrono::milliseconds(request.request_timeout_ms());
+    context.deadline = std::min(context.deadline, clientDeadline);
+  }
+  if (request.has_request_id() && !request.request_id().empty()) {
+    context.requestId = request.request_id();
+  }
+  if (context.Expired()) {
+    Metrics::Increment(Metric::RequestsExpired);
+    Metrics::Increment(Metric::RequestsFailed);
+    LOG_WARN(businessLogger,
+             "请求解析后已超过客户端截止时间, requestId: {}, operation: {}",
+             context.requestId, context.operation);
+    if (id != ID_ACK) {
+      TcpPacket rsp = MakeErrorPacket(ErrorCodes::DeadlineExceeded,
+                                      "client request deadline exceeded");
+      channel->contextSession->Send(SerializeTcpPacket(rsp), responseId);
+    }
     return;
   }
   // TCP 信任边界：登录以外的业务请求统一从 session 注入可信 actor。
@@ -175,11 +249,23 @@ void Service::ProcessChannel(const Channel::Ptr &channel) {
     TcpPacket rsp = MakeErrorPacket(ErrorCodes::AuthenticationRequired,
                                     "chat session is not authenticated");
     channel->contextSession->Send(SerializeTcpPacket(rsp), responseId);
+    Metrics::Increment(Metric::RequestsFailed);
     return;
   }
   if (id != ID_LOGIN_INIT_REQ) {
     request.set_uid(channel->contextSession->GetUserId());
   }
+  context.actor = request.uid();
+  if (!request.has_request_id() && request.has_seq()) {
+    context.requestId = std::to_string(context.actor) + ":" +
+                        std::to_string(id) + ":" +
+                        std::to_string(request.seq());
+  }
+  LOG_DEBUG(businessLogger,
+            "请求上下文已建立, requestId: {}, operation: {}, actor: {}, "
+            "remainingMs: {}",
+            context.requestId, context.operation, context.actor,
+            context.Remaining().count());
   if (id == ID_LOGIN_INIT_REQ) {
     LOG_DEBUG(wim::businessLogger, "解析成功，请求服务: {}, uid: {}",
               requestIdMessage, request.uid());
@@ -192,25 +278,40 @@ void Service::ProcessChannel(const Channel::Ptr &channel) {
   if (id == ID_ACK) {
     LOG_DEBUG(wim::businessLogger, "ACK已处理，不发送响应包: {}",
               TcpPacketDebugString(response));
+    Metrics::Increment(TcpPacketError(response) == ErrorCodes::Success
+                           ? Metric::RequestsSucceeded
+                           : Metric::RequestsFailed);
     return;
   }
   auto ret = SerializeTcpPacket(response);
   channel->contextSession->Send(ret, responseId);
 
+  Metrics::Increment(TcpPacketError(response) == ErrorCodes::Success
+                         ? Metric::RequestsSucceeded
+                         : Metric::RequestsFailed);
+
   LOG_DEBUG(wim::businessLogger, "响应服务: {}, 响应数据: {}",
             responseIdMessage, TcpPacketDebugString(response));
 }
 
-void Service::HandleRejectedChannel(const Channel::Ptr &channel) {
+void Service::HandleRejectedChannel(const Channel::Ptr &channel,
+                                    ThreadPool::PostStatus status,
+                                    const RequestContext &context) {
   uint32_t id = channel->protocolData->id;
+  LOG_WARN(businessLogger,
+           "业务请求入队失败, requestId: {}, operation: {}, actor: {}, status: {}",
+           context.requestId, context.operation, context.actor,
+           status == ThreadPool::PostStatus::TimedOut ? "timeout" : "stopped");
   if (id == ID_ACK) {
     LOG_WARN(wim::businessLogger, "ACK任务被拒绝，当前业务线程池已满");
     return;
   }
 
   int responseId = __getServiceResponseId(ServiceID(id));
-  TcpPacket rsp = MakeErrorPacket(ErrorCodes::InternalError);
-  rsp.set_message("业务线程池已满");
+  int error = status == ThreadPool::PostStatus::TimedOut
+                  ? ErrorCodes::ResourceExhausted
+                  : ErrorCodes::DependencyUnavailable;
+  TcpPacket rsp = MakeErrorPacket(error, "chat service queue unavailable");
   channel->contextSession->Send(SerializeTcpPacket(rsp), responseId);
 }
 
@@ -435,6 +536,9 @@ TcpPacket TextSend(ChatSession::Ptr session, uint32_t msgID,
     rpcRequest.set_text(data);
     rpcRequest.set_seq(clientSeq);
     rpcRequest.set_session_key(sessionHashKey);
+    if (auto *context = RequestContextScope::Current()) {
+      rpcRequest.set_request_id(context->requestId);
+    }
 
     auto rpcNode = rpc::ImRpc::GetInstance()->getRpc(machineId);
     if (rpcNode == nullptr) {
@@ -452,10 +556,13 @@ TcpPacket TextSend(ChatSession::Ptr session, uint32_t msgID,
     std::string status = rpcResponse.status();
     LOG_INFO(businessLogger, "转发完成，目标机器: {}, rpc 响应: {}, 状态码: {}",
              machineId, rpcResponse.DebugString(), status);
-    rsp.set_status("accepted");
+    rsp.set_status(status == "success" ? "accepted" : "wait");
     if (status != "success") {
-      rsp.set_error(ErrorCodes::RPCFailed);
-      rsp.set_retryable(true);
+      int error = rpcResponse.error() == ErrorCodes::Success
+                      ? ErrorCodes::RPCFailed
+                      : rpcResponse.error();
+      rsp.set_error(error);
+      rsp.set_retryable(isRetryableError(error));
     } else {
       rsp.set_error(ErrorCodes::Success);
       rsp.set_message_id(rpcResponse.message_id());

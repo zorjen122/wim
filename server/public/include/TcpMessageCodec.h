@@ -22,6 +22,8 @@ inline std::string SerializeTcpPacket(const TcpPacket &packet) {
 inline TcpPacket MakeErrorPacket(int error, const std::string &message = {}) {
   TcpPacket packet;
   packet.set_error(error);
+  // 所有通用错误响应都由中央错误分类生成 retryable，避免调用点遗漏。
+  packet.set_retryable(isRetryableError(error));
   if (!message.empty()) {
     packet.set_message(message);
   }

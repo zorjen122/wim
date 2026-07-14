@@ -61,6 +61,8 @@ FIELD_MAP = {
     "messageId": "message_id",
     "messageState": "message_state",
     "receiptType": "receipt_type",
+    "requestTimeoutMs": "request_timeout_ms",
+    "requestId": "request_id",
 }
 
 
@@ -136,6 +138,7 @@ def decode_packet(data):
         ("message_state", "messageState"),
         ("receipt_type", "receiptType"),
         ("retryable", "retryable"),
+        ("request_id", "requestId"),
     ]
 
     for proto_name, json_name in scalar_fields:

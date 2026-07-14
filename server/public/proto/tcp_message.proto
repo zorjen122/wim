@@ -100,6 +100,10 @@ message Packet {
   optional MessageState message_state = 41;
   optional ReceiptType receipt_type = 42;
   optional bool retryable = 43;
+  // Relative client budget, clamped by the server-side request timeout.
+  optional uint32 request_timeout_ms = 44;
+  // Stable command correlation id; seq remains the text idempotency key.
+  optional string request_id = 45;
 
   repeated UserInfo friend_list = 50;
   repeated FriendApply apply_list = 51;

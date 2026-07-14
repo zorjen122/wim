@@ -10,8 +10,8 @@ Tested on Ubuntu 26.04 with clang.
 | Protobuf / gRPC | gate, state, chat, file, verify RPC clients, protocol smoke scripts | `protobuf-compiler`, `protobuf-compiler-grpc`, `libprotobuf-dev`, `libgrpc++-dev`, `libgrpc-dev`, `python3-protobuf` |
 | Boost.Asio / Beast | gate, chat, test client | `libboost-dev`, `libboost-filesystem-dev` |
 | Config / logging / JSON | all C++ services | `libyaml-cpp-dev`, `libspdlog-dev`, `libfmt-dev`, `libjsoncpp-dev` |
-| Redis | verify codes, online users, ids, de-dup cache | `redis-server`, `libhiredis-dev` |
-| MySQL | users, user info, friends, messages | `mysql-server`, MySQL Connector/C++ X DevAPI packages |
+| Redis | verify codes, authentication handoff, online routing, IDs, bounded text retry deduplication | `redis-server`, `libhiredis-dev` |
+| MySQL | users, relationships, and messages | `mysql-server`, MySQL Connector/C++ X DevAPI packages |
 | Kafka placeholder | chat utility code links librdkafka | `librdkafka-dev` |
 | Node verify service | verify gRPC service | `nodejs`, `npm`, `server/verify/package-lock.json` |
 

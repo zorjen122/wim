@@ -58,6 +58,13 @@ target_link_libraries(
          redis++
          mysqlcppconnx)
 
+if(BUILD_TESTING)
+  add_executable(resourceDeadlineTest test/resourceDeadlineTest.cc)
+  target_include_directories(resourceDeadlineTest PRIVATE ./include)
+  target_link_libraries(resourceDeadlineTest PRIVATE imPublic imProto)
+  add_test(NAME public.resource_deadline COMMAND resourceDeadlineTest)
+endif()
+
 # 单元测试
 if(WIM_BUILD_UNIT_TESTS)
   add_subdirectory(test)

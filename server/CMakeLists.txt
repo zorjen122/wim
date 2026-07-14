@@ -12,6 +12,10 @@ option(BUILD_TESTING "Build tests" ON)
 option(BUILD_DEMOS "Build demo programs" OFF)
 option(WIM_BUILD_UNIT_TESTS "Build per-service unit tests" OFF)
 
+if(BUILD_TESTING)
+    enable_testing()
+endif()
+
 add_subdirectory(public)
 add_subdirectory(file)
 add_subdirectory(chat)

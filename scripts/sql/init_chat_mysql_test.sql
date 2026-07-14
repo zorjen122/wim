@@ -64,13 +64,13 @@ CREATE TABLE `friends` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `messages` (
-  `messageId` BIGINT UNSIGNED NOT NULL,
+  `messageId` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `senderId` BIGINT UNSIGNED NOT NULL,
   `receiverId` BIGINT UNSIGNED NOT NULL,
   `sessionKey` VARCHAR(128) NOT NULL DEFAULT '',
   `type` SMALLINT NOT NULL DEFAULT 1 COMMENT '1 text, 2 image, 3 audio, 4 video, 5 file',
   `content` TEXT NOT NULL,
-  `status` SMALLINT NOT NULL DEFAULT 1 COMMENT '0 withdraw, 1 wait, 2 done',
+  `status` SMALLINT NOT NULL DEFAULT 1 COMMENT '0 withdraw, 1 accepted, 2 delivered, 3 read',
   `sendDateTime` VARCHAR(32) NOT NULL DEFAULT '',
   `readDateTime` VARCHAR(32) NOT NULL DEFAULT '',
   PRIMARY KEY (`messageId`),

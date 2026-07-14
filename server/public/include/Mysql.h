@@ -24,6 +24,8 @@
 #include "Const.h"
 #include "DbGlobal.h"
 #include "Logger.h"
+#include "Metrics.h"
+#include "RequestContext.h"
 
 namespace wim::db {
 
@@ -51,8 +53,7 @@ class MysqlPool {
       : host(host), port(port), user(user), password(password), schema(schema) {
     for (size_t i = 0; i < maxSize; ++i) {
       try {
-        mysqlx::Session *sqlSession(
-            new mysqlx::Session(host, port, user, password, schema));
+        mysqlx::Session *sqlSession(CreateSession());
 
         auto currentTime = std::chrono::system_clock::now().time_since_epoch();
         int64_t leaseTime =
@@ -90,18 +91,24 @@ class MysqlPool {
 
  public:
   std::unique_ptr<SqlConnection> GetConnection() {
+    return GetConnectionUntil(RequestContextScope::CurrentDeadlineOr(
+        std::chrono::milliseconds(1000)));
+  }
+
+  std::unique_ptr<SqlConnection> GetConnectionUntil(
+      RequestContext::Deadline deadline) {
     std::unique_lock<std::mutex> lock(sqlMutex);
-    condVar.wait(lock, [this] {
+    bool ready = condVar.wait_until(lock, deadline, [this] {
       if (stopEnable)
         return true;
-
-      if (pool.empty()) {
-        LOG_DEBUG(wim::dbLogger, "Mysql-client pool is empty!, wait...");
-        return false;
-      } else {
-        return true;
-      }
+      return !pool.empty();
     });
+    if (!ready) {
+      Metrics::Increment(Metric::MysqlAcquireTimeout);
+      LOG_WARN(wim::dbLogger, "MySQL连接池获取超时, available: {}",
+               pool.size());
+      return nullptr;
+    }
     if (stopEnable || pool.empty()) {
       return nullptr;
     }
@@ -151,6 +158,19 @@ class MysqlPool {
   }
 
  private:
+  mysqlx::Session *CreateSession() const {
+    // X DevAPI 无法为已建连接按单请求动态修改 socket timeout；固定上限负责
+    // 截断半开连接，请求级 deadline 仍由连接池等待和上层幂等语义负责。
+    mysqlx::SessionSettings settings(
+        mysqlx::SessionOption::HOST, host, mysqlx::SessionOption::PORT, port,
+        mysqlx::SessionOption::USER, user, mysqlx::SessionOption::PWD,
+        password, mysqlx::SessionOption::DB, schema,
+        mysqlx::SessionOption::CONNECT_TIMEOUT, std::chrono::milliseconds(1000),
+        mysqlx::SessionOption::READ_TIMEOUT, std::chrono::milliseconds(1000),
+        mysqlx::SessionOption::WRITE_TIMEOUT, std::chrono::milliseconds(1000));
+    return new mysqlx::Session(settings);
+  }
+
   void keepConnectionHandle() {
     std::lock_guard<std::mutex> lock(sqlMutex);
     int poolsize = pool.size();
@@ -182,8 +202,7 @@ class MysqlPool {
                  "Error keeping connection alive: {}, reconnect now...",
                  e.what());
         try {
-          mysqlx::Session *newSession(
-              new mysqlx::Session(host, port, user, password, schema));
+          mysqlx::Session *newSession(CreateSession());
           con->leaseTime = leaseTime;
           con.reset();
           pool.push(std::make_unique<SqlConnection>(newSession, leaseTime));
@@ -530,7 +549,7 @@ class MysqlDao : public Singleton<MysqlDao>,
     return executeTemplate(
         [&](std::unique_ptr<mysqlx::Session> &session) -> int {
           std::string f =
-              R"(INSERT INTO messages VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?))";
+              R"(INSERT INTO messages (messageId, senderId, receiverId, sessionKey, type, content, status, sendDateTime, readDateTime) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?))";
           auto result = session->sql(f)
                             .bind(message->messageId)
                             .bind(message->from)
@@ -544,8 +563,9 @@ class MysqlDao : public Singleton<MysqlDao>,
                             .execute();
 
           return 0;
-        });
+    });
   }
+
   int updateUserInfoName(long uid, const std::string &name) {
     return executeTemplate(
         [&](std::unique_ptr<mysqlx::Session> &session) -> int {

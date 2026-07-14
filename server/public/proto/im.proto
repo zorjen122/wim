@@ -35,6 +35,8 @@ message TextSendMessageRequest {
   string text = 3;
   int64 seq = 4;
   int64 session_key = 5;
+  // Correlates a TCP command with its cross-node RPC attempt.
+  string request_id = 6;
 }
 
 message TextSendMessageResponse {

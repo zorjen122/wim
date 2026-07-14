@@ -7,9 +7,9 @@ set -euo pipefail
 # 常用方式：
 #   ./scripts/run_local_services.sh
 # 多 chat 节点方式：
-#   WIM_STATE_CONFIG="$PWD/server/conf/state-multi.yaml" \
-#   WIM_CHAT_CONFIGS="$PWD/server/conf/chat-hunan-im.yaml $PWD/server/conf/chat-beijing-im.yaml" \
-#     ./scripts/run_local_services.sh
+  # WIM_STATE_CONFIG="$PWD/server/conf/state-multi.yaml" \
+  # WIM_CHAT_CONFIGS="$PWD/server/conf/chat-hunan-im.yaml $PWD/server/conf/chat-beijing-im.yaml" \
+  #   ./scripts/run_local_services.sh
 # 前置条件：
 #   先执行 ./scripts/build.sh；需要 MySQL 已可连接，通常也会先执行 ./scripts/init_mysql.sh。
 

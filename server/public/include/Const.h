@@ -77,7 +77,10 @@ enum ErrorCodes {
   GroupNotifyFailed,
   GroupReplyFailed,
   AuthenticationRequired,
-  MessageOwnershipInvalid
+  MessageOwnershipInvalid,
+  DeadlineExceeded,
+  ResourceExhausted,
+  DependencyUnavailable
 };
 
 enum ServiceID {
@@ -179,7 +182,26 @@ static std::unordered_map<int, std::string> errorCodesMap = {
     {GroupAlreadyExists, "GroupAlreadyExists"},
     {GroupNotExists, "GroupNotExists"},
     {AuthenticationRequired, "AuthenticationRequired"},
-    {MessageOwnershipInvalid, "MessageOwnershipInvalid"}};
+    {MessageOwnershipInvalid, "MessageOwnershipInvalid"},
+    {DeadlineExceeded, "DeadlineExceeded"},
+    {ResourceExhausted, "ResourceExhausted"},
+    {DependencyUnavailable, "DependencyUnavailable"}};
+
+inline bool isRetryableError(int code) {
+  // retryable 是协议契约而非 handler 的临时判断：瞬时依赖/容量故障可用
+  // 同一幂等键重试，鉴权、参数和幂等冲突必须停止自动重试。
+  switch (code) {
+    case RPCFailed:
+    case MysqlFailed:
+    case InternalError:
+    case DeadlineExceeded:
+    case ResourceExhausted:
+    case DependencyUnavailable:
+      return true;
+    default:
+      return false;
+  }
+}
 
 inline std::string getErrorCodeMsg(int code) {
   if (errorCodesMap.find(code) != errorCodesMap.end()) {

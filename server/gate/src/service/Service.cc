@@ -5,7 +5,9 @@
 #include "HttpSession.h"
 #include "Logger.h"
 #include "Mysql.h"
+#include "Metrics.h"
 #include "Redis.h"
+#include "RequestContext.h"
 #include "message.grpc.pb.h"
 #include "message.pb.h"
 #include "spdlog/spdlog.h"
@@ -15,6 +17,8 @@
 #include <yaml-cpp/parser.h>
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>
+#include <algorithm>
+#include <chrono>
 
 namespace wim {
 namespace {
@@ -44,7 +48,17 @@ int requestVerifyCode(const std::string &email) {
   req.set_email(email);
   message::GetVarifyRsp rsp;
   grpc::ClientContext context;
+  auto deadline = RequestContextScope::CurrentDeadlineOr(
+      std::chrono::milliseconds(1000));
+  auto remaining = std::max(
+      std::chrono::duration_cast<std::chrono::milliseconds>(
+          deadline - RequestContext::Clock::now()),
+      std::chrono::milliseconds(0));
+  context.set_deadline(std::chrono::system_clock::now() + remaining);
   auto status = stub->GetVarifyCode(&context, req, &rsp);
+  if (status.error_code() == grpc::StatusCode::DEADLINE_EXCEEDED) {
+    Metrics::Increment(Metric::RpcDeadlineExceeded);
+  }
   if (!status.ok()) {
     businessLogger->error("[post_verifycode] verify rpc failed: {}",
                           status.error_message());

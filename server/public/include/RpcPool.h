@@ -6,6 +6,9 @@
 #include <grpcpp/grpcpp.h>
 #include <queue>
 
+#include "Metrics.h"
+#include "RequestContext.h"
+
 using grpc::Channel;
 using grpc::ClientContext;
 using grpc::Status;
@@ -42,14 +45,27 @@ class RpcPool {
   }
 
   std::unique_ptr<typename RPC::Stub> getConnection() {
+    return getConnectionUntil(wim::RequestContextScope::CurrentDeadlineOr(
+        std::chrono::milliseconds(1000)));
+  }
+
+  std::unique_ptr<typename RPC::Stub> getConnectionUntil(
+      wim::RequestContext::Deadline deadline) {
+    // 这里只约束 stub 池等待；实际 RPC 还必须把同一 deadline 写入 ClientContext。
     std::unique_lock<std::mutex> lock(queueMutex);
-    cond.wait(lock, [this] {
+    bool ready = cond.wait_until(lock, deadline, [this] {
       if (isStop) {
         return true;
       }
       return !channelQueue.empty();
     });
-    if (isStop) {
+    if (!ready) {
+      wim::Metrics::Increment(wim::Metric::RpcAcquireTimeout);
+      spdlog::warn("RPC连接池获取超时, available: {}, capacity: {}",
+                   channelQueue.size(), poolSize);
+      return nullptr;
+    }
+    if (isStop || channelQueue.empty()) {
       return nullptr;
     }
     auto con = std::move(channelQueue.front());

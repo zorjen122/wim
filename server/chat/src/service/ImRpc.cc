@@ -2,12 +2,36 @@
 #include "Configer.h"
 #include "Const.h"
 #include "Logger.h"
+#include "Metrics.h"
+#include "RequestContext.h"
 #include "RpcPool.h"
 #include "im.pb.h"
 #include <grpcpp/support/status.h>
 #include <string>
 
 namespace wim::rpc {
+namespace {
+
+void ApplyDeadline(grpc::ClientContext &context) {
+  // gRPC 使用 system_clock；只在调用边界转换，进程内仍以 steady_clock 计时。
+  auto *requestContext = RequestContextScope::Current();
+  if (requestContext != nullptr &&
+      requestContext->deadline != RequestContext::Deadline::max()) {
+    context.set_deadline(requestContext->SystemDeadline());
+  }
+}
+
+void RecordRpcStatus(const grpc::Status &status) {
+  if (status.error_code() == grpc::StatusCode::DEADLINE_EXCEEDED) {
+    Metrics::Increment(Metric::RpcDeadlineExceeded);
+    auto *context = RequestContextScope::Current();
+    LOG_WARN(netLogger, "RPC调用超过请求截止时间, requestId: {}, operation: {}",
+             context == nullptr ? "" : context->requestId,
+             context == nullptr ? "" : context->operation);
+  }
+}
+
+}  // namespace
 
 ImRpcNode::ImRpcNode(const std::string &ip, unsigned short port,
                      size_t poolSize) {
@@ -27,14 +51,16 @@ NotifyAddFriendResponse ImRpcNode::forwardNotifyAddFriend(
   Defer defer([this, &rpc] { pool->returnConnection(std::move(rpc)); });
 
   grpc::ClientContext context;
+  ApplyDeadline(context);
   NotifyAddFriendResponse response;
 
   grpc::Status status = rpc->NotifyAddFriend(&context, request, &response);
+  RecordRpcStatus(status);
   if (status.ok()) {
     response.set_status("success");
   } else {
     response.set_status("failed");
-    LOG_DEBUG(netLogger, "Failed to forward NotifyAddFriendRequest: {}",
+    LOG_DEBUG(netLogger, "转发好友申请RPC失败: {}",
               status.error_message());
   }
 
@@ -50,14 +76,16 @@ ReplyAddFriendResponse ImRpcNode::forwardReplyAddFriend(
   Defer defer([this, &rpc] { pool->returnConnection(std::move(rpc)); });
 
   grpc::ClientContext context;
+  ApplyDeadline(context);
   ReplyAddFriendResponse response;
 
   grpc::Status status = rpc->ReplyAddFriend(&context, request, &response);
+  RecordRpcStatus(status);
   if (status.ok()) {
     response.set_status("success");
   } else {
     response.set_status("failed");
-    LOG_DEBUG(netLogger, "Failed to forward NotifyAddFriendRequest: {}",
+    LOG_DEBUG(netLogger, "转发好友回复RPC失败: {}",
               status.error_message());
   }
 
@@ -72,12 +100,15 @@ TextSendMessageResponse ImRpcNode::forwardTextSendMessage(
   Defer defer([this, &rpc] { pool->returnConnection(std::move(rpc)); });
 
   grpc::ClientContext context;
+  ApplyDeadline(context);
   TextSendMessageResponse response;
 
   grpc::Status status = rpc->TextSendMessage(&context, request, &response);
+  RecordRpcStatus(status);
   if (!status.ok()) {
     response.set_status("failed");
-    LOG_DEBUG(netLogger, "Failed to forward NotifyAddFriendRequest: {}",
+    LOG_DEBUG(netLogger, "转发文本消息RPC失败, requestId: {}, error: {}",
+              request.request_id(),
               status.error_message());
   }
 
