@@ -4,9 +4,11 @@
 more than one module.
 
 - `tcp_message.proto`: TLV body payload used by chat TCP clients and servers.
-- `im.proto`: chat-to-chat gRPC forwarding.
+- `gateway_message.proto`: bidirectional Connection Gateway-to-Message stream.
+- `im.proto`: legacy Message-to-Message rollback protocol; disabled in the
+  Connection Gateway runtime configs.
 - `file.proto`: chat-to-file gRPC upload/send RPC.
-- `state.proto`: gate-to-state routing RPC.
+- `state.proto`: Auth Gate placement and versioned Message topology RPCs.
 
 The C++ build generates these files once in `server/public` as the `imProto`
 target. Service targets depend on `imPublic`/`imProto` instead of generating

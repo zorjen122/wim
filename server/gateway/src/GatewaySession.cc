@@ -1,0 +1,551 @@
+#include "GatewaySession.h"
+
+#include "Const.h"
+#include "DbGlobal.h"
+#include "Logger.h"
+#include "MessageLink.h"
+#include "Mysql.h"
+#include "SessionRegistry.h"
+
+#include <boost/asio/co_spawn.hpp>
+#include <boost/asio/read.hpp>
+#include <boost/asio/redirect_error.hpp>
+#include <boost/asio/use_awaitable.hpp>
+#include <boost/asio/write.hpp>
+#include <boost/uuid/uuid_generators.hpp>
+#include <boost/uuid/uuid_io.hpp>
+#include <arpa/inet.h>
+#include <array>
+#include <chrono>
+#include <cstring>
+#include <exception>
+#include <utility>
+
+namespace wim::connection {
+namespace asio = boost::asio;
+namespace {
+
+constexpr std::size_t kMaxQueuedWrites = PROTOCOL_QUEUE_MAX_SIZE;
+constexpr std::chrono::milliseconds kDefaultRequestTimeout{3000};
+
+int64_t NowUnixMilliseconds() {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(
+             std::chrono::system_clock::now().time_since_epoch())
+      .count();
+}
+
+std::string NewUuid() {
+  return boost::uuids::to_string(boost::uuids::random_generator{}());
+}
+
+std::string ServiceName(uint32_t protocolId) {
+  const auto found = serviceIDMap.find(static_cast<int>(protocolId));
+  return found == serviceIDMap.end() ? "UNKNOWN_SERVICE" : found->second;
+}
+
+std::shared_ptr<std::string> EncodeFrame(uint32_t protocolId,
+                                         const std::string &payload) {
+  auto frame = std::make_shared<std::string>();
+  frame->resize(PROTOCOL_HEADER_TOTAL + payload.size());
+  const uint32_t wireId = htonl(protocolId);
+  const uint32_t wireSize = htonl(static_cast<uint32_t>(payload.size()));
+  std::memcpy(frame->data(), &wireId, sizeof(wireId));
+  std::memcpy(frame->data() + sizeof(wireId), &wireSize, sizeof(wireSize));
+  std::memcpy(frame->data() + PROTOCOL_HEADER_TOTAL, payload.data(),
+              payload.size());
+  return frame;
+}
+
+}  // namespace
+
+GatewaySession::GatewaySession(asio::ip::tcp::socket socket,
+                               SessionRegistry &registry,
+                               MessageLinkManager &messageLinks,
+                               asio::thread_pool &businessPool)
+    : socket(std::move(socket)),
+      strand(asio::make_strand(this->socket.get_executor())),
+      registry(registry),
+      messageLinks(messageLinks),
+      businessPool(businessPool),
+      connectionId(NewUuid()) {}
+
+void GatewaySession::Start() {
+  auto self = shared_from_this();
+  asio::co_spawn(strand, Run(), [self](std::exception_ptr error) {
+    if (error) {
+      try {
+        std::rethrow_exception(error);
+      } catch (const std::exception &exception) {
+        LOG_ERROR(netLogger, "Gateway session coroutine failed: {}",
+                  exception.what());
+      }
+    }
+    self->CloseInContext();
+  });
+}
+
+void GatewaySession::Close() {
+  auto self = shared_from_this();
+  asio::post(strand, [self]() { self->CloseInContext(); });
+}
+
+bool GatewaySession::SendRaw(std::string packet, uint32_t protocolId) {
+  if (closed.load(std::memory_order_acquire))
+    return false;
+  const auto queued = queuedWrites.fetch_add(1, std::memory_order_acq_rel) + 1;
+  if (queued > kMaxQueuedWrites) {
+    queuedWrites.fetch_sub(1, std::memory_order_acq_rel);
+    Close();
+    return false;
+  }
+
+  auto frame = EncodeFrame(protocolId, packet);
+  auto self = shared_from_this();
+  asio::post(strand, [self, frame = std::move(frame)]() mutable {
+    if (self->closed.load(std::memory_order_acquire)) {
+      self->queuedWrites.fetch_sub(1, std::memory_order_acq_rel);
+      return;
+    }
+    self->writeQueue.push_back(std::move(frame));
+    if (!self->writeActive) {
+      self->writeActive = true;
+      asio::co_spawn(self->strand, self->WriteLoop(), asio::detached);
+    }
+  });
+  return true;
+}
+
+bool GatewaySession::SendReliable(std::string packet, uint32_t protocolId,
+                                  int64_t ackSeq) {
+  if (ackSeq <= 0)
+    return SendRaw(std::move(packet), protocolId);
+  if (!SendRaw(packet, protocolId))
+    return false;
+  auto self = shared_from_this();
+  asio::post(strand, [self, packet = std::move(packet), protocolId, ackSeq]() {
+    auto found = self->reliableWrites.find(ackSeq);
+    if (found != self->reliableWrites.end() && found->second.timer)
+      found->second.timer->cancel();
+    self->reliableWrites[ackSeq] =
+        ReliableWrite{std::move(packet), protocolId, 1, {}};
+    self->ArmReliableWrite(ackSeq);
+  });
+  return true;
+}
+
+const std::string &GatewaySession::ConnectionId() const {
+  return connectionId;
+}
+
+asio::awaitable<void> GatewaySession::Run() {
+  boost::system::error_code ec;
+  while (!closed.load(std::memory_order_acquire)) {
+    std::array<uint32_t, 2> header{};
+    co_await asio::async_read(socket, asio::buffer(header),
+                              asio::redirect_error(asio::use_awaitable, ec));
+    if (ec)
+      break;
+
+    const uint32_t protocolId = ntohl(header[0]);
+    const uint32_t bodySize = ntohl(header[1]);
+    if (bodySize > PROTOCOL_RECV_MSS) {
+      LOG_WARN(netLogger, "Gateway rejected oversized frame: {}", bodySize);
+      break;
+    }
+
+    std::string payload(bodySize, '\0');
+    co_await asio::async_read(socket, asio::buffer(payload),
+                              asio::redirect_error(asio::use_awaitable, ec));
+    if (ec)
+      break;
+    co_await HandlePacket(protocolId, std::move(payload));
+  }
+
+  CloseInContext();
+  const int64_t uid = userId.load(std::memory_order_acquire);
+  if (uid > 0 && !lease.empty()) {
+    auto self = shared_from_this();
+    co_await asio::co_spawn(
+        businessPool,
+        [this, self, uid]() -> asio::awaitable<void> {
+          registry.Remove(uid, self, lease);
+          co_return;
+        },
+        asio::use_awaitable);
+  }
+}
+
+asio::awaitable<void> GatewaySession::HandlePacket(uint32_t protocolId,
+                                                   std::string payload) {
+  // 所有客户端包先统一完成 Protobuf 解码；失败包不能进入鉴权或 Message Core。
+  TcpPacket request;
+  if (!ParseTcpPacket(payload, request)) {
+    LOG_WARN(netLogger,
+             "Gateway rejected malformed packet, connection_id: {}, "
+             "protocol_id: {}, service: {}, payload_bytes: {}",
+             connectionId, protocolId, ServiceName(protocolId), payload.size());
+    SendError(protocolId, ErrorCodes::JsonParser, "invalid protobuf packet");
+    co_return;
+  }
+
+  // 登录包由 Gateway 本地处理：校验短期 token、加载资料并发布 generation
+  // lease。
+  if (protocolId == ID_LOGIN_INIT_REQ) {
+    const int64_t claimedUid = request.uid();
+    const bool initProfile = request.init();
+    LOG_DEBUG(businessLogger,
+              "Gateway handling login, connection_id: {}, claimed_uid: {}, "
+              "init_profile: {}",
+              connectionId, claimedUid, initProfile);
+    auto result = co_await asio::co_spawn(
+        businessPool,
+        [this, self = shared_from_this(),
+         request =
+             std::move(request)]() mutable -> asio::awaitable<AuthResult> {
+          co_return Authenticate(std::move(request));
+        },
+        asio::use_awaitable);
+    if (result.error == ErrorCodes::Success) {
+      lease = result.lease;
+      userId.store(result.response.uid(), std::memory_order_release);
+      lastLeaseRefresh = std::chrono::steady_clock::now();
+      LOG_INFO(businessLogger,
+               "Gateway login accepted, uid: {}, connection_id: {}, "
+               "generation: {}",
+               result.response.uid(), connectionId, lease.generation);
+    } else {
+      LOG_WARN(businessLogger,
+               "Gateway login rejected, connection_id: {}, claimed_uid: {}, "
+               "error: {}",
+               connectionId, claimedUid, result.error);
+    }
+    if (!SendRaw(SerializeTcpPacket(result.response), ID_LOGIN_INIT_RSP))
+      LOG_WARN(netLogger,
+               "Gateway failed to queue login response, connection_id: {}",
+               connectionId);
+    co_return;
+  }
+
+  // 登录以外的包都必须使用已经绑定到物理连接的 uid，不能信任包内自报身份。
+  const int64_t actor = userId.load(std::memory_order_acquire);
+  if (actor <= 0) {
+    LOG_WARN(businessLogger,
+             "Gateway rejected unauthenticated command, connection_id: {}, "
+             "protocol_id: {}, service: {}",
+             connectionId, protocolId, ServiceName(protocolId));
+    SendError(protocolId, ErrorCodes::AuthenticationRequired,
+              "gateway session is not authenticated");
+    co_return;
+  }
+
+  // 活跃连接每 20 秒至多刷新一次 lease；CAS 失败表示该 generation
+  // 已被新连接取代。
+  if (std::chrono::steady_clock::now() - lastLeaseRefresh >=
+      std::chrono::seconds(20)) {
+    const bool refreshed = co_await asio::co_spawn(
+        businessPool,
+        [this, actor, currentLease = lease]() -> asio::awaitable<bool> {
+          co_return registry.Refresh(actor, currentLease);
+        },
+        asio::use_awaitable);
+    if (!refreshed) {
+      LOG_WARN(businessLogger,
+               "Gateway lease refresh fenced stale connection, uid: {}, "
+               "connection_id: {}, generation: {}",
+               actor, connectionId, lease.generation);
+      CloseInContext();
+      co_return;
+    }
+    lastLeaseRefresh = std::chrono::steady_clock::now();
+    LOG_DEBUG(businessLogger,
+              "Gateway lease refreshed, uid: {}, connection_id: {}, "
+              "generation: {}",
+              actor, connectionId, lease.generation);
+  }
+
+  // PING 只维持客户端物理连接，Gateway 本地立即回复，不占用 Message 流。
+  if (protocolId == ID_PING_REQ) {
+    LOG_TRACE(netLogger, "Gateway handling ping, uid: {}, connection_id: {}",
+              actor, connectionId);
+    TcpPacket pong;
+    pong.set_uid(actor);
+    pong.set_error(ErrorCodes::Success);
+    SendRaw(SerializeTcpPacket(pong), ID_PING_RSP);
+    co_return;
+  }
+
+  // QUIT 先排队成功响应，再由 WriteLoop 在队列排空后关闭 socket。
+  if (protocolId == ID_USER_QUIT_REQ) {
+    LOG_INFO(businessLogger,
+             "Gateway handling quit, uid: {}, connection_id: {}", actor,
+             connectionId);
+    TcpPacket response;
+    response.set_error(ErrorCodes::Success);
+    SendRaw(SerializeTcpPacket(response), ID_USER_QUIT_RSP);
+    closeAfterWrite = true;
+    co_return;
+  }
+
+  // TRANSPORT ACK 只取消 Gateway 本地重传；DELIVERED/READ ACK 还需转发给
+  // Message Core 更新持久游标，因此不能在这里一并吞掉。
+  if (protocolId == ID_ACK) {
+    if (request.has_seq() && request.seq() > 0) {
+      AcknowledgeTransport(request.seq());
+      LOG_TRACE(netLogger,
+                "Gateway handled transport ACK, uid: {}, connection_id: {}, "
+                "seq: {}, receipt_type: {}",
+                actor, connectionId, request.seq(),
+                static_cast<int>(request.receipt_type()));
+    }
+    if (request.receipt_type() == protocol::RECEIPT_TYPE_TRANSPORT) {
+      co_return;
+    }
+    LOG_DEBUG(businessLogger,
+              "Gateway forwarding business ACK, uid: {}, connection_id: {}, "
+              "receipt_type: {}, conversation_id: {}, conversation_seq: {}",
+              actor, connectionId, static_cast<int>(request.receipt_type()),
+              request.has_conversation_id() ? request.conversation_id() : 0,
+              request.has_conversation_seq() ? request.conversation_seq() : 0);
+  }
+
+  // 对所有需要进入 Message Core 的命令执行连接级固定窗口限流。
+  const auto rateNow = std::chrono::steady_clock::now();
+  if (rateNow - rateWindowStarted >= std::chrono::seconds(1)) {
+    rateWindowStarted = rateNow;
+    commandsInRateWindow = 0;
+  }
+  if (++commandsInRateWindow > 100) {
+    LOG_WARN(businessLogger,
+             "Gateway rate limit exceeded, uid: {}, connection_id: {}, "
+             "protocol_id: {}, service: {}, commands_in_window: {}",
+             actor, connectionId, protocolId, ServiceName(protocolId),
+             commandsInRateWindow);
+    SendError(protocolId, ErrorCodes::ResourceExhausted,
+              "connection command rate exceeded");
+    co_return;
+  }
+
+  // 通用业务包统一封装 CommandEnvelope；request_id 负责跨流关联，连接
+  // generation 负责在 Message 节点拒绝已经被新登录替代的旧连接命令。
+  request.set_uid(actor);
+  if (!request.has_request_id() || request.request_id().empty())
+    request.set_request_id(NextRequestId());
+
+  gateway::CommandEnvelope command;
+  command.set_request_id(request.request_id());
+  command.set_actor_uid(actor);
+  command.set_connection_id(connectionId);
+  command.set_connection_generation(lease.generation);
+  command.set_service_id(protocolId);
+  if (request.has_conversation_id())
+    command.set_conversation_id(request.conversation_id());
+  const auto timeout =
+      request.has_request_timeout_ms() && request.request_timeout_ms() > 0
+          ? std::min(kDefaultRequestTimeout,
+                     std::chrono::milliseconds(request.request_timeout_ms()))
+          : kDefaultRequestTimeout;
+  command.set_deadline_unix_ms(NowUnixMilliseconds() + timeout.count());
+  command.set_packet(SerializeTcpPacket(request));
+
+  const bool expectResponse = protocolId != ID_ACK;
+  const std::string requestId = command.request_id();
+  const int64_t conversationId = command.conversation_id();
+  LOG_DEBUG(businessLogger,
+            "Gateway forwarding command, request_id: {}, uid: {}, "
+            "connection_id: {}, generation: {}, protocol_id: {}, service: {}, "
+            "conversation_id: {}, timeout_ms: {}, expect_response: {}",
+            requestId, actor, connectionId, lease.generation, protocolId,
+            ServiceName(protocolId), conversationId, timeout.count(),
+            expectResponse);
+  auto weak = weak_from_this();
+  if (!messageLinks.Forward(
+          std::move(command),
+          [weak, expectResponse, actor, protocolId,
+           requestId](const gateway::CommandResult &result) {
+            if (auto session = weak.lock()) {
+              if (result.error() == ErrorCodes::AuthenticationRequired) {
+                LOG_WARN(businessLogger,
+                         "Message node fenced Gateway command, request_id: {}, "
+                         "uid: {}, protocol_id: {}, service: {}",
+                         requestId, actor, protocolId, ServiceName(protocolId));
+                session->Close();
+                return;
+              }
+              if (!expectResponse) {
+                LOG_DEBUG(businessLogger,
+                          "Gateway command completed without client response, "
+                          "request_id: {}, uid: {}, protocol_id: {}, error: {}",
+                          requestId, actor, protocolId, result.error());
+                return;
+              }
+              LOG_DEBUG(businessLogger,
+                        "Gateway received command result, request_id: {}, uid: "
+                        "{}, protocol_id: {}, response_service_id: {}, error: "
+                        "{}, retryable: {}",
+                        requestId, actor, protocolId,
+                        result.response_service_id(), result.error(),
+                        result.retryable());
+              if (!session->SendRaw(result.packet(),
+                                    result.response_service_id()))
+                LOG_WARN(
+                    netLogger,
+                    "Gateway failed to queue command response, request_id: "
+                    "{}, uid: {}, response_service_id: {}",
+                    requestId, actor, result.response_service_id());
+            }
+          })) {
+    LOG_WARN(netLogger,
+             "Gateway failed to forward command, request_id: {}, uid: {}, "
+             "protocol_id: {}, service: {}, healthy_message_streams: {}",
+             requestId, actor, protocolId, ServiceName(protocolId),
+             messageLinks.HealthyLinkCount());
+    if (expectResponse)
+      SendError(protocolId, ErrorCodes::DependencyUnavailable,
+                "no healthy message stream");
+  }
+}
+
+asio::awaitable<void> GatewaySession::WriteLoop() {
+  boost::system::error_code ec;
+  while (!writeQueue.empty() && !closed.load(std::memory_order_acquire)) {
+    auto frame = writeQueue.front();
+    co_await asio::async_write(socket, asio::buffer(*frame),
+                               asio::redirect_error(asio::use_awaitable, ec));
+    writeQueue.pop_front();
+    queuedWrites.fetch_sub(1, std::memory_order_acq_rel);
+    if (ec) {
+      CloseInContext();
+      break;
+    }
+  }
+  writeActive = false;
+  if (closeAfterWrite && writeQueue.empty())
+    CloseInContext();
+}
+
+GatewaySession::AuthResult GatewaySession::Authenticate(TcpPacket request) {
+  AuthResult result;
+  const int64_t uid = request.uid();
+  if (uid <= 0 || !request.has_auth_token() ||
+      !db::RedisDao::GetInstance()->validateChatAuthToken(
+          uid, request.auth_token())) {
+    result.error = ErrorCodes::TokenInvalid;
+    result.response = MakeErrorPacket(ErrorCodes::TokenInvalid,
+                                      "invalid or expired connection token");
+    return result;
+  }
+  const auto current = userId.load(std::memory_order_acquire);
+  if (current > 0 && current != uid) {
+    result.error = ErrorCodes::UidInvalid;
+    result.response =
+        MakeErrorPacket(ErrorCodes::UidInvalid, "connection is already bound");
+    return result;
+  }
+
+  db::UserInfo::Ptr info;
+  if (request.init()) {
+    info =
+        std::make_shared<db::UserInfo>(uid, request.name(), request.age(),
+                                       request.sex(), request.head_image_url());
+    if (db::MysqlDao::GetInstance()->insertUserInfo(info) != 0) {
+      result.error = ErrorCodes::MysqlFailed;
+      result.response = MakeErrorPacket(ErrorCodes::MysqlFailed);
+      return result;
+    }
+  } else {
+    info = db::MysqlDao::GetInstance()->getUserInfo(uid);
+    if (!info) {
+      result.error = ErrorCodes::NotFound;
+      result.response =
+          MakeErrorPacket(ErrorCodes::NotFound, "user profile not found");
+      return result;
+    }
+  }
+
+  result.lease = registry.Bind(uid, shared_from_this());
+  if (result.lease.empty()) {
+    result.error = ErrorCodes::DependencyUnavailable;
+    result.response = MakeErrorPacket(ErrorCodes::DependencyUnavailable,
+                                      "failed to publish session lease");
+    return result;
+  }
+
+  result.error = ErrorCodes::Success;
+  result.response.set_uid(uid);
+  result.response.set_name(info->name);
+  result.response.set_age(info->age);
+  result.response.set_sex(info->sex);
+  result.response.set_head_image_url(info->headImageURL);
+  result.response.set_error(ErrorCodes::Success);
+  return result;
+}
+
+void GatewaySession::CloseInContext() {
+  if (closed.exchange(true))
+    return;
+  for (auto &[_, write] : reliableWrites) {
+    if (write.timer)
+      write.timer->cancel();
+  }
+  reliableWrites.clear();
+  boost::system::error_code ignored;
+  socket.shutdown(asio::ip::tcp::socket::shutdown_both, ignored);
+  socket.close(ignored);
+}
+
+void GatewaySession::ArmReliableWrite(int64_t ackSeq) {
+  auto found = reliableWrites.find(ackSeq);
+  if (found == reliableWrites.end() || closed.load(std::memory_order_acquire))
+    return;
+  auto timer = std::make_shared<asio::steady_timer>(strand);
+  found->second.timer = timer;
+  timer->expires_after(std::chrono::seconds(5));
+  auto weak = weak_from_this();
+  timer->async_wait([weak, ackSeq](const boost::system::error_code &error) {
+    if (error)
+      return;
+    auto self = weak.lock();
+    if (!self)
+      return;
+    auto current = self->reliableWrites.find(ackSeq);
+    if (current == self->reliableWrites.end())
+      return;
+    if (current->second.attempts >= 3) {
+      LOG_WARN(netLogger,
+               "Gateway delivery transport ACK timed out, uid: {}, seq: {}",
+               self->userId.load(std::memory_order_acquire), ackSeq);
+      self->reliableWrites.erase(current);
+      return;
+    }
+    ++current->second.attempts;
+    if (!self->SendRaw(current->second.packet, current->second.protocolId)) {
+      self->reliableWrites.erase(current);
+      return;
+    }
+    self->ArmReliableWrite(ackSeq);
+  });
+}
+
+void GatewaySession::AcknowledgeTransport(int64_t ackSeq) {
+  auto found = reliableWrites.find(ackSeq);
+  if (found == reliableWrites.end())
+    return;
+  if (found->second.timer)
+    found->second.timer->cancel();
+  reliableWrites.erase(found);
+}
+
+void GatewaySession::SendError(uint32_t requestId, int error,
+                               const std::string &message) {
+  auto response = MakeErrorPacket(error, message);
+  SendRaw(SerializeTcpPacket(response),
+          __getServiceResponseId(ServiceID(requestId)));
+}
+
+std::string GatewaySession::NextRequestId() {
+  return connectionId + ":" +
+         std::to_string(
+             requestSequence.fetch_add(1, std::memory_order_relaxed) + 1);
+}
+
+}  // namespace wim::connection

@@ -96,7 +96,7 @@ grpc::Status ImRpcService::TextSendMessage(
   requestData.set_session_key(request->session_key());
 
   auto localServiceResponse = wim::Service::GetInstance()->Messages().SendText(
-      nullptr, ID_TEXT_SEND_REQ, requestData);
+      ID_TEXT_SEND_REQ, requestData);
 
   // 仅供故障测试：模拟目标节点已经接收消息，但 RPC 响应超过调用方 deadline。
   // 后续重试必须由持久幂等返回同一个 message_id。

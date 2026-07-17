@@ -1,23 +1,36 @@
 server:
+  topology-version: 2
   state:
     host: 127.0.0.1
     port: 50052
-  im:
-    s1:
-      name: hunan-im
+  connection-gateway:
+    g1:
+      name: hunan-gateway
       host: 127.0.0.1
       port: 8090
-      rpcPort: 50055
-      rpcCount: 1
       status: active
-    s2:
-      name: beijing-im
+      weight: 1
+    g2:
+      name: beijing-gateway
       host: 127.0.0.1
       port: 8091
-      rpcPort: 50056
-      rpcCount: 1
       status: active
-    im-total: 2
+      weight: 1
+    gateway-total: 2
+  message:
+    m1:
+      name: hunan-im
+      host: 127.0.0.1
+      streamPort: 50055
+      status: active
+      weight: 1
+    m2:
+      name: beijing-im
+      host: 127.0.0.1
+      streamPort: 50056
+      status: active
+      weight: 1
+    message-total: 2
   mysql:
     host: 127.0.0.1
     port: 33060

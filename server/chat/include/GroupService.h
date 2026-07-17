@@ -1,6 +1,5 @@
 #pragma once
 
-#include "ChatSession.h"
 #include "TcpMessageCodec.h"
 
 #include <cstdint>
@@ -14,16 +13,11 @@ class GroupService {
  public:
   explicit GroupService(DeliveryService &deliveryService);
 
-  TcpPacket Create(ChatSession::Ptr session, unsigned int msgID,
-                   TcpPacket &request);
-  TcpPacket NotifyJoin(ChatSession::Ptr session, unsigned int msgID,
-                       TcpPacket &request);
-  TcpPacket PullNotify(ChatSession::Ptr session, unsigned int msgID,
-                       TcpPacket &request);
-  TcpPacket ReplyJoin(ChatSession::Ptr session, unsigned int msgID,
-                      TcpPacket &request);
-  TcpPacket Quit(ChatSession::Ptr session, unsigned int msgID,
-                 TcpPacket &request);
+  TcpPacket Create(unsigned int msgID, TcpPacket &request);
+  TcpPacket NotifyJoin(unsigned int msgID, TcpPacket &request);
+  TcpPacket PullNotify(unsigned int msgID, TcpPacket &request);
+  TcpPacket ReplyJoin(unsigned int msgID, TcpPacket &request);
+  TcpPacket Quit(unsigned int msgID, TcpPacket &request);
 
  private:
   int NotifyMemberJoin(int64_t uid, int64_t gid,

@@ -1,6 +1,5 @@
 #pragma once
 
-#include "ChatSession.h"
 #include "TcpMessageCodec.h"
 
 namespace wim {
@@ -11,16 +10,11 @@ class FriendService {
  public:
   explicit FriendService(DeliveryService &deliveryService);
 
-  TcpPacket NotifyAddFriend(ChatSession::Ptr session, unsigned int msgID,
-                            TcpPacket &request);
-  TcpPacket ReplyAddFriend(ChatSession::Ptr session, unsigned int msgID,
-                           TcpPacket &request);
-  TcpPacket PullFriendApplyList(ChatSession::Ptr session, uint32_t msgID,
-                                TcpPacket &request);
-  TcpPacket PullFriendList(ChatSession::Ptr session, uint32_t msgID,
-                           TcpPacket &request);
-  void RemoveFriend(ChatSession::Ptr session, unsigned int msgID,
-                    TcpPacket &request);
+  TcpPacket NotifyAddFriend(unsigned int msgID, TcpPacket &request);
+  TcpPacket ReplyAddFriend(unsigned int msgID, TcpPacket &request);
+  TcpPacket PullFriendApplyList(uint32_t msgID, TcpPacket &request);
+  TcpPacket PullFriendList(uint32_t msgID, TcpPacket &request);
+  void RemoveFriend(unsigned int msgID, TcpPacket &request);
 
  private:
   int StoreNotifyAddFriend(TcpPacket &request);

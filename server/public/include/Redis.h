@@ -23,6 +23,18 @@
 
 namespace wim::db {
 
+struct SessionLease {
+  std::string gatewayId;
+  std::string instanceId;
+  std::string connectionId;
+  int64_t generation{0};
+
+  bool empty() const {
+    return gatewayId.empty() || instanceId.empty() || connectionId.empty() ||
+           generation <= 0;
+  }
+};
+
 class RedisPool {
  public:
   using Ptr = std::shared_ptr<RedisPool>;
@@ -275,6 +287,92 @@ class RedisDao : public Singleton<RedisDao>,
   const std::string PrefixOnlineUserInfo = "im:user:";
   std::string getPrefixOnlineUserInfo() {
     return PrefixOnlineUserInfo;
+  }
+
+  const std::string PrefixSessionLease = "im:session:";
+  const std::string PrefixSessionGeneration = "im:sessionGeneration:";
+
+  int64_t bindSessionLease(long uid, const std::string &gatewayId,
+                           const std::string &instanceId,
+                           const std::string &connectionId, long ttlSeconds) {
+    if (uid <= 0 || gatewayId.empty() || instanceId.empty() ||
+        connectionId.empty() || ttlSeconds <= 0)
+      return -1;
+    return executeTemplate([&](std::unique_ptr<sw::redis::Redis> &redis) {
+      static const std::string script = R"(
+local generation = redis.call('INCR', KEYS[1])
+local value = cjson.encode({gatewayId=ARGV[1], instanceId=ARGV[2], connectionId=ARGV[3], generation=generation})
+redis.call('SETEX', KEYS[2], ARGV[4], value)
+return generation
+)";
+      const std::string generationKey =
+          PrefixSessionGeneration + std::to_string(uid);
+      const std::string leaseKey = PrefixSessionLease + std::to_string(uid);
+      const std::string ttl = std::to_string(ttlSeconds);
+      return redis->eval<long long>(script, {generationKey, leaseKey},
+                                    {gatewayId, instanceId, connectionId, ttl});
+    });
+  }
+
+  SessionLease getSessionLease(long uid) {
+    if (uid <= 0)
+      return {};
+    return executeTemplate([&](std::unique_ptr<sw::redis::Redis> &redis) {
+      auto source = redis->get(PrefixSessionLease + std::to_string(uid));
+      if (!source)
+        return SessionLease{};
+      Json::Value value;
+      Json::Reader reader;
+      if (!reader.parse(*source, value))
+        return SessionLease{};
+      SessionLease lease;
+      lease.gatewayId = value["gatewayId"].asString();
+      lease.instanceId = value["instanceId"].asString();
+      lease.connectionId = value["connectionId"].asString();
+      lease.generation = value["generation"].asInt64();
+      return lease;
+    });
+  }
+
+  bool refreshSessionLease(long uid, const SessionLease &lease,
+                           long ttlSeconds) {
+    if (uid <= 0 || lease.empty() || ttlSeconds <= 0)
+      return false;
+    return executeTemplate([&](std::unique_ptr<sw::redis::Redis> &redis) {
+      static const std::string script = R"(
+local value = redis.call('GET', KEYS[1])
+if not value then return 0 end
+local lease = cjson.decode(value)
+if lease.gatewayId ~= ARGV[1] or lease.instanceId ~= ARGV[2] or lease.connectionId ~= ARGV[3] or tostring(lease.generation) ~= ARGV[4] then return 0 end
+return redis.call('EXPIRE', KEYS[1], ARGV[5])
+)";
+      const std::string key = PrefixSessionLease + std::to_string(uid);
+      const std::string generation = std::to_string(lease.generation);
+      const std::string ttl = std::to_string(ttlSeconds);
+      return redis->eval<long long>(script, {key},
+                                    {lease.gatewayId, lease.instanceId,
+                                     lease.connectionId, generation, ttl}) == 1;
+    });
+  }
+
+  bool clearSessionLease(long uid, const SessionLease &lease) {
+    if (uid <= 0 || lease.empty())
+      return false;
+    return executeTemplate([&](std::unique_ptr<sw::redis::Redis> &redis) {
+      static const std::string script = R"(
+local value = redis.call('GET', KEYS[1])
+if not value then return 1 end
+local lease = cjson.decode(value)
+if lease.gatewayId ~= ARGV[1] or lease.instanceId ~= ARGV[2] or lease.connectionId ~= ARGV[3] or tostring(lease.generation) ~= ARGV[4] then return 0 end
+redis.call('DEL', KEYS[1])
+return 1
+)";
+      const std::string key = PrefixSessionLease + std::to_string(uid);
+      const std::string generation = std::to_string(lease.generation);
+      return redis->eval<long long>(script, {key},
+                                    {lease.gatewayId, lease.instanceId,
+                                     lease.connectionId, generation}) == 1;
+    });
   }
 
   // Gate -> Chat 的短期身份交接凭证；token 值不得写入日志。

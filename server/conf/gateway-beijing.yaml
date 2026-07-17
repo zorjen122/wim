@@ -1,24 +1,24 @@
 server:
-  topology-version: 1
-  state:
+  transportSecurity:
+    environment: development
+    mode: insecure
+  self:
+    name: beijing-gateway
+    host: 0.0.0.0
+    port: 8091
+  stateRPC:
     host: 127.0.0.1
     port: 50052
-  connection-gateway:
-    g1:
-      name: hunan-gateway
-      host: 127.0.0.1
-      port: 8090
-      status: active
-      weight: 1
-    gateway-total: 1
   message:
     m1:
       name: hunan-im
       host: 127.0.0.1
       streamPort: 50055
-      status: active
-      weight: 1
-    message-total: 1
+    m2:
+      name: beijing-im
+      host: 127.0.0.1
+      streamPort: 50056
+    message-total: 2
   mysql:
     host: 127.0.0.1
     port: 33060
@@ -32,8 +32,4 @@ server:
     port: 6380
     password: root
     clientCount: 2
-    machineId: 1
-  kafka:
-    broker: bootstrap.servers
-    host: 127.0.0.1
-    port: 9092
+    machineId: 12

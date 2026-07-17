@@ -14,13 +14,14 @@ namespace wim::rpc {
 namespace {
 
 void ApplyDeadline(grpc::ClientContext &context) {
-  // Gate 尚未建立 HTTP RequestContext 时使用 1 秒保底，禁止控制面 RPC 无限等待。
-  auto deadline = RequestContextScope::CurrentDeadlineOr(
-      std::chrono::milliseconds(1000));
-  auto remaining = std::max(
-      std::chrono::duration_cast<std::chrono::milliseconds>(
-          deadline - RequestContext::Clock::now()),
-      std::chrono::milliseconds(0));
+  // Gate 尚未建立 HTTP RequestContext 时使用 1 秒保底，禁止控制面 RPC
+  // 无限等待。
+  auto deadline =
+      RequestContextScope::CurrentDeadlineOr(std::chrono::milliseconds(1000));
+  auto remaining =
+      std::max(std::chrono::duration_cast<std::chrono::milliseconds>(
+                   deadline - RequestContext::Clock::now()),
+               std::chrono::milliseconds(0));
   context.set_deadline(std::chrono::system_clock::now() + remaining);
 }
 
@@ -49,6 +50,25 @@ StateClient::StateClient() {
                   host, port, rpcPool->getPoolSize());
 }
 
+ServerNode StateClient::PickConnectionGateway(int uid) {
+  state::ConnectUser req;
+  state::ConnectUserRsp rsp;
+  req.set_id(uid);
+  auto caller = rpcPool->getConnection();
+  if (!caller)
+    return {};
+  Defer defer(
+      [&caller, this]() { rpcPool->returnConnection(std::move(caller)); });
+
+  grpc::ClientContext context;
+  ApplyDeadline(context);
+  auto status = caller->PickConnectionGateway(&context, req, &rsp);
+  RecordStatus(status);
+  if (!status.ok())
+    return {};
+  return ServerNode(rsp.ip(), rsp.port(), rsp.node_id());
+}
+
 ServerNode StateClient::GetImServer(int uid) {
   state::ConnectUser req;
   state::ConnectUserRsp rsp;
@@ -64,7 +84,7 @@ ServerNode StateClient::GetImServer(int uid) {
   auto status = caller->GetImServer(&context, req, &rsp);
   RecordStatus(status);
   if (status.ok()) {
-    ServerNode node(rsp.ip(), rsp.port());
+    ServerNode node(rsp.ip(), rsp.port(), rsp.node_id());
     return node;
   } else {
     return ServerNode();
@@ -86,7 +106,7 @@ ServerNode StateClient::ActiveImBackupServer(int uid) {
   auto status = caller->ActiveImBackupServer(&context, req, &rsp);
   RecordStatus(status);
   if (status.ok()) {
-    ServerNode node(rsp.ip(), rsp.port());
+    ServerNode node(rsp.ip(), rsp.port(), rsp.node_id());
     return node;
   } else {
     return ServerNode();

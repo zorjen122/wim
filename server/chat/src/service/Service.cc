@@ -104,72 +104,69 @@ void Service::Init() {
                  });
   RegisterHandle(ID_ACK, TaskType::Heavy,
                  [this](auto session, auto msgID, auto &request) {
-                   return messageService.Ack(session, msgID, request);
+                   return messageService.Ack(msgID, request);
                  });
 
   // 消息与文件
   RegisterHandle(ID_TEXT_SEND_REQ, TaskType::Heavy,
                  [this](auto session, auto msgID, auto &request) {
-                   return messageService.SendText(session, msgID, request);
+                   return messageService.SendText(msgID, request);
                  });
   RegisterHandle(ID_FILE_UPLOAD_REQ, TaskType::Heavy,
                  [this](auto session, auto msgID, auto &request) {
-                   return fileService.Upload(session, msgID, request);
+                   return fileService.Upload(msgID, request);
                  });
 
   // 好友
   RegisterHandle(ID_NOTIFY_ADD_FRIEND_REQ, TaskType::Heavy,
                  [this](auto session, auto msgID, auto &request) {
-                   return friendService.NotifyAddFriend(session, msgID,
-                                                        request);
+                   return friendService.NotifyAddFriend(msgID, request);
                  });
   RegisterHandle(ID_REPLY_ADD_FRIEND_REQ, TaskType::Heavy,
                  [this](auto session, auto msgID, auto &request) {
-                   return friendService.ReplyAddFriend(session, msgID, request);
+                   return friendService.ReplyAddFriend(msgID, request);
                  });
   RegisterHandle(ID_PULL_FRIEND_LIST_REQ, TaskType::Heavy,
                  [this](auto session, auto msgID, auto &request) {
-                   return friendService.PullFriendList(session, msgID, request);
+                   return friendService.PullFriendList(msgID, request);
                  });
   RegisterHandle(ID_PULL_FRIEND_APPLY_LIST_REQ, TaskType::Heavy,
                  [this](auto session, auto msgID, auto &request) {
-                   return friendService.PullFriendApplyList(session, msgID,
-                                                            request);
+                   return friendService.PullFriendApplyList(msgID, request);
                  });
 
   // 消息拉取
   RegisterHandle(ID_PULL_SESSION_MESSAGE_LIST_REQ, TaskType::Heavy,
                  [this](auto session, auto msgID, auto &request) {
-                   return messageService.PullSessionMessages(session, msgID,
-                                                             request);
+                   return messageService.PullSessionMessages(msgID, request);
                  });
   RegisterHandle(ID_PULL_MESSAGE_LIST_REQ, TaskType::Heavy,
                  [this](auto session, auto msgID, auto &request) {
-                   return messageService.PullMessages(session, msgID, request);
+                   return messageService.PullMessages(msgID, request);
                  });
 
   // 群聊
   RegisterHandle(ID_GROUP_CREATE_REQ, TaskType::Heavy,
                  [this](auto session, auto msgID, auto &request) {
-                   return groupService.Create(session, msgID, request);
+                   return groupService.Create(msgID, request);
                  });
   RegisterHandle(ID_GROUP_NOTIFY_JOIN_REQ, TaskType::Heavy,
                  [this](auto session, auto msgID, auto &request) {
-                   return groupService.NotifyJoin(session, msgID, request);
+                   return groupService.NotifyJoin(msgID, request);
                  });
   RegisterHandle(ID_GROUP_REPLY_JOIN_REQ, TaskType::Heavy,
                  [this](auto session, auto msgID, auto &request) {
-                   return groupService.ReplyJoin(session, msgID, request);
+                   return groupService.ReplyJoin(msgID, request);
                  });
 
   /* 待实现 */
   RegisterHandle(ID_GROUP_TEXT_SEND_REQ, TaskType::Heavy,
                  [this](auto session, auto msgID, auto &request) {
-                   return messageService.SendGroupText(session, msgID, request);
+                   return messageService.SendGroupText(msgID, request);
                  });
   RegisterHandle(ID_FILE_SEND_REQ, TaskType::Heavy,
                  [this](auto session, auto msgID, auto &request) {
-                   return messageService.SendFile(session, msgID, request);
+                   return messageService.SendFile(msgID, request);
                  });
 }
 
@@ -363,6 +360,24 @@ DeliveryService &Service::Deliveries() {
 
 MessageService &Service::Messages() {
   return messageService;
+}
+
+void Service::SetGatewayStreamService(rpc::GatewayStreamService *service) {
+  deliveryService.SetGatewayStreamService(service);
+}
+
+TcpPacket Service::ExecuteGatewayCommand(uint32_t msgID, int64_t actorUid,
+                                         TcpPacket request) {
+  if (actorUid <= 0 || msgID == ID_LOGIN_INIT_REQ || msgID == ID_PING_REQ ||
+      msgID == ID_USER_QUIT_REQ) {
+    return MakeErrorPacket(ErrorCodes::AuthenticationRequired,
+                           "connection control command belongs to gateway");
+  }
+  auto handle = serviceGroup.find(msgID);
+  if (handle == serviceGroup.end())
+    return MakeErrorPacket(ErrorCodes::NotFound);
+  request.set_uid(actorUid);
+  return handle->second.handle(nullptr, msgID, request);
 }
 
 TcpPacket Service::Ping(ChatSession::Ptr session, uint32_t msgID,

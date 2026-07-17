@@ -1,11 +1,13 @@
 #pragma once
 
+#include <algorithm>
 #include <cassert>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
 #include <ctime>
 #include <exception>
+#include <functional>
 #include <mysql-cppconn/mysqlx/devapi/common.h>
 #include <mysql-cppconn/mysqlx/devapi/result.h>
 #include <mysql-cppconn/mysqlx/xdevapi.h>
@@ -19,6 +21,7 @@
 #include <string>
 #include <thread>
 #include <type_traits>
+#include <vector>
 
 #include "Configer.h"
 #include "Const.h"
@@ -28,6 +31,43 @@
 #include "RequestContext.h"
 
 namespace wim::db {
+
+struct MessageAcceptResult {
+  int error{ErrorCodes::MysqlFailed};
+  std::string diagnostic;
+  bool duplicate{false};
+  int64_t messageId{0};
+  int64_t conversationId{0};
+  int64_t conversationSeq{0};
+};
+
+struct GroupMessageAcceptResult : MessageAcceptResult {
+  int64_t groupId{0};
+  std::vector<int64_t> recipientUids;
+};
+
+struct ConversationMessageRecord {
+  int64_t messageId{0};
+  int64_t senderId{0};
+  int64_t receiverId{0};
+  int64_t conversationId{0};
+  int64_t conversationSeq{0};
+  std::string clientMessageId;
+  int type{0};
+  std::string content;
+  int status{0};
+  std::string sendDateTime;
+  std::string readDateTime;
+};
+
+struct ConversationSyncResult {
+  int error{ErrorCodes::MysqlFailed};
+  int conversationType{0};
+  int64_t latestSeq{0};
+  int64_t nextSeq{0};
+  bool hasMore{false};
+  std::vector<ConversationMessageRecord> messages;
+};
 
 struct SqlConnection {
   SqlConnection(mysqlx::Session *connection, int64_t lastTime)
@@ -163,8 +203,8 @@ class MysqlPool {
     // 截断半开连接，请求级 deadline 仍由连接池等待和上层幂等语义负责。
     mysqlx::SessionSettings settings(
         mysqlx::SessionOption::HOST, host, mysqlx::SessionOption::PORT, port,
-        mysqlx::SessionOption::USER, user, mysqlx::SessionOption::PWD,
-        password, mysqlx::SessionOption::DB, schema,
+        mysqlx::SessionOption::USER, user, mysqlx::SessionOption::PWD, password,
+        mysqlx::SessionOption::DB, schema,
         mysqlx::SessionOption::CONNECT_TIMEOUT, std::chrono::milliseconds(1000),
         mysqlx::SessionOption::READ_TIMEOUT, std::chrono::milliseconds(1000),
         mysqlx::SessionOption::WRITE_TIMEOUT, std::chrono::milliseconds(1000));
@@ -546,23 +586,351 @@ class MysqlDao : public Singleton<MysqlDao>,
   }
 
   int insertMessage(Message::Ptr message) {
-    return executeTemplate(
-        [&](std::unique_ptr<mysqlx::Session> &session) -> int {
-          std::string f =
-              R"(INSERT INTO messages (messageId, senderId, receiverId, sessionKey, type, content, status, sendDateTime, readDateTime) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?))";
-          auto result = session->sql(f)
-                            .bind(message->messageId)
-                            .bind(message->from)
-                            .bind(message->to)
-                            .bind(message->sessionKey)
-                            .bind(message->type)
-                            .bind(message->content)
-                            .bind(message->status)
-                            .bind(message->sendDateTime)
-                            .bind(message->readDateTime)
-                            .execute();
+    return executeTemplate([&](std::unique_ptr<mysqlx::Session> &session)
+                               -> int {
+      std::string f =
+          R"(INSERT INTO messages (messageId, senderId, receiverId, sessionKey, type, content, status, sendDateTime, readDateTime) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?))";
+      auto result = session->sql(f)
+                        .bind(message->messageId)
+                        .bind(message->from)
+                        .bind(message->to)
+                        .bind(message->sessionKey)
+                        .bind(message->type)
+                        .bind(message->content)
+                        .bind(message->status)
+                        .bind(message->sendDateTime)
+                        .bind(message->readDateTime)
+                        .execute();
 
-          return 0;
+      return 0;
+    });
+  }
+
+  MessageAcceptResult acceptDirectText(long senderId, long receiverId,
+                                       const std::string &clientMessageId,
+                                       const std::string &content,
+                                       const std::string &sendDateTime) {
+    return executeTemplate([&](std::unique_ptr<mysqlx::Session> &session)
+                               -> MessageAcceptResult {
+      MessageAcceptResult accepted;
+      session->startTransaction();
+      try {
+        auto friendResult =
+            session
+                ->sql(
+                    R"(SELECT sessionId FROM friends WHERE uidA = ? AND uidB = ?)")
+                .bind(senderId)
+                .bind(receiverId)
+                .execute();
+        auto friendRow = friendResult.fetchOne();
+        if (!friendRow) {
+          session->rollback();
+          accepted.error = ErrorCodes::UserNotFriend;
+          return accepted;
+        }
+
+        accepted.conversationId = friendRow[0].get<int64_t>();
+        session
+            ->sql(
+                R"(INSERT INTO conversations (conversationId, type, businessId, latestSeq, createTime) VALUES (?, 1, ?, 0, ?) ON DUPLICATE KEY UPDATE conversationId = VALUES(conversationId))")
+            .bind(accepted.conversationId)
+            .bind(accepted.conversationId)
+            .bind(sendDateTime)
+            .execute();
+        session
+            ->sql(
+                R"(INSERT IGNORE INTO conversationMembers (conversationId, uid, joinedSeq) VALUES (?, ?, 1), (?, ?, 1))")
+            .bind(accepted.conversationId)
+            .bind(senderId)
+            .bind(accepted.conversationId)
+            .bind(receiverId)
+            .execute();
+
+        auto sequenceResult =
+            session
+                ->sql(
+                    R"(SELECT latestSeq FROM conversations WHERE conversationId = ? FOR UPDATE)")
+                .bind(accepted.conversationId)
+                .execute();
+        auto sequenceRow = sequenceResult.fetchOne();
+        if (!sequenceRow) {
+          session->rollback();
+          accepted.error = ErrorCodes::MysqlFailed;
+          accepted.diagnostic = "conversation row missing after insert";
+          return accepted;
+        }
+
+        auto duplicateResult =
+            session
+                ->sql(
+                    R"(SELECT messageId, conversationId, conversationSeq, receiverId, type, content FROM messages WHERE senderId = ? AND clientMessageId = ?)")
+                .bind(senderId)
+                .bind(clientMessageId)
+                .execute();
+        auto duplicateRow = duplicateResult.fetchOne();
+        if (duplicateRow) {
+          const bool sameCommand =
+              duplicateRow[1].get<int64_t>() == accepted.conversationId &&
+              duplicateRow[3].get<int64_t>() == receiverId &&
+              duplicateRow[4].get<int>() == Message::Type::TEXT &&
+              duplicateRow[5].get<std::string>() == content;
+          if (!sameCommand) {
+            session->rollback();
+            accepted.error = ErrorCodes::IdempotencyConflict;
+            return accepted;
+          }
+          accepted.messageId = duplicateRow[0].get<int64_t>();
+          accepted.conversationSeq = duplicateRow[2].get<int64_t>();
+          accepted.duplicate = true;
+          accepted.error = ErrorCodes::Success;
+          session->commit();
+          return accepted;
+        }
+
+        accepted.conversationSeq = sequenceRow[0].get<int64_t>() + 1;
+        session
+            ->sql(
+                R"(UPDATE conversations SET latestSeq = ? WHERE conversationId = ?)")
+            .bind(accepted.conversationSeq)
+            .bind(accepted.conversationId)
+            .execute();
+
+        const std::string canonicalCommand =
+            std::to_string(accepted.conversationId) + ":" +
+            std::to_string(static_cast<int>(Message::Type::TEXT)) + ":" +
+            content;
+        const std::string commandHash =
+            std::to_string(std::hash<std::string>{}(canonicalCommand));
+        auto insertResult =
+            session
+                ->sql(
+                    R"(INSERT INTO messages (senderId, receiverId, conversationId, conversationSeq, clientMessageId, commandHash, sessionKey, type, content, status, sendDateTime, readDateTime) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ''))")
+                .bind(senderId)
+                .bind(receiverId)
+                .bind(accepted.conversationId)
+                .bind(accepted.conversationSeq)
+                .bind(clientMessageId)
+                .bind(commandHash)
+                .bind(std::to_string(accepted.conversationId))
+                .bind(static_cast<int>(Message::Type::TEXT))
+                .bind(content)
+                .bind(static_cast<int>(Message::Status::WAIT))
+                .bind(sendDateTime)
+                .execute();
+        accepted.messageId =
+            static_cast<int64_t>(insertResult.getAutoIncrementValue());
+        session->commit();
+        accepted.error = ErrorCodes::Success;
+        return accepted;
+      } catch (const std::exception &error) {
+        try {
+          session->rollback();
+        } catch (...) {
+        }
+        accepted.error = ErrorCodes::MysqlFailed;
+        accepted.diagnostic = error.what();
+        return accepted;
+      }
+    });
+  }
+
+  GroupMessageAcceptResult acceptGroupText(long senderId, long groupId,
+                                           const std::string &clientMessageId,
+                                           const std::string &content,
+                                           const std::string &sendDateTime) {
+    return executeTemplate([&](std::unique_ptr<mysqlx::Session> &session)
+                               -> GroupMessageAcceptResult {
+      GroupMessageAcceptResult accepted;
+      accepted.groupId = groupId;
+      session->startTransaction();
+      try {
+        auto groupResult =
+            session
+                ->sql(
+                    R"(SELECT gi.sessionKey, gm.speech FROM groupInfo gi INNER JOIN groupMembers gm ON gm.gid = gi.gid WHERE gi.gid = ? AND gm.uid = ?)")
+                .bind(groupId)
+                .bind(senderId)
+                .execute();
+        auto groupRow = groupResult.fetchOne();
+        if (!groupRow) {
+          session->rollback();
+          accepted.error = ErrorCodes::MessageOwnershipInvalid;
+          return accepted;
+        }
+        if (groupRow[1].get<int>() != 0) {
+          session->rollback();
+          accepted.error = ErrorCodes::GroupNotifyFailed;
+          return accepted;
+        }
+
+        accepted.conversationId = groupRow[0].get<int64_t>();
+        session
+            ->sql(
+                R"(INSERT INTO conversations (conversationId, type, businessId, latestSeq, createTime) VALUES (?, 2, ?, 0, ?) ON DUPLICATE KEY UPDATE conversationId = VALUES(conversationId))")
+            .bind(accepted.conversationId)
+            .bind(groupId)
+            .bind(sendDateTime)
+            .execute();
+        session
+            ->sql(
+                R"(INSERT IGNORE INTO conversationMembers (conversationId, uid, joinedSeq) SELECT ?, gm.uid, c.latestSeq + 1 FROM groupMembers gm INNER JOIN conversations c ON c.conversationId = ? WHERE gm.gid = ?)")
+            .bind(accepted.conversationId)
+            .bind(accepted.conversationId)
+            .bind(groupId)
+            .execute();
+
+        auto sequenceResult =
+            session
+                ->sql(
+                    R"(SELECT latestSeq FROM conversations WHERE conversationId = ? FOR UPDATE)")
+                .bind(accepted.conversationId)
+                .execute();
+        auto sequenceRow = sequenceResult.fetchOne();
+        if (!sequenceRow) {
+          session->rollback();
+          accepted.error = ErrorCodes::MysqlFailed;
+          accepted.diagnostic = "group conversation row missing after insert";
+          return accepted;
+        }
+
+        auto duplicateResult =
+            session
+                ->sql(
+                    R"(SELECT messageId, conversationId, conversationSeq, receiverId, type, content FROM messages WHERE senderId = ? AND clientMessageId = ?)")
+                .bind(senderId)
+                .bind(clientMessageId)
+                .execute();
+        auto duplicateRow = duplicateResult.fetchOne();
+        if (duplicateRow) {
+          const bool sameCommand =
+              duplicateRow[1].get<int64_t>() == accepted.conversationId &&
+              duplicateRow[3].get<int64_t>() == groupId &&
+              duplicateRow[4].get<int>() == Message::Type::TEXT &&
+              duplicateRow[5].get<std::string>() == content;
+          if (!sameCommand) {
+            session->rollback();
+            accepted.error = ErrorCodes::IdempotencyConflict;
+            return accepted;
+          }
+          accepted.messageId = duplicateRow[0].get<int64_t>();
+          accepted.conversationSeq = duplicateRow[2].get<int64_t>();
+          accepted.duplicate = true;
+        } else {
+          accepted.conversationSeq = sequenceRow[0].get<int64_t>() + 1;
+          session
+              ->sql(
+                  R"(UPDATE conversations SET latestSeq = ? WHERE conversationId = ?)")
+              .bind(accepted.conversationSeq)
+              .bind(accepted.conversationId)
+              .execute();
+          const std::string canonicalCommand =
+              std::to_string(accepted.conversationId) + ":" +
+              std::to_string(static_cast<int>(Message::Type::TEXT)) + ":" +
+              content;
+          auto insertResult =
+              session
+                  ->sql(
+                      R"(INSERT INTO messages (senderId, receiverId, conversationId, conversationSeq, clientMessageId, commandHash, sessionKey, type, content, status, sendDateTime, readDateTime) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ''))")
+                  .bind(senderId)
+                  .bind(groupId)
+                  .bind(accepted.conversationId)
+                  .bind(accepted.conversationSeq)
+                  .bind(clientMessageId)
+                  .bind(std::to_string(
+                      std::hash<std::string>{}(canonicalCommand)))
+                  .bind(std::to_string(accepted.conversationId))
+                  .bind(static_cast<int>(Message::Type::TEXT))
+                  .bind(content)
+                  .bind(static_cast<int>(Message::Status::WAIT))
+                  .bind(sendDateTime)
+                  .execute();
+          accepted.messageId =
+              static_cast<int64_t>(insertResult.getAutoIncrementValue());
+        }
+
+        auto members =
+            session
+                ->sql(
+                    R"(SELECT uid FROM groupMembers WHERE gid = ? AND uid <> ?)")
+                .bind(groupId)
+                .bind(senderId)
+                .execute();
+        for (const auto &row : members.fetchAll())
+          accepted.recipientUids.push_back(row[0].get<int64_t>());
+        session->commit();
+        accepted.error = ErrorCodes::Success;
+        return accepted;
+      } catch (const std::exception &error) {
+        try {
+          session->rollback();
+        } catch (...) {
+        }
+        accepted.error = ErrorCodes::MysqlFailed;
+        accepted.diagnostic = error.what();
+        return accepted;
+      }
+    });
+  }
+
+  ConversationSyncResult syncConversation(long uid, long conversationId,
+                                          long afterSeq, int pullCount) {
+    if (uid <= 0 || conversationId <= 0 || afterSeq < 0)
+      return ConversationSyncResult{ErrorCodes::JsonParser};
+    const int boundedCount = std::clamp(pullCount > 0 ? pullCount : 50, 1, 100);
+    return executeTemplate([&](std::unique_ptr<mysqlx::Session> &session)
+                               -> ConversationSyncResult {
+      ConversationSyncResult sync;
+      auto membership =
+          session
+              ->sql(
+                  R"(SELECT c.latestSeq, m.joinedSeq, CAST(COALESCE(m.leftSeq, c.latestSeq) AS SIGNED), c.type FROM conversations c INNER JOIN conversationMembers m ON m.conversationId = c.conversationId WHERE c.conversationId = ? AND m.uid = ?)")
+              .bind(conversationId)
+              .bind(uid)
+              .execute();
+      auto memberRow = membership.fetchOne();
+      if (!memberRow) {
+        sync.error = ErrorCodes::MessageOwnershipInvalid;
+        return sync;
+      }
+
+      sync.latestSeq = memberRow[0].get<int64_t>();
+      const int64_t joinedSeq = memberRow[1].get<int64_t>();
+      const int64_t leftSeq = memberRow[2].get<int64_t>();
+      sync.conversationType = memberRow[3].get<int>();
+      const int64_t effectiveAfter = std::max(afterSeq, joinedSeq - 1);
+      auto result =
+          session
+              ->sql(
+                  R"(SELECT messageId, senderId, receiverId, conversationId, conversationSeq, COALESCE(clientMessageId, ''), type, content, status, sendDateTime, readDateTime FROM messages WHERE conversationId = ? AND conversationSeq > ? AND conversationSeq <= ? ORDER BY conversationSeq ASC LIMIT ?)")
+              .bind(conversationId)
+              .bind(effectiveAfter)
+              .bind(leftSeq)
+              .bind(boundedCount + 1)
+              .execute();
+      for (const auto &row : result.fetchAll()) {
+        if (sync.messages.size() >= static_cast<std::size_t>(boundedCount)) {
+          sync.hasMore = true;
+          break;
+        }
+        ConversationMessageRecord message;
+        message.messageId = row[0].get<int64_t>();
+        message.senderId = row[1].get<int64_t>();
+        message.receiverId = row[2].get<int64_t>();
+        message.conversationId = row[3].get<int64_t>();
+        message.conversationSeq = row[4].get<int64_t>();
+        message.clientMessageId = row[5].get<std::string>();
+        message.type = row[6].get<int>();
+        message.content = row[7].get<std::string>();
+        message.status = row[8].get<int>();
+        message.sendDateTime = row[9].get<std::string>();
+        message.readDateTime = row[10].get<std::string>();
+        sync.nextSeq = message.conversationSeq;
+        sync.messages.push_back(std::move(message));
+      }
+      if (sync.messages.empty())
+        sync.nextSeq = effectiveAfter;
+      sync.error = ErrorCodes::Success;
+      return sync;
     });
   }
 
@@ -663,6 +1031,89 @@ class MysqlDao : public Singleton<MysqlDao>,
       return 1;
     });
   }
+
+  int advanceConversationCursor(long uid, long conversationId,
+                                long conversationSeq, bool read) {
+    if (uid <= 0 || conversationId <= 0 || conversationSeq <= 0)
+      return 0;
+    return executeTemplate([&](std::unique_ptr<mysqlx::Session> &session)
+                               -> int {
+      auto result =
+          session
+              ->sql(
+                  R"(UPDATE conversationMembers m INNER JOIN conversations c ON c.conversationId = m.conversationId SET m.deliveredSeq = GREATEST(m.deliveredSeq, ?), m.readSeq = CASE WHEN ? THEN GREATEST(m.readSeq, ?) ELSE m.readSeq END WHERE m.uid = ? AND m.conversationId = ? AND ? <= c.latestSeq)")
+              .bind(conversationSeq)
+              .bind(read)
+              .bind(conversationSeq)
+              .bind(uid)
+              .bind(conversationId)
+              .bind(conversationSeq)
+              .execute();
+      return result.getAffectedItemsCount() > 0 ? 1 : 0;
+    });
+  }
+
+  int acknowledgeConversationMessage(long messageId, long uid,
+                                     long conversationId, long conversationSeq,
+                                     short status,
+                                     const std::string &readDateTime = "") {
+    if (messageId <= 0 || uid <= 0 || conversationId <= 0 ||
+        conversationSeq <= 0)
+      return 0;
+    return executeTemplate([&](std::unique_ptr<mysqlx::Session> &session)
+                               -> int {
+      session->startTransaction();
+      try {
+        auto owner =
+            session
+                ->sql(
+                    R"(SELECT c.type, msg.receiverId FROM messages msg INNER JOIN conversations c ON c.conversationId = msg.conversationId INNER JOIN conversationMembers cm ON cm.conversationId = c.conversationId AND cm.uid = ? WHERE msg.messageId = ? AND msg.conversationId = ? AND msg.conversationSeq = ? FOR UPDATE)")
+                .bind(uid)
+                .bind(messageId)
+                .bind(conversationId)
+                .bind(conversationSeq)
+                .execute();
+        auto ownerRow = owner.fetchOne();
+        if (!ownerRow) {
+          session->rollback();
+          return 0;
+        }
+        const int conversationType = ownerRow[0].get<int>();
+        if (conversationType == 1 && ownerRow[1].get<int64_t>() != uid) {
+          session->rollback();
+          return -2;
+        }
+
+        if (conversationType == 1) {
+          session
+              ->sql(
+                  R"(UPDATE messages SET readDateTime = CASE WHEN ? = 3 AND (status < 3 OR readDateTime IS NULL OR readDateTime = '') THEN ? ELSE readDateTime END, status = GREATEST(status, ?) WHERE messageId = ?)")
+              .bind(status)
+              .bind(readDateTime)
+              .bind(status)
+              .bind(messageId)
+              .execute();
+        }
+        session
+            ->sql(
+                R"(UPDATE conversationMembers SET deliveredSeq = GREATEST(deliveredSeq, ?), readSeq = CASE WHEN ? = 3 THEN GREATEST(readSeq, ?) ELSE readSeq END WHERE uid = ? AND conversationId = ?)")
+            .bind(conversationSeq)
+            .bind(status)
+            .bind(conversationSeq)
+            .bind(uid)
+            .bind(conversationId)
+            .execute();
+        session->commit();
+        return 1;
+      } catch (...) {
+        try {
+          session->rollback();
+        } catch (...) {
+        }
+        throw;
+      }
+    });
+  }
   FriendApply::FriendApplyGroup getFriendApplyList(long from) {
     return executeTemplate([&](std::unique_ptr<mysqlx::Session> &session)
                                -> FriendApply::FriendApplyGroup {
@@ -699,7 +1150,7 @@ class MysqlDao : public Singleton<MysqlDao>,
     return executeTemplate([&](std::unique_ptr<mysqlx::Session> &session)
                                -> Message::MessageGroup {
       std::string f =
-          R"(SELECT * FROM messages WHERE senderId = ? AND receiverId = ? AND messageId >= ? ORDER BY messageId DESC LIMIT ?)";
+          R"(SELECT messageId, senderId, receiverId, sessionKey, type, content, status, sendDateTime, readDateTime FROM messages WHERE senderId = ? AND receiverId = ? AND messageId >= ? ORDER BY messageId DESC LIMIT ?)";
       auto result = session->sql(f)
                         .bind(from)
                         .bind(to)
@@ -739,7 +1190,7 @@ class MysqlDao : public Singleton<MysqlDao>,
     return executeTemplate([&](std::unique_ptr<mysqlx::Session> &session)
                                -> Message::MessageGroup {
       std::string f =
-          R"(SELECT * FROM messages WHERE receiverId = ? AND messageId >= ? ORDER BY messageId DESC LIMIT ?)";
+          R"(SELECT messageId, senderId, receiverId, sessionKey, type, content, status, sendDateTime, readDateTime FROM messages WHERE receiverId = ? AND messageId >= ? ORDER BY messageId DESC LIMIT ?)";
       auto result = session->sql(f)
                         .bind(uid)
                         .bind(lastMessageId)

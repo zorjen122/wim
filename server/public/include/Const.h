@@ -80,7 +80,8 @@ enum ErrorCodes {
   MessageOwnershipInvalid,
   DeadlineExceeded,
   ResourceExhausted,
-  DependencyUnavailable
+  DependencyUnavailable,
+  IdempotencyConflict
 };
 
 enum ServiceID {
@@ -185,7 +186,8 @@ static std::unordered_map<int, std::string> errorCodesMap = {
     {MessageOwnershipInvalid, "MessageOwnershipInvalid"},
     {DeadlineExceeded, "DeadlineExceeded"},
     {ResourceExhausted, "ResourceExhausted"},
-    {DependencyUnavailable, "DependencyUnavailable"}};
+    {DependencyUnavailable, "DependencyUnavailable"},
+    {IdempotencyConflict, "IdempotencyConflict"}};
 
 inline bool isRetryableError(int code) {
   // retryable 是协议契约而非 handler 的临时判断：瞬时依赖/容量故障可用

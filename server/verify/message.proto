@@ -3,42 +3,45 @@ syntax = "proto3";
 package message;
 
 service VarifyService {
-  rpc GetVarifyCode (GetVarifyReq) returns (GetVarifyRsp) {}
+  // 生成或复用邮箱验证码。
+  rpc GetVarifyCode(GetVarifyReq) returns (GetVarifyRsp) {}
 }
 
 message GetVarifyReq {
-  string email = 1;
+  string email = 1; // 接收验证码的邮箱地址
 }
 
 message GetVarifyRsp {
-  int32 error = 1;
-  string email = 2;
-  string code = 3;
+  int32 error = 1;  // 统一业务错误码
+  string email = 2; // 对应请求的邮箱地址
+  string code = 3;  // 开发模式下返回的验证码
 }
 
 message GetChatServerReq {
-  int32 uid = 1;
+  int32 uid = 1; // 请求连接节点的用户 ID
 }
 
 message GetChatServerRsp {
-  int32 error = 1;
-  string host = 2;
-  string port = 3;
-  string token = 4;
+  int32 error = 1;  // 统一业务错误码
+  string host = 2;  // 客户端连接节点地址
+  string port = 3;  // 客户端连接节点端口
+  string token = 4; // 客户端连接凭证
 }
 
-message LoginReq{
-	int32 uid = 1;
-	string token= 2;
+message LoginReq {
+  int32 uid = 1;    // 登录用户 ID
+  string token = 2; // 待校验的登录凭证
 }
 
 message LoginRsp {
-	int32 error = 1;
-	int32 uid = 2;
-	string token = 3;
+  int32 error = 1;  // 统一业务错误码
+  int32 uid = 2;    // 登录用户 ID
+  string token = 3; // 校验后的登录凭证
 }
 
 service StatusService {
-	rpc GetChatServer (GetChatServerReq) returns (GetChatServerRsp) {}
-	rpc Login(LoginReq) returns(LoginRsp);
+  // 兼容旧客户端的 Chat 节点发现接口。
+  rpc GetChatServer(GetChatServerReq) returns (GetChatServerRsp) {}
+  // 兼容旧客户端的 token 登录接口。
+  rpc Login(LoginReq) returns (LoginRsp);
 }

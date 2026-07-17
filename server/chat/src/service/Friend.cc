@@ -25,8 +25,7 @@ int FriendService::StoreNotifyAddFriend(TcpPacket &request) {
   return ret;
 }
 
-TcpPacket FriendService::NotifyAddFriend(ChatSession::Ptr session,
-                                         unsigned int msgID,
+TcpPacket FriendService::NotifyAddFriend(unsigned int msgID,
                                          TcpPacket &request) {
   TcpPacket rsp;
 
@@ -46,11 +45,18 @@ TcpPacket FriendService::NotifyAddFriend(ChatSession::Ptr session,
     return rsp;
   }
 
+  TcpPacket senderRsp = request;
+  senderRsp.clear_skip_storage();
+  senderRsp.set_seq(db::RedisDao::GetInstance()->generateMsgId());
+  if (deliveryService.SendGateway(to, SerializeTcpPacket(senderRsp),
+                                  ID_NOTIFY_ADD_FRIEND_REQ)) {
+    rsp.set_error(ErrorCodes::Success);
+    return rsp;
+  }
+
   auto target = deliveryService.Locate(to);
   if (target.location == DeliveryService::Location::Local) {
     // 本地在线推送
-    TcpPacket senderRsp = request;
-    senderRsp.clear_skip_storage();
     deliveryService.SendLocal(to, SerializeTcpPacket(senderRsp),
                               ID_NOTIFY_ADD_FRIEND_REQ);
 
@@ -87,8 +93,7 @@ TcpPacket FriendService::NotifyAddFriend(ChatSession::Ptr session,
   return rsp;
 }
 
-TcpPacket FriendService::ReplyAddFriend(ChatSession::Ptr session,
-                                        unsigned int msgID,
+TcpPacket FriendService::ReplyAddFriend(unsigned int msgID,
                                         TcpPacket &request) {
   TcpPacket rsp;
 
@@ -110,16 +115,22 @@ TcpPacket FriendService::ReplyAddFriend(ChatSession::Ptr session,
     return rsp;
   }
 
+  TcpPacket senderRsp{};
+  senderRsp.set_from(from);
+  senderRsp.set_to(to);
+  senderRsp.set_uid(to);
+  senderRsp.set_session_key(sessionKey);
+  senderRsp.set_accept(accept);
+  senderRsp.set_reply_message(replyMessage);
+  senderRsp.set_seq(db::RedisDao::GetInstance()->generateMsgId());
+  if (deliveryService.SendGateway(to, SerializeTcpPacket(senderRsp),
+                                  ID_REPLY_ADD_FRIEND_REQ)) {
+    rsp.set_error(ErrorCodes::Success);
+    return rsp;
+  }
+
   auto target = deliveryService.Locate(to);
   if (target.location == DeliveryService::Location::Local) {
-    TcpPacket senderRsp{};
-    senderRsp.set_from(from);
-    senderRsp.set_to(to);
-    senderRsp.set_uid(to);
-    senderRsp.set_session_key(sessionKey);
-    senderRsp.set_accept(accept);
-    senderRsp.set_reply_message(replyMessage);
-
     deliveryService.SendLocal(to, SerializeTcpPacket(senderRsp),
                               ID_REPLY_ADD_FRIEND_REQ);
 
@@ -193,8 +204,7 @@ int FriendService::StoreReplyAddFriend(TcpPacket &request) {
   return rt == -1 ? -1 : sessionId;
 }
 
-TcpPacket FriendService::PullFriendApplyList(ChatSession::Ptr session,
-                                             uint32_t msgID,
+TcpPacket FriendService::PullFriendApplyList(uint32_t msgID,
                                              TcpPacket &request) {
   TcpPacket rsp;
 
@@ -219,8 +229,7 @@ TcpPacket FriendService::PullFriendApplyList(ChatSession::Ptr session,
   return rsp;
 }
 
-TcpPacket FriendService::PullFriendList(ChatSession::Ptr session,
-                                        uint32_t msgID, TcpPacket &request) {
+TcpPacket FriendService::PullFriendList(uint32_t msgID, TcpPacket &request) {
   TcpPacket rsp;
 
   int64_t uid = request.uid();

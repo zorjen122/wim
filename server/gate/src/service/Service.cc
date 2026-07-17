@@ -48,12 +48,12 @@ int requestVerifyCode(const std::string &email) {
   req.set_email(email);
   message::GetVarifyRsp rsp;
   grpc::ClientContext context;
-  auto deadline = RequestContextScope::CurrentDeadlineOr(
-      std::chrono::milliseconds(1000));
-  auto remaining = std::max(
-      std::chrono::duration_cast<std::chrono::milliseconds>(
-          deadline - RequestContext::Clock::now()),
-      std::chrono::milliseconds(0));
+  auto deadline =
+      RequestContextScope::CurrentDeadlineOr(std::chrono::milliseconds(1000));
+  auto remaining =
+      std::max(std::chrono::duration_cast<std::chrono::milliseconds>(
+                   deadline - RequestContext::Clock::now()),
+               std::chrono::milliseconds(0));
   context.set_deadline(std::chrono::system_clock::now() + remaining);
   auto status = stub->GetVarifyCode(&context, req, &rsp);
   if (status.error_code() == grpc::StatusCode::DEADLINE_EXCEEDED) {
@@ -267,7 +267,7 @@ bool Service::signIn(HttpSession::ResponsePtr response,
     return false;
   }
 
-  auto node = rpc::StateClient::GetInstance()->GetImServer(user->uid);
+  auto node = rpc::StateClient::GetInstance()->PickConnectionGateway(user->uid);
   if (node.empty()) {
     businessLogger->info("rpc request state service is fialed, user id as {} ",
                          user->uid);
@@ -285,6 +285,7 @@ bool Service::signIn(HttpSession::ResponsePtr response,
   rspInfo["uid"] = Json::Value::Int64(user->uid);
   rspInfo["ip"] = node.ip;
   rspInfo["port"] = node.port;
+  rspInfo["gatewayId"] = node.nodeId;
 
   // token 按 uid 覆盖并设置 TTL；持久化失败时不得返回可用登录结果。
   std::string chatAuthToken = GenerateChatAuthToken();
@@ -336,7 +337,8 @@ bool Service::chatArrhythmia(HttpSession::ResponsePtr response,
 
   auto uid = requestData["uid"].asInt();
   // Mysql select...
-  rpc::ServerNode node = rpc::StateClient::GetInstance()->GetImServer(uid);
+  rpc::ServerNode node =
+      rpc::StateClient::GetInstance()->PickConnectionGateway(uid);
   if (node.ip.empty() || node.port == 0) {
     businessLogger->error("[chat_arrhythmia] get im server failed");
     rspInfo["error"] = ErrorCodes::RPCFailed;

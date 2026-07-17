@@ -19,17 +19,20 @@ using ::state::StateService;
 class ServerNode {
  public:
   ServerNode() = default;
-  ServerNode(std::string ip, int port) : ip(ip), port(port) {}
+  ServerNode(std::string ip, int port, std::string nodeId = {})
+      : ip(std::move(ip)), port(port), nodeId(std::move(nodeId)) {}
 
   bool empty() {
     return ip.empty() || port == 0;
   }
   std::string ip;
   unsigned short port;
+  std::string nodeId;
 };
 
 class StateClient : public Singleton<StateClient> {
  public:
+  ServerNode PickConnectionGateway(int uid);
   ServerNode GetImServer(int uid);
   ServerNode ActiveImBackupServer(int uid);
   StateClient();

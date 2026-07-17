@@ -19,6 +19,10 @@
 
 namespace wim {
 
+namespace rpc {
+class GatewayStreamService;
+}
+
 class Service : public Singleton<Service> {
   friend class Singleton<Service>;
 
@@ -31,6 +35,9 @@ class Service : public Singleton<Service> {
   bool PostBackgroundTask(ThreadPool::Task task);
   DeliveryService &Deliveries();
   MessageService &Messages();
+  void SetGatewayStreamService(rpc::GatewayStreamService *service);
+  TcpPacket ExecuteGatewayCommand(uint32_t msgID, int64_t actorUid,
+                                  TcpPacket request);
 
  private:
   enum class TaskType { Light, Heavy };

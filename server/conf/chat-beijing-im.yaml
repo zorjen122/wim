@@ -1,9 +1,14 @@
 server:
+  transportSecurity:
+    environment: development
+    mode: insecure
   self:
     name : beijing-im
     host: 0.0.0.0
-    port: 8091
+    port: 8191
     rpcPort: 50056
+    legacyClientTcp: false
+    legacyPeerRpc: false
   im:
     s1:
       name: hunan-im

@@ -11,8 +11,7 @@
 
 namespace wim {
 
-TcpPacket FileService::Upload(ChatSession::Ptr session, uint32_t msgID,
-                              TcpPacket &request) {
+TcpPacket FileService::Upload(uint32_t msgID, TcpPacket &request) {
   TcpPacket rsp;
   int64_t clientSeq = request.seq();
   int64_t uid = request.uid();

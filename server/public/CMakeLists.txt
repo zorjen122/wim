@@ -4,7 +4,7 @@ project(imPublic)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS true)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(protobuf_MODULE_COMPATIBLE TRUE)
 
 # 仅用于clangd搜索
@@ -18,6 +18,7 @@ file(GLOB SOURCES src/*.cc)
 
 set(WIM_PUBLIC_PROTO_FILES
     proto/file.proto
+    proto/gateway_message.proto
     proto/im.proto
     proto/state.proto
     proto/tcp_message.proto)
@@ -63,6 +64,10 @@ if(BUILD_TESTING)
   target_include_directories(resourceDeadlineTest PRIVATE ./include)
   target_link_libraries(resourceDeadlineTest PRIVATE imPublic imProto)
   add_test(NAME public.resource_deadline COMMAND resourceDeadlineTest)
+  add_executable(gatewaySecurityTest test/gatewaySecurityTest.cc)
+  target_include_directories(gatewaySecurityTest PRIVATE ./include)
+  target_link_libraries(gatewaySecurityTest PRIVATE imPublic imProto)
+  add_test(NAME public.gateway_security COMMAND gatewaySecurityTest)
 endif()
 
 # 单元测试

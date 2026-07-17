@@ -1,0 +1,115 @@
+syntax = "proto3";
+
+package wim.gateway;
+
+// Gateway 建流后的首帧，用于声明节点身份和本次进程实例。
+message RegisterGateway {
+  uint32 protocol_version = 1; // Gateway-Message 流协议版本
+  string gateway_id = 2;       // 稳定的 Gateway 节点 ID
+  string instance_id = 3;      // Gateway 进程启动实例 UUID
+  uint64 stream_epoch = 4;     // 区分重连流的启动时间戳/纪元
+  uint32 capacity = 5;         // Gateway 声明的流发送队列容量
+}
+
+// Message 对 Gateway 注册帧的校验结果。
+message RegisterResult {
+  bool accepted = 1;           // 是否接受该 Gateway 流
+  string message_node_id = 2;  // 返回结果的 Message 节点 ID
+  uint64 stream_epoch = 3;     // Message 看到的 Gateway 流纪元
+  string reason = 4;           // 拒绝或诊断原因
+}
+
+// Gateway 转发给 Message Core 的单个客户端业务命令。
+message CommandEnvelope {
+  string request_id = 1;            // 跨流关联命令与结果的唯一请求 ID
+  int64 actor_uid = 2;               // 已由 Gateway 鉴权的操作者用户 ID
+  string connection_id = 3;         // 客户端物理连接 UUID
+  uint64 connection_generation = 4; // 用户在线 lease 的连接代次
+  uint32 service_id = 5;             // 客户端 TCP/TLV 业务协议 ID
+  int64 conversation_id = 6;         // 会话 ID；无会话命令为 0
+  int64 deadline_unix_ms = 7;        // 命令绝对截止时间，Unix 毫秒
+  bytes packet = 8;                  // 序列化后的 protocol.Packet
+}
+
+// Message Core 返回给入口 Gateway 的业务处理结果。
+message CommandResult {
+  string request_id = 1;         // 对应 CommandEnvelope.request_id
+  uint32 response_service_id = 2; // 发回客户端的响应协议 ID
+  int32 error = 3;                // 统一业务错误码
+  bool retryable = 4;             // 是否允许使用同一幂等键重试
+  bytes packet = 5;               // 序列化后的响应 protocol.Packet
+}
+
+// Message Core 发给目标 Gateway 的已持久化消息/通知。
+message DeliveryEnvelope {
+  string delivery_id = 1;             // 本次投递尝试的唯一 ID
+  int64 recipient_uid = 2;             // 目标用户 ID
+  string expected_connection_id = 3;   // 查询 lease 时看到的连接 UUID
+  uint64 expected_connection_generation = 4; // 查询 lease 时看到的连接代次
+  uint32 protocol_id = 5;              // 客户端接收的推送协议 ID
+  int64 message_id = 6;                // 持久化消息 ID；非消息通知可为 0
+  int64 conversation_id = 7;           // 所属会话 ID；非会话通知可为 0
+  int64 conversation_seq = 8;          // 会话内严格递增序号
+  bytes packet = 9;                     // 序列化后的推送 protocol.Packet
+}
+
+enum DeliveryStatus {
+  DELIVERY_STATUS_UNSPECIFIED = 0;  // 未指定投递结果
+  DELIVERY_STATUS_QUEUED = 1;       // 已进入客户端发送队列
+  DELIVERY_STATUS_OFFLINE = 2;      // 用户当前不在线
+  DELIVERY_STATUS_STALE_ROUTE = 3;  // connection/generation 已过期
+  DELIVERY_STATUS_BACKPRESSURED = 4; // 客户端发送队列已背压
+}
+
+// Gateway 对 DeliveryEnvelope 的接收/排队结果。
+message DeliveryAck {
+  string delivery_id = 1;     // 对应 DeliveryEnvelope.delivery_id
+  DeliveryStatus status = 2;  // Gateway 本地投递结果
+  string gateway_id = 3;      // 返回 ACK 的 Gateway 节点 ID
+  string instance_id = 4;     // 返回 ACK 的 Gateway 进程实例 UUID
+}
+
+// Gateway 定期发送的流级心跳。
+message StreamHeartbeat {
+  int64 sent_at_unix_ms = 1; // 发送时刻，Unix 毫秒
+  uint64 sequence = 2;       // 单调递增的心跳序号
+}
+
+// Message 对流级心跳的原样确认。
+message StreamHeartbeatAck {
+  int64 sent_at_unix_ms = 1; // 原心跳发送时刻，用于计算 RTT
+  uint64 sequence = 2;       // 对应 StreamHeartbeat.sequence
+}
+
+// Message 节点进入排空状态时通知所有已注册 Gateway。
+message DrainNotice {
+  string message_node_id = 1; // 正在排空的 Message 节点 ID
+  string reason = 2;          // 排空原因
+}
+
+// Gateway 沿双向流发送给 Message 的帧。
+message GatewayToMessageFrame {
+  oneof payload {
+    RegisterGateway register_gateway = 1; // 建流注册
+    CommandEnvelope command = 2;          // 客户端业务命令
+    DeliveryAck delivery_ack = 3;         // 下行投递结果
+    StreamHeartbeat heartbeat = 4;         // 流级心跳
+  }
+}
+
+// Message 沿双向流发送给 Gateway 的帧。
+message MessageToGatewayFrame {
+  oneof payload {
+    RegisterResult register_result = 1;       // 注册校验结果
+    CommandResult command_result = 2;         // 业务命令结果
+    DeliveryEnvelope delivery = 3;            // 面向客户端的下行投递
+    StreamHeartbeatAck heartbeat_ack = 4;     // 流级心跳响应
+    DrainNotice drain_notice = 5;              // Message 排空通知
+  }
+}
+
+service GatewayMessageTransport {
+  // 每对 Gateway-Message 节点复用的一条双向长流。
+  rpc Connect(stream GatewayToMessageFrame)
+      returns (stream MessageToGatewayFrame);
+}

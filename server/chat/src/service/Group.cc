@@ -13,8 +13,7 @@ namespace wim {
 GroupService::GroupService(DeliveryService &deliveryService)
     : deliveryService(deliveryService) {}
 
-TcpPacket GroupService::Create(ChatSession::Ptr session, unsigned int msgID,
-                               TcpPacket &request) {
+TcpPacket GroupService::Create(unsigned int msgID, TcpPacket &request) {
   TcpPacket rsp;
 
   int ret{};
@@ -58,6 +57,18 @@ int GroupService::NotifyMemberJoin(int64_t uid, int64_t gid,
       db::MysqlDao::GetInstance()->getGroupRoleMemberList(
           gid, db::GroupMember::Role::Manager);
   for (auto manager : managerList) {
+    int64_t serverSeq = db::RedisDao::GetInstance()->generateMsgId();
+    TcpPacket notifyRequest;
+    notifyRequest.set_uid(uid);
+    notifyRequest.set_gid(gid);
+    notifyRequest.set_content(requestMessage);
+    notifyRequest.set_seq(serverSeq);
+    notifyRequest.set_error(ErrorCodes::Success);
+    if (deliveryService.SendGateway(manager->uid,
+                                    SerializeTcpPacket(notifyRequest),
+                                    ID_GROUP_NOTIFY_JOIN_REQ, serverSeq))
+      continue;
+
     auto target = deliveryService.Locate(manager->uid);
     if (target.location == DeliveryService::Location::Remote) {
       // rpc
@@ -65,14 +76,6 @@ int GroupService::NotifyMemberJoin(int64_t uid, int64_t gid,
       continue;
     }
     if (target.location == DeliveryService::Location::Local) {
-      int64_t serverSeq = db::RedisDao::GetInstance()->generateMsgId();
-      TcpPacket notifyRequest;
-      notifyRequest.set_uid(uid);
-      notifyRequest.set_gid(gid);
-      notifyRequest.set_content(requestMessage);
-      notifyRequest.set_seq(serverSeq);
-      notifyRequest.set_error(ErrorCodes::Success);
-
       // 同好友申请一样，通知REQ发送到客户端则表示通知接收者
       deliveryService.SendLocalReliable(manager->uid, serverSeq,
                                         SerializeTcpPacket(notifyRequest),
@@ -82,8 +85,7 @@ int GroupService::NotifyMemberJoin(int64_t uid, int64_t gid,
   return 0;
 }
 
-TcpPacket GroupService::NotifyJoin(ChatSession::Ptr session, unsigned int msgID,
-                                   TcpPacket &request) {
+TcpPacket GroupService::NotifyJoin(unsigned int msgID, TcpPacket &request) {
   TcpPacket rsp;
 
   int64_t uid = request.uid();
@@ -127,8 +129,7 @@ TcpPacket GroupService::NotifyJoin(ChatSession::Ptr session, unsigned int msgID,
   return rsp;
 }
 
-TcpPacket GroupService::PullNotify(ChatSession::Ptr session, unsigned int msgID,
-                                   TcpPacket &request) {
+TcpPacket GroupService::PullNotify(unsigned int msgID, TcpPacket &request) {
   TcpPacket rsp;
   rsp.set_gid(request.gid());
 
@@ -161,6 +162,18 @@ int GroupService::NotifyMemberReply(int64_t gid, int64_t managerUid,
   db::GroupMember::MemberList memberList =
       db::MysqlDao::GetInstance()->getGroupMemberList(gid);
   for (auto member : memberList) {
+    int64_t serverSeq = db::RedisDao::GetInstance()->generateMsgId();
+    TcpPacket notifyRequest;
+    notifyRequest.set_requestor_uid(requestorUid);
+    notifyRequest.set_replyor_uid(managerUid);
+    notifyRequest.set_gid(gid);
+    notifyRequest.set_accept(accept);
+    notifyRequest.set_seq(serverSeq);
+    if (deliveryService.SendGateway(member->uid,
+                                    SerializeTcpPacket(notifyRequest),
+                                    ID_GROUP_REPLY_JOIN_REQ, serverSeq))
+      continue;
+
     auto target = deliveryService.Locate(member->uid);
     if (target.location == DeliveryService::Location::Remote) {
       // rpc
@@ -168,14 +181,6 @@ int GroupService::NotifyMemberReply(int64_t gid, int64_t managerUid,
       continue;
     }
     if (target.location == DeliveryService::Location::Local) {
-      int64_t serverSeq = db::RedisDao::GetInstance()->generateMsgId();
-      TcpPacket notifyRequest;
-      notifyRequest.set_requestor_uid(requestorUid);
-      notifyRequest.set_replyor_uid(managerUid);
-      notifyRequest.set_gid(gid);
-      notifyRequest.set_accept(accept);
-      notifyRequest.set_seq(serverSeq);
-
       // 同好友申请一样，通知REQ发送到客户端则表示通知接收者
       deliveryService.SendLocalReliable(member->uid, serverSeq,
                                         SerializeTcpPacket(notifyRequest),
@@ -185,8 +190,7 @@ int GroupService::NotifyMemberReply(int64_t gid, int64_t managerUid,
 
   return 0;
 }
-TcpPacket GroupService::ReplyJoin(ChatSession::Ptr session, unsigned int msgID,
-                                  TcpPacket &request) {
+TcpPacket GroupService::ReplyJoin(unsigned int msgID, TcpPacket &request) {
   TcpPacket rsp;
   rsp.set_gid(request.gid());
 
@@ -246,8 +250,7 @@ TcpPacket GroupService::ReplyJoin(ChatSession::Ptr session, unsigned int msgID,
   return rsp;
 }
 
-TcpPacket GroupService::Quit(ChatSession::Ptr session, unsigned int msgID,
-                             TcpPacket &request) {
+TcpPacket GroupService::Quit(unsigned int msgID, TcpPacket &request) {
   TcpPacket rsp;
   return rsp;
 }

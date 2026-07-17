@@ -1,0 +1,44 @@
+#pragma once
+
+#include "Redis.h"
+#include "gateway_message.pb.h"
+
+#include <cstdint>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <unordered_map>
+
+namespace wim::connection {
+
+class GatewaySession;
+
+class SessionRegistry {
+ public:
+  SessionRegistry(std::string gatewayId, std::string instanceId,
+                  long leaseTtlSeconds = 60);
+
+  db::SessionLease Bind(int64_t uid,
+                        const std::shared_ptr<GatewaySession> &session);
+  bool Refresh(int64_t uid, const db::SessionLease &lease);
+  void Remove(int64_t uid, const std::shared_ptr<GatewaySession> &session,
+              const db::SessionLease &lease);
+  gateway::DeliveryStatus Deliver(const gateway::DeliveryEnvelope &delivery);
+
+  const std::string &GatewayId() const;
+  const std::string &InstanceId() const;
+
+ private:
+  struct LocalSession {
+    std::weak_ptr<GatewaySession> session;
+    db::SessionLease lease;
+  };
+
+  std::string gatewayId;
+  std::string instanceId;
+  long leaseTtlSeconds;
+  std::mutex mutex;
+  std::unordered_map<int64_t, LocalSession> sessions;
+};
+
+}  // namespace wim::connection

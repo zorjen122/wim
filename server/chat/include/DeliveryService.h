@@ -1,9 +1,14 @@
 #pragma once
 
 #include <cstdint>
+#include <atomic>
 #include <string>
 
 namespace wim {
+
+namespace rpc {
+class GatewayStreamService;
+}
 
 class DeliveryService {
  public:
@@ -23,6 +28,11 @@ class DeliveryService {
   };
 
   Target Locate(int64_t uid) const;
+  void SetGatewayStreamService(rpc::GatewayStreamService *service);
+  bool SendGateway(int64_t uid, const std::string &packet, uint32_t protocolId,
+                   int64_t deliveryId = 0, int64_t messageId = 0,
+                   int64_t conversationId = 0,
+                   int64_t conversationSeq = 0) const;
   bool SendLocal(int64_t uid, const std::string &packet,
                  uint32_t protocolId) const;
   bool SendLocalReliable(int64_t uid, int64_t seq, const std::string &packet,
@@ -41,6 +51,9 @@ class DeliveryService {
                            int64_t to, const std::string &text, int64_t seq,
                            int64_t sessionKey,
                            const std::string &requestId) const;
+
+ private:
+  std::atomic<rpc::GatewayStreamService *> gatewayStreamService{nullptr};
 };
 
 }  // namespace wim

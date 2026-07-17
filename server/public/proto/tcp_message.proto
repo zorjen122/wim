@@ -4,109 +4,123 @@ package wim.protocol;
 
 // 对外消息生命周期；状态只能从 ACCEPTED 向 READ 单调推进。
 enum MessageState {
-  MESSAGE_STATE_UNSPECIFIED = 0;
-  MESSAGE_STATE_ACCEPTED = 1;
-  MESSAGE_STATE_DELIVERED = 2;
-  MESSAGE_STATE_READ = 3;
+  MESSAGE_STATE_UNSPECIFIED = 0; // 未指定消息状态
+  MESSAGE_STATE_ACCEPTED = 1;    // Message Core 已持久化接受
+  MESSAGE_STATE_DELIVERED = 2;   // 接收方客户端已确认送达
+  MESSAGE_STATE_READ = 3;        // 接收方客户端已确认已读
 }
 
 // TRANSPORT 只确认通知传输，DELIVERED/READ 才更新消息状态。
 enum ReceiptType {
-  RECEIPT_TYPE_UNSPECIFIED = 0;
-  RECEIPT_TYPE_DELIVERED = 1;
-  RECEIPT_TYPE_READ = 2;
-  RECEIPT_TYPE_TRANSPORT = 3;
+  RECEIPT_TYPE_UNSPECIFIED = 0; // 未指定回执类型
+  RECEIPT_TYPE_DELIVERED = 1;   // 业务送达回执
+  RECEIPT_TYPE_READ = 2;        // 业务已读回执
+  RECEIPT_TYPE_TRANSPORT = 3;   // Gateway 物理传输确认
 }
 
 message UserInfo {
-  int64 uid = 1;
-  string name = 2;
-  int32 age = 3;
-  string sex = 4;
-  string head_image_url = 5;
+  int64 uid = 1;             // 用户 ID
+  string name = 2;           // 用户显示名称
+  int32 age = 3;             // 用户年龄
+  string sex = 4;            // 用户性别文本
+  string head_image_url = 5; // 用户头像地址
 }
 
 message FriendApply {
-  int64 from = 1;
-  int64 to = 2;
-  int32 status = 3;
-  string content = 4;
-  string apply_date_time = 5;
-  string create_time = 6;
+  int64 from = 1;               // 申请人用户 ID
+  int64 to = 2;                 // 被申请人用户 ID
+  int32 status = 3;             // 好友申请状态
+  string content = 4;           // 好友申请附言
+  string apply_date_time = 5;   // 申请处理时间
+  string create_time = 6;       // 申请创建时间
 }
 
 message ChatMessage {
-  int64 message_id = 1;
-  int64 from = 2;
-  int64 to = 3;
-  int32 type = 4;
-  string content = 5;
-  int32 status = 6;
-  string send_date_time = 7;
-  string read_date_time = 8;
+  int64 message_id = 1;          // 服务端持久消息 ID
+  int64 from = 2;                // 发送者用户 ID
+  int64 to = 3;                  // 接收用户或群组 ID
+  int32 type = 4;                // 消息内容类型
+  string content = 5;            // 消息正文
+  int32 status = 6;              // 消息生命周期状态
+  string send_date_time = 7;     // 消息发送时间
+  string read_date_time = 8;     // 消息已读时间
+  int64 conversation_id = 9;     // 所属会话 ID
+  int64 conversation_seq = 10;   // 会话内严格递增序号
+  string client_message_id = 11; // 客户端生成的持久幂等键
+}
+
+enum ConversationType {
+  CONVERSATION_TYPE_UNSPECIFIED = 0; // 未指定会话类型
+  CONVERSATION_TYPE_DIRECT = 1;      // 单聊会话
+  CONVERSATION_TYPE_GROUP = 2;       // 群聊会话
 }
 
 message GroupMember {
-  int64 uid = 1;
-  string name = 2;
-  string join_time = 3;
-  int32 role = 4;
-  int32 speech = 5;
+  int64 uid = 1;         // 群成员用户 ID
+  string name = 2;       // 群内显示名称
+  string join_time = 3;  // 加群时间
+  int32 role = 4;        // 群成员角色
+  int32 speech = 5;      // 禁言/发言状态
 }
 
+// 客户端 TCP/TLV 的通用 Protobuf 载荷；字段按具体 service_id 组合使用。
 message Packet {
-  optional int64 uid = 1;
-  optional int64 seq = 2;
-  optional int64 from = 3;
-  optional int64 to = 4;
-  optional bytes data = 5;
-  optional int64 session_key = 6;
-  optional int32 error = 7;
-  optional string message = 8;
-  optional string status = 9;
-  optional bool accept = 10;
-  optional string request_message = 11;
-  optional string reply_message = 12;
-  optional string username = 13;
-  optional string name = 14;
-  optional int32 age = 15;
-  optional string sex = 16;
-  optional string head_image_url = 17;
-  optional bool init = 18;
-  optional string file_name = 19;
-  optional string file_type = 20;
-  optional int32 type = 21;
-  optional int64 last_msg_id = 22;
-  optional int32 limit = 23;
-  optional int64 gid = 24;
-  optional int64 group_id = 25;
-  optional string group_name = 26;
-  optional int64 manager_uid = 27;
-  optional int64 requestor_uid = 28;
-  optional int64 replyor_uid = 29;
-  optional string content = 30;
-  optional string create_time = 31;
-  optional string apply_date_time = 32;
-  optional string send_date_time = 33;
-  optional string read_date_time = 34;
-  optional string join_time = 35;
-  optional int32 role = 36;
-  optional int32 speech = 37;
-  optional bool skip_storage = 38;
-  // Gate 签发的短期登录凭证，仅在 Chat 登录请求中使用。
-  optional string auth_token = 39;
-  // 服务端稳定消息 ID；与客户端幂等命令 seq 分离。
-  optional int64 message_id = 40;
-  optional MessageState message_state = 41;
-  optional ReceiptType receipt_type = 42;
-  optional bool retryable = 43;
-  // Relative client budget, clamped by the server-side request timeout.
-  optional uint32 request_timeout_ms = 44;
-  // Stable command correlation id; seq remains the text idempotency key.
-  optional string request_id = 45;
+  optional int64 uid = 1;                   // 用户 ID
+  optional int64 seq = 2;                   // 客户端包序号/传输 ACK 序号
+  optional int64 from = 3;                  // 发送者用户 ID
+  optional int64 to = 4;                    // 接收者用户 ID
+  optional bytes data = 5;                  // 文本或二进制业务数据
+  optional int64 session_key = 6;           // 兼容旧协议的会话键
+  optional int32 error = 7;                 // 统一业务错误码
+  optional string message = 8;              // 面向客户端的错误/提示文本
+  optional string status = 9;               // 兼容旧接口的状态文本
+  optional bool accept = 10;                // 是否接受申请或操作
+  optional string request_message = 11;     // 申请附言
+  optional string reply_message = 12;       // 回复附言
+  optional string username = 13;            // 登录用户名
+  optional string name = 14;                // 用户或成员显示名称
+  optional int32 age = 15;                  // 用户年龄
+  optional string sex = 16;                 // 用户性别文本
+  optional string head_image_url = 17;      // 用户头像地址
+  optional bool init = 18;                  // 是否首次初始化用户资料
+  optional string file_name = 19;           // 文件名
+  optional string file_type = 20;           // 文件类型文本
+  optional int32 type = 21;                 // 消息/业务类型
+  optional int64 last_msg_id = 22;          // 旧消息拉取游标
+  optional int32 limit = 23;                // 单次拉取数量上限
+  optional int64 gid = 24;                  // 群组业务 ID
+  optional int64 group_id = 25;             // 群组 ID 兼容字段
+  optional string group_name = 26;          // 群组名称
+  optional int64 manager_uid = 27;          // 群管理员用户 ID
+  optional int64 requestor_uid = 28;        // 群申请人用户 ID
+  optional int64 replyor_uid = 29;          // 群申请处理人用户 ID
+  optional string content = 30;             // 文本内容或申请内容
+  optional string create_time = 31;         // 记录创建时间
+  optional string apply_date_time = 32;     // 申请处理时间
+  optional string send_date_time = 33;      // 消息发送时间
+  optional string read_date_time = 34;      // 消息已读时间
+  optional string join_time = 35;           // 成员加群时间
+  optional int32 role = 36;                 // 群成员角色
+  optional int32 speech = 37;               // 群成员禁言/发言状态
+  optional bool skip_storage = 38;           // 是否跳过旧路径的消息落库
+  optional string auth_token = 39;           // Gate 签发的短期连接凭证
+  optional int64 message_id = 40;            // 服务端持久消息 ID
+  optional MessageState message_state = 41;  // 消息生命周期状态
+  optional ReceiptType receipt_type = 42;    // ACK 回执类型
+  optional bool retryable = 43;              // 当前错误是否允许重试
+  optional uint32 request_timeout_ms = 44;   // 客户端请求相对超时预算
+  optional string request_id = 45;           // 命令与响应的稳定关联 ID
+  optional int64 conversation_id = 46;       // 会话 ID
+  optional int64 conversation_seq = 47;      // 会话内严格递增序号
+  optional string client_message_id = 48;    // 客户端持久幂等键
+  optional int64 after_seq = 49;              // 增量同步的起始序号（不含）
 
-  repeated UserInfo friend_list = 50;
-  repeated FriendApply apply_list = 51;
-  repeated ChatMessage message_list = 52;
-  repeated GroupMember member_list = 53;
+  repeated UserInfo friend_list = 50;         // 好友资料列表
+  repeated FriendApply apply_list = 51;       // 好友申请列表
+  repeated ChatMessage message_list = 52;     // 聊天消息列表
+  repeated GroupMember member_list = 53;      // 群成员列表
+  optional int64 next_seq = 54;               // 下一页继续同步的序号
+  optional bool has_more = 55;                // 是否仍有后续消息
+  optional int64 latest_seq = 56;             // 会话当前最新序号
+  optional ConversationType conversation_type = 57; // 会话类型
 }
