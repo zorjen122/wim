@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=WIM
+Comment=Local-first instant messaging client
+Comment[zh_CN]=本地优先的即时通信客户端
+Exec=wim-client
+Icon=wim-client
+Terminal=false
+Categories=Network;Chat;InstantMessaging;
+Keywords=chat;messaging;im;
+StartupNotify=true
+StartupWMClass=wim-client
+X-GNOME-UsesNotifications=true
