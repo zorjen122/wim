@@ -16,6 +16,7 @@ struct GateSession {
   QString gatewayId;
   QString token;
   qint64 tokenExpiresInSeconds{};
+  QString profileName;
   bool profileInitializationRequired{};
 };
 

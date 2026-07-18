@@ -56,6 +56,69 @@ Rectangle {
 
             GroupBox {
                 Layout.fillWidth: true
+                title: qsTr("服务端")
+
+                ColumnLayout {
+                    anchors.fill: parent
+
+                    Label {
+                        Layout.fillWidth: true
+                        text: root.controller.networkEnabled
+                              ? qsTr("当前使用服务端模式")
+                              : qsTr("当前使用本地预览模式")
+                        color: Theme.textPrimary
+                        font.pixelSize: Typography.body
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+
+                        TextField {
+                            id: gateUrlField
+                            Layout.fillWidth: true
+                            text: root.controller.gateUrl
+                            placeholderText: qsTr("http://192.168.1.10:18080")
+                            inputMethodHints: Qt.ImhUrlCharactersOnly
+                            selectByMouse: true
+                            Accessible.name: qsTr("Auth Gate 地址")
+                        }
+
+                        Button {
+                            text: qsTr("保存")
+                            onClicked: root.controller.saveGateUrl(
+                                           gateUrlField.text.trim())
+                        }
+                    }
+
+                    Label {
+                        Layout.fillWidth: true
+                        visible: root.controller.gateConfigurationStatus
+                                 !== "idle"
+                        text: root.controller.gateConfigurationStatus
+                              === "invalid"
+                              ? qsTr("地址无效，请使用 http:// 或 https:// 地址。")
+                              : root.controller.gateConfigurationStatus
+                                === "restart-required"
+                                ? qsTr("已保存，请完全退出并重新启动客户端后生效。")
+                                : qsTr("服务器地址已保存。")
+                        color: root.controller.gateConfigurationStatus
+                               === "invalid" ? Theme.error : Theme.success
+                        font.pixelSize: Typography.bodySmall
+                        wrapMode: Text.Wrap
+                    }
+
+                    Label {
+                        Layout.fillWidth: true
+                        text: qsTr("真机不能使用 127.0.0.1；请填写手机可访问的局域网 Auth Gate 地址。清空地址可在下次启动时返回本地预览模式。")
+                        color: Theme.textSecondary
+                        font.pixelSize: Typography.bodySmall
+                        wrapMode: Text.Wrap
+                    }
+                }
+            }
+
+            GroupBox {
+                Layout.fillWidth: true
                 title: qsTr("通知")
 
                 ColumnLayout {

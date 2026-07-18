@@ -91,7 +91,8 @@ ApplicationWindow {
                 Switch {
                     checked: Theme.dark
                     text: window.width >= 820 ? qsTr("深色") : ""
-                    icon.name: Icons.moon
+                    icon.source: Icons.moon
+                    icon.color: Theme.textSecondary
                     onToggled: Theme.dark = checked
                     Accessible.name: qsTr("切换深色主题")
                 }
@@ -114,10 +115,13 @@ ApplicationWindow {
     }
 
     AuthPage {
+        id: authPage
         anchors.fill: parent
         z: 100
         visible: app.authRequired
         networkMode: app.networkEnabled
+        gateUrl: app.gateUrl
+        gateConfigurationStatus: app.gateConfigurationStatus
         busy: app.authenticationBusy
         externalError: app.authenticationError
         reasonText: app.networkEnabled
@@ -125,6 +129,23 @@ ApplicationWindow {
                     : qsTr("登录状态已过期。你的本地会话仍然保留，重新登录后继续同步。")
         onAuthenticationRequested: (username, password) =>
             app.authenticate(username, password)
+        onVerificationCodeRequested: email =>
+            app.requestVerificationCode(email)
+        onRegistrationRequested: (username, password, email,
+                                  verificationCode) =>
+            app.registerAccount(username, password, email, verificationCode)
+        onPasswordResetRequested: (username, email, verificationCode,
+                                   newPassword) =>
+            app.resetPassword(username, email, verificationCode, newPassword)
+        onGateUrlSaveRequested: gateUrl => app.saveGateUrl(gateUrl)
         onAuthenticated: app.completeAuthentication()
+    }
+
+    Connections {
+        target: app
+
+        function onAuthenticationOperationSucceeded(operation, message) {
+            authPage.completeNetworkOperation(operation, message)
+        }
     }
 }

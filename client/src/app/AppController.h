@@ -56,6 +56,9 @@ class AppController : public QObject {
                  authenticationStateChanged)
   Q_PROPERTY(QString serviceActionStatus READ serviceActionStatus NOTIFY
                  serviceActionStatusChanged)
+  Q_PROPERTY(QString gateUrl READ gateUrl NOTIFY gateConfigurationChanged)
+  Q_PROPERTY(QString gateConfigurationStatus READ gateConfigurationStatus NOTIFY
+                 gateConfigurationChanged)
   Q_PROPERTY(int requestedWindowWidth READ requestedWindowWidth CONSTANT)
   Q_PROPERTY(int requestedWindowHeight READ requestedWindowHeight CONSTANT)
   Q_PROPERTY(bool darkThemeRequested READ darkThemeRequested CONSTANT)
@@ -94,6 +97,8 @@ class AppController : public QObject {
   bool authenticationBusy() const;
   QString authenticationError() const;
   QString serviceActionStatus() const;
+  QString gateUrl() const;
+  QString gateConfigurationStatus() const;
   int requestedWindowWidth() const;
   int requestedWindowHeight() const;
   bool darkThemeRequested() const;
@@ -121,12 +126,21 @@ class AppController : public QObject {
   Q_INVOKABLE void resolveRequest(int index, bool accepted);
   Q_INVOKABLE void authenticate(const QString &username,
                                 const QString &password);
+  Q_INVOKABLE void requestVerificationCode(const QString &email);
+  Q_INVOKABLE void registerAccount(const QString &username,
+                                   const QString &password,
+                                   const QString &email,
+                                   const QString &verificationCode);
+  Q_INVOKABLE void resetPassword(const QString &username, const QString &email,
+                                 const QString &verificationCode,
+                                 const QString &newPassword);
   Q_INVOKABLE void startConversationWithSelectedContact();
   Q_INVOKABLE void sendFriendRequest(const QString &uid,
                                      const QString &message);
   Q_INVOKABLE void createGroup(const QString &name);
   Q_INVOKABLE void joinGroup(const QString &groupId, const QString &message);
   Q_INVOKABLE void completeAuthentication();
+  Q_INVOKABLE void saveGateUrl(const QString &gateUrl);
   Q_INVOKABLE void sendTestDesktopNotification();
 
  signals:
@@ -138,7 +152,10 @@ class AppController : public QObject {
   void selectedContactChanged();
   void authRequiredChanged();
   void authenticationStateChanged();
+  void authenticationOperationSucceeded(const QString &operation,
+                                        const QString &message);
   void serviceActionStatusChanged();
+  void gateConfigurationChanged();
   void notificationTestStatusChanged();
 
  private:
@@ -155,8 +172,10 @@ class AppController : public QObject {
                             bool outcomeUnknown);
   void SyncKnownConversations();
   void ResumePendingOutgoing();
+  void AcknowledgeConversationRead(int index);
   QString EnsureDirectConversation(std::int64_t peerUid, const QString &title,
                                    const QString &avatarColor);
+  QString EnsureGroupConversation(std::int64_t groupId, const QString &title);
   void AttachRemoteConversation(const QString &localConversationId,
                                 std::int64_t remoteConversationId);
   void SetConnectionStatus(const QString &status);
@@ -192,8 +211,11 @@ class AppController : public QObject {
   QHash<QString, std::int64_t> outgoing_request_messages_;
   QHash<QString, QString> sync_request_conversations_;
   QHash<QString, int> friend_reply_requests_;
+  QHash<QString, QString> create_group_requests_;
   QString authentication_error_;
   QString service_action_status_;
+  QString gate_url_;
+  QString gate_configuration_status_{QStringLiteral("idle")};
   QString notification_test_status_{QStringLiteral("idle")};
 };
 

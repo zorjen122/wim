@@ -41,8 +41,8 @@ Rectangle {
             }
 
             ToolButton {
-                text: Icons.compose
-                font.pixelSize: Typography.title
+                icon.source: Icons.compose
+                icon.color: Theme.textPrimary
                 Accessible.name: qsTr("新建会话")
             }
         }
@@ -53,9 +53,21 @@ Rectangle {
             Layout.leftMargin: Tokens.space3
             Layout.rightMargin: Tokens.space3
             Layout.bottomMargin: Tokens.space2
-            placeholderText: Icons.search + "  " + qsTr("搜索会话")
+            leftPadding: searchIcon.width + Tokens.space3 * 2
+            placeholderText: qsTr("搜索会话")
             selectByMouse: true
             Accessible.name: qsTr("搜索会话")
+
+            AppIcon {
+                id: searchIcon
+                anchors.left: parent.left
+                anchors.leftMargin: Tokens.space3
+                anchors.verticalCenter: parent.verticalCenter
+                width: 18
+                height: 18
+                source: Icons.search
+                color: Theme.textSecondary
+            }
 
             background: Rectangle {
                 radius: Tokens.radiusMedium

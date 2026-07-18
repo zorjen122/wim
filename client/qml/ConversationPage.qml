@@ -29,8 +29,8 @@ Rectangle {
 
                 ToolButton {
                     visible: root.compactMode
-                    text: Icons.back
-                    font.pixelSize: Typography.headline
+                    icon.source: Icons.back
+                    icon.color: Theme.textPrimary
                     onClicked: root.backRequested()
                     Accessible.name: qsTr("返回会话列表")
                 }
@@ -64,12 +64,14 @@ Rectangle {
                 }
 
                 ToolButton {
-                    text: Icons.search
+                    icon.source: Icons.search
+                    icon.color: Theme.textSecondary
                     Accessible.name: qsTr("在会话中搜索")
                 }
 
                 ToolButton {
-                    text: Icons.more
+                    icon.source: Icons.more
+                    icon.color: Theme.textSecondary
                     onClicked: detailsDrawer.open()
                     Accessible.name: qsTr("会话详情")
                 }
@@ -91,8 +93,10 @@ Rectangle {
             ListView {
                 id: timeline
                 anchors.fill: parent
-                anchors.leftMargin: Math.max(Tokens.space3, (width - 900) / 2)
-                anchors.rightMargin: Math.max(Tokens.space3, (width - 900) / 2)
+                anchors.leftMargin: Math.max(Tokens.space3,
+                                             (parent.width - 900) / 2)
+                anchors.rightMargin: Math.max(Tokens.space3,
+                                              (parent.width - 900) / 2)
                 anchors.topMargin: Tokens.space3
                 anchors.bottomMargin: Tokens.space2
                 visible: root.controller.selectedConversationIndex >= 0

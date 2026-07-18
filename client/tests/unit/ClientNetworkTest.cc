@@ -1,8 +1,8 @@
 #include "adapters/connection_gateway/ClientProtocol.h"
 #include "adapters/connection_gateway/ConnectionGatewayClient.h"
+#include "adapters/connection_gateway/ProtobufPacketCodec.h"
 #include "adapters/connection_gateway/TcpFrameCodec.h"
 #include "adapters/gate/GateHttpClient.h"
-#include "tcp_message.pb.h"
 
 #include <QHash>
 #include <QJsonDocument>
@@ -18,17 +18,16 @@ namespace {
 
 wim::protocol::Packet ParsePacket(const QByteArray &payload) {
   wim::protocol::Packet packet;
-  const bool parsed =
-      packet.ParseFromArray(payload.constData(), payload.size());
+  const bool parsed = ParseProtobufPacket(payload, &packet);
   Q_ASSERT(parsed);
   return packet;
 }
 
 QByteArray PacketPayload(const wim::protocol::Packet &packet) {
-  std::string payload;
-  const bool serialized = packet.SerializeToString(&payload);
+  QByteArray payload;
+  const bool serialized = SerializeProtobufPacket(packet, &payload);
   Q_ASSERT(serialized);
-  return QByteArray::fromStdString(payload);
+  return payload;
 }
 
 void WriteHttpJson(QTcpSocket *socket, const QJsonObject &object) {
@@ -48,11 +47,66 @@ class ClientNetworkTest final : public QObject {
   Q_OBJECT
 
  private slots:
+  void qtProtobufMatchesCanonicalWireFormat();
+  void optionalPacketTimestampDefaultsToEmpty();
   void gateSignInParsesGatewaySession();
   void gateCoversAccountRequests();
   void gatewayCoversSupportedRequestAndReceiptContracts();
   void gatewayReconnectsAndAuthenticatesAgain();
 };
+
+void ClientNetworkTest::qtProtobufMatchesCanonicalWireFormat() {
+  const QByteArray canonicalWire = QByteArray::fromHex(
+      "082a2a0568656c6c6f3800ba0208746f6b656e2d3432c002d936c80201ea0209"
+      "726571756573742d31f002c13ef80209820308636c69656e742d31920309082b"
+      "1205416c696365");
+
+  wim::protocol::UserInfo friendInfo;
+  friendInfo.setUid(43);
+  friendInfo.setName(QStringLiteral("Alice"));
+  wim::protocol::Packet packet;
+  packet.setUid(42);
+  packet.setData(QByteArrayLiteral("hello"));
+  packet.setError(0);
+  packet.setAuthToken(QStringLiteral("token-42"));
+  packet.setMessageId(7001);
+  packet.setMessageState(
+      wim::protocol::MessageStateGadget::MessageState::MESSAGE_STATE_ACCEPTED);
+  packet.setRequestId(QStringLiteral("request-1"));
+  packet.setConversationId(8001);
+  packet.setConversationSeq(9);
+  packet.setClientMessageId(QStringLiteral("client-1"));
+  packet.setFriendList({friendInfo});
+
+  QCOMPARE(PacketPayload(packet), canonicalWire);
+
+  const auto parsed = ParsePacket(canonicalWire);
+  QCOMPARE(parsed.uid(), 42);
+  QCOMPARE(parsed.data(), QByteArrayLiteral("hello"));
+  QVERIFY(parsed.hasError());
+  QCOMPARE(parsed.error(), 0);
+  QCOMPARE(parsed.authToken(), QStringLiteral("token-42"));
+  QCOMPARE(parsed.messageId(), 7001);
+  QCOMPARE(
+      parsed.messageState(),
+      wim::protocol::MessageStateGadget::MessageState::MESSAGE_STATE_ACCEPTED);
+  QCOMPARE(parsed.requestId(), QStringLiteral("request-1"));
+  QCOMPARE(parsed.conversationId(), 8001);
+  QCOMPARE(parsed.conversationSeq(), 9);
+  QCOMPARE(parsed.clientMessageId(), QStringLiteral("client-1"));
+  QCOMPARE(parsed.friendList().size(), 1);
+  QCOMPARE(parsed.friendList().constFirst().uid(), 43);
+  QCOMPARE(parsed.friendList().constFirst().name(), QStringLiteral("Alice"));
+}
+
+void ClientNetworkTest::optionalPacketTimestampDefaultsToEmpty() {
+  wim::protocol::Packet packet;
+  QCOMPARE(PacketSendDateTimeOrEmpty(packet), QString{});
+
+  packet.setSendDateTime(QStringLiteral("2026-07-17 23:45:00"));
+  QCOMPARE(PacketSendDateTimeOrEmpty(packet),
+           QStringLiteral("2026-07-17 23:45:00"));
+}
 
 void ClientNetworkTest::gateSignInParsesGatewaySession() {
   QTcpServer server;
@@ -101,6 +155,7 @@ void ClientNetworkTest::gateSignInParsesGatewaySession() {
   QCOMPARE(session.gatewayId, QStringLiteral("gateway-a"));
   QCOMPARE(session.token, QStringLiteral("secret"));
   QCOMPARE(session.tokenExpiresInSeconds, 900);
+  QCOMPARE(session.profileName, QStringLiteral("zongjing"));
   QVERIFY(session.profileInitializationRequired);
 }
 
@@ -169,18 +224,17 @@ void ClientNetworkTest::gatewayCoversSupportedRequestAndReceiptContracts() {
         const auto packet = ParsePacket(frame.payload);
         if (frame.serviceId == protocol::LoginRequest) {
           QCOMPARE(packet.uid(), 42);
-          QCOMPARE(QString::fromStdString(packet.auth_token()),
-                   QStringLiteral("token-42"));
+          QCOMPARE(packet.authToken(), QStringLiteral("token-42"));
           wim::protocol::Packet response;
-          response.set_error(protocol::Success);
-          response.set_uid(42);
+          response.setError(protocol::Success);
+          response.setUid(42);
           serverSocket->write(TcpFrameCodec::Encode(protocol::LoginResponse,
                                                     PacketPayload(response)));
           continue;
         }
         if (frame.serviceId == protocol::QuitRequest) {
           wim::protocol::Packet response;
-          response.set_error(protocol::Success);
+          response.setError(protocol::Success);
           serverSocket->write(TcpFrameCodec::Encode(protocol::QuitResponse,
                                                     PacketPayload(response)));
           continue;
@@ -192,14 +246,15 @@ void ClientNetworkTest::gatewayCoversSupportedRequestAndReceiptContracts() {
         requestServices.push_back(frame.serviceId);
         packets.insert(frame.serviceId, packet);
         wim::protocol::Packet response;
-        response.set_error(protocol::Success);
+        response.setError(protocol::Success);
         if (frame.serviceId == protocol::SendTextRequest ||
             frame.serviceId == protocol::SendGroupTextRequest) {
-          response.set_client_message_id(packet.client_message_id());
-          response.set_message_id(7001);
-          response.set_conversation_id(8001);
-          response.set_conversation_seq(9);
-          response.set_message_state(wim::protocol::MESSAGE_STATE_ACCEPTED);
+          response.setClientMessageId(packet.clientMessageId());
+          response.setMessageId(7001);
+          response.setConversationId(8001);
+          response.setConversationSeq(9);
+          response.setMessageState(wim::protocol::MessageStateGadget::
+                                       MessageState::MESSAGE_STATE_ACCEPTED);
         }
         serverSocket->write(TcpFrameCodec::Encode(
             protocol::ResponseFor(frame.serviceId), PacketPayload(response)));
@@ -262,30 +317,28 @@ void ClientNetworkTest::gatewayCoversSupportedRequestAndReceiptContracts() {
   }
   QCOMPARE(requestServices.count(protocol::PullFriendListRequest), 2);
 
-  QCOMPARE(packets[protocol::PullSessionMessagesRequest].conversation_id(),
+  QCOMPARE(packets[protocol::PullSessionMessagesRequest].conversationId(),
            8001);
-  QCOMPARE(packets[protocol::PullSessionMessagesRequest].after_seq(), 7);
+  QCOMPARE(packets[protocol::PullSessionMessagesRequest].afterSeq(), 7);
   QCOMPARE(packets[protocol::SendTextRequest].to(), 43);
-  QCOMPARE(QString::fromStdString(
-               packets[protocol::SendTextRequest].client_message_id()),
+  QCOMPARE(packets[protocol::SendTextRequest].clientMessageId(),
            QStringLiteral("client-text"));
   QCOMPARE(packets[protocol::SendGroupTextRequest].gid(), 5001);
-  QCOMPARE(
-      QString::fromStdString(packets[protocol::UploadFileRequest].file_type()),
-      QStringLiteral("TEXT"));
+  QCOMPARE(packets[protocol::UploadFileRequest].fileType(),
+           QStringLiteral("TEXT"));
   for (const quint32 service : expectedServices) {
-    QVERIFY(!QString::fromStdString(packets[service].request_id()).isEmpty());
-    QCOMPARE(packets[service].request_timeout_ms(), 3000U);
+    QVERIFY(!packets[service].requestId().isEmpty());
+    QCOMPARE(packets[service].requestTimeoutMs(), 3000U);
   }
 
   wim::protocol::Packet push;
-  push.set_from(43);
-  push.set_to(42);
-  push.set_data("incoming");
-  push.set_seq(7002);
-  push.set_message_id(7002);
-  push.set_conversation_id(8001);
-  push.set_conversation_seq(10);
+  push.setFrom(43);
+  push.setTo(42);
+  push.setData(QByteArrayLiteral("incoming"));
+  push.setSeq(7002);
+  push.setMessageId(7002);
+  push.setConversationId(8001);
+  push.setConversationSeq(10);
   serverSocket->write(
       TcpFrameCodec::Encode(protocol::SendTextRequest, PacketPayload(push)));
   QTRY_COMPARE(pushes.count(), 1);
@@ -294,12 +347,17 @@ void ClientNetworkTest::gatewayCoversSupportedRequestAndReceiptContracts() {
   gateway.AcknowledgeDelivered(7002, 8001, 10);
   gateway.AcknowledgeRead(7002, 8001, 10);
   QTRY_COMPARE(receipts.size(), 3);
-  QCOMPARE(receipts[0].receipt_type(), wim::protocol::RECEIPT_TYPE_TRANSPORT);
-  QVERIFY(!receipts[0].has_conversation_id());
-  QCOMPARE(receipts[1].receipt_type(), wim::protocol::RECEIPT_TYPE_DELIVERED);
-  QCOMPARE(receipts[1].conversation_id(), 8001);
-  QCOMPARE(receipts[1].conversation_seq(), 10);
-  QCOMPARE(receipts[2].receipt_type(), wim::protocol::RECEIPT_TYPE_READ);
+  QCOMPARE(
+      receipts[0].receiptType(),
+      wim::protocol::ReceiptTypeGadget::ReceiptType::RECEIPT_TYPE_TRANSPORT);
+  QVERIFY(!receipts[0].hasConversationId());
+  QCOMPARE(
+      receipts[1].receiptType(),
+      wim::protocol::ReceiptTypeGadget::ReceiptType::RECEIPT_TYPE_DELIVERED);
+  QCOMPARE(receipts[1].conversationId(), 8001);
+  QCOMPARE(receipts[1].conversationSeq(), 10);
+  QCOMPARE(receipts[2].receiptType(),
+           wim::protocol::ReceiptTypeGadget::ReceiptType::RECEIPT_TYPE_READ);
 
   gateway.Close();
   QTRY_COMPARE(gateway.CurrentState(),
@@ -310,22 +368,25 @@ void ClientNetworkTest::gatewayReconnectsAndAuthenticatesAgain() {
   QTcpServer server;
   QVERIFY(server.listen(QHostAddress::LocalHost, 0));
   int acceptedConnections = 0;
+  QVector<wim::protocol::Packet> loginPackets;
 
   connect(&server, &QTcpServer::newConnection, this, [&] {
     auto *socket = server.nextPendingConnection();
     ++acceptedConnections;
     auto codec = QSharedPointer<TcpFrameCodec>::create();
-    connect(socket, &QTcpSocket::readyRead, socket, [socket, codec] {
-      for (const auto &frame : codec->Feed(socket->readAll())) {
-        if (frame.serviceId != protocol::LoginRequest) {
-          continue;
-        }
-        wim::protocol::Packet response;
-        response.set_error(protocol::Success);
-        socket->write(TcpFrameCodec::Encode(protocol::LoginResponse,
-                                            PacketPayload(response)));
-      }
-    });
+    connect(socket, &QTcpSocket::readyRead, socket,
+            [socket, codec, &loginPackets] {
+              for (const auto &frame : codec->Feed(socket->readAll())) {
+                if (frame.serviceId != protocol::LoginRequest) {
+                  continue;
+                }
+                loginPackets.push_back(ParsePacket(frame.payload));
+                wim::protocol::Packet response;
+                response.setError(protocol::Success);
+                socket->write(TcpFrameCodec::Encode(protocol::LoginResponse,
+                                                    PacketPayload(response)));
+              }
+            });
   });
 
   ConnectionGatewayClient gateway;
@@ -336,15 +397,22 @@ void ClientNetworkTest::gatewayReconnectsAndAuthenticatesAgain() {
       .gatewayPort = server.serverPort(),
       .token = QStringLiteral("token-55"),
       .tokenExpiresInSeconds = 900,
+      .profileName = QStringLiteral("new-user"),
+      .profileInitializationRequired = true,
   });
   QTRY_COMPARE(authenticated.count(), 1);
   QCOMPARE(acceptedConnections, 1);
+  QCOMPARE(loginPackets.size(), 1);
+  QVERIFY(loginPackets[0].init());
+  QCOMPARE(loginPackets[0].name(), QStringLiteral("new-user"));
 
   const auto sockets = server.findChildren<QTcpSocket *>();
   QVERIFY(!sockets.isEmpty());
   sockets.front()->disconnectFromHost();
   QTRY_COMPARE_WITH_TIMEOUT(authenticated.count(), 2, 3000);
   QCOMPARE(acceptedConnections, 2);
+  QCOMPARE(loginPackets.size(), 2);
+  QVERIFY(!loginPackets[1].init());
   gateway.Close();
 }
 

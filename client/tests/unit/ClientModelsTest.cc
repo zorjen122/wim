@@ -121,6 +121,7 @@ class ClientModelsTest final : public QObject {
   void emptyAndOfflineScenariosAreDeterministic();
   void largeHistoryScenarioExercisesModelScale();
   void conversationRolesExposeSnapshotData();
+  void conversationUnreadCountUpdatesByConversation();
   void deliveryStateRejectsRegression();
   void draftsAreScopedToConversation();
   void sendLifecycleSurvivesConversationSwitch();
@@ -206,6 +207,22 @@ void ClientModelsTest::conversationRolesExposeSnapshotData() {
   QCOMPARE(model.data(index, ConversationListModel::UnreadCountRole).toInt(),
            4);
   QCOMPARE(model.data(index, ConversationListModel::PinnedRole).toBool(), true);
+}
+
+void ClientModelsTest::conversationUnreadCountUpdatesByConversation() {
+  ConversationListModel model;
+  model.SetRecords({ConversationRecord{
+      .conversationId = QStringLiteral("direct:42"),
+      .title = QStringLiteral("用户 42"),
+      .unreadCount = 1,
+  }});
+
+  QVERIFY(model.SetUnreadCount(QStringLiteral("direct:42"), 2));
+  QCOMPARE(model.data(model.index(0), ConversationListModel::UnreadCountRole)
+               .toInt(),
+           2);
+  QVERIFY(!model.SetUnreadCount(QStringLiteral("direct:42"), 2));
+  QVERIFY(!model.SetUnreadCount(QStringLiteral("direct:404"), 1));
 }
 
 void ClientModelsTest::deliveryStateRejectsRegression() {

@@ -112,18 +112,20 @@ ItemDelegate {
                     elide: Text.ElideRight
                 }
 
-                Label {
+                AppIcon {
                     visible: root.pinned
-                    text: Icons.pin
+                    Layout.preferredWidth: 14
+                    Layout.preferredHeight: 14
+                    source: Icons.pin
                     color: Theme.textSecondary
-                    font.pixelSize: Typography.caption
                 }
 
-                Label {
+                AppIcon {
                     visible: root.muted
-                    text: Icons.muted
+                    Layout.preferredWidth: 14
+                    Layout.preferredHeight: 14
+                    source: Icons.muted
                     color: Theme.textSecondary
-                    font.pixelSize: Typography.caption
                 }
 
                 Rectangle {

@@ -34,19 +34,35 @@ Rectangle {
                 required property int index
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                text: modelData.icon + "  " + modelData.label
+                text: modelData.label
                 checked: root.currentSection === modelData.section
                 checkable: true
                 onClicked: root.sectionRequested(modelData.section)
                 Accessible.name: modelData.label
 
-                contentItem: Label {
-                    text: navigationButton.text
-                    color: navigationButton.checked ? Theme.accent : Theme.textSecondary
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                    font.pixelSize: Typography.bodySmall
-                    font.bold: navigationButton.checked
+                contentItem: Item {
+                    Row {
+                        anchors.centerIn: parent
+                        spacing: Tokens.space2
+
+                        AppIcon {
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 18
+                            height: 18
+                            source: navigationButton.modelData.icon
+                            color: navigationButton.checked
+                                   ? Theme.accent : Theme.textSecondary
+                        }
+
+                        Label {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: navigationButton.text
+                            color: navigationButton.checked
+                                   ? Theme.accent : Theme.textSecondary
+                            font.pixelSize: Typography.bodySmall
+                            font.bold: navigationButton.checked
+                        }
+                    }
                 }
 
                 background: Rectangle {

@@ -3,16 +3,15 @@ pragma Singleton
 import QtQuick
 
 QtObject {
-    readonly property string chats: "●"
-    readonly property string contacts: "◆"
-    readonly property string settings: "⚙"
-    readonly property string search: "⌕"
-    readonly property string compose: "+"
-    readonly property string back: "‹"
-    readonly property string more: "⋯"
-    readonly property string pin: "◆"
-    readonly property string muted: "⌁"
-    readonly property string moon: "◐"
-    readonly property string send: "➤"
+    readonly property url chats: "qrc:/icons/ui/chats.svg"
+    readonly property url contacts: "qrc:/icons/ui/contacts.svg"
+    readonly property url settings: "qrc:/icons/ui/settings.svg"
+    readonly property url search: "qrc:/icons/ui/search.svg"
+    readonly property url compose: "qrc:/icons/ui/compose.svg"
+    readonly property url back: "qrc:/icons/ui/back.svg"
+    readonly property url more: "qrc:/icons/ui/more.svg"
+    readonly property url pin: "qrc:/icons/ui/pin.svg"
+    readonly property url muted: "qrc:/icons/ui/muted.svg"
+    readonly property url moon: "qrc:/icons/ui/moon.svg"
+    readonly property url send: "qrc:/icons/ui/send.svg"
 }
-

@@ -1,7 +1,7 @@
 #include "adapters/connection_gateway/ClientProtocol.h"
 #include "adapters/connection_gateway/ConnectionGatewayClient.h"
+#include "adapters/connection_gateway/ProtobufPacketCodec.h"
 #include "adapters/gate/GateHttpClient.h"
-#include "tcp_message.pb.h"
 
 #include <QDateTime>
 #include <QSignalSpy>
@@ -12,8 +12,7 @@ namespace wim::client {
 namespace {
 
 bool ParsePacket(const QByteArray &payload, wim::protocol::Packet *packet) {
-  return packet != nullptr &&
-         packet->ParseFromArray(payload.constData(), payload.size());
+  return ParseProtobufPacket(payload, packet);
 }
 
 QString RequiredEnvironment(const char *name) {
@@ -101,9 +100,10 @@ void ClientLiveNetworkTest::authSendAndSyncAcrossRealGateways() {
            quint32(protocol::PullFriendListResponse));
   wim::protocol::Packet friends;
   QVERIFY(ParsePacket(friendsResponse.at(2).toByteArray(), &friends));
-  QCOMPARE(friends.has_error() ? friends.error() : 0, protocol::Success);
+  QCOMPARE(friends.hasError() ? static_cast<int>(friends.error()) : 0,
+           protocol::Success);
   bool foundPeer = false;
-  for (const auto &item : friends.friend_list()) {
+  for (const auto &item : friends.friendList()) {
     foundPeer = foundPeer || item.uid() == sessionB.uid;
   }
   QVERIFY2(foundPeer, "live user B is missing from user A's friend list");
@@ -122,34 +122,36 @@ void ClientLiveNetworkTest::authSendAndSyncAcrossRealGateways() {
   QCOMPARE(sendResponse.at(1).toUInt(), quint32(protocol::SendTextResponse));
   wim::protocol::Packet accepted;
   QVERIFY(ParsePacket(sendResponse.at(2).toByteArray(), &accepted));
-  QCOMPARE(accepted.has_error() ? accepted.error() : 0, protocol::Success);
-  QVERIFY(accepted.message_id() > 0);
-  QVERIFY(accepted.conversation_id() > 0);
-  QVERIFY(accepted.conversation_seq() > 0);
-  QCOMPARE(accepted.message_state(), wim::protocol::MESSAGE_STATE_ACCEPTED);
-  QCOMPARE(QString::fromStdString(accepted.client_message_id()),
-           clientMessageId);
+  QCOMPARE(accepted.hasError() ? static_cast<int>(accepted.error()) : 0,
+           protocol::Success);
+  QVERIFY(accepted.messageId() > 0);
+  QVERIFY(accepted.conversationId() > 0);
+  QVERIFY(accepted.conversationSeq() > 0);
+  QCOMPARE(
+      accepted.messageState(),
+      wim::protocol::MessageStateGadget::MessageState::MESSAGE_STATE_ACCEPTED);
+  QCOMPARE(accepted.clientMessageId(), clientMessageId);
 
   QTRY_VERIFY_WITH_TIMEOUT(!pushesB.isEmpty(), 10'000);
   const QList<QVariant> pushArguments = pushesB.takeFirst();
   QCOMPARE(pushArguments.at(0).toUInt(), quint32(protocol::SendTextRequest));
   wim::protocol::Packet pushed;
   QVERIFY(ParsePacket(pushArguments.at(1).toByteArray(), &pushed));
-  QCOMPARE(pushed.message_id(), accepted.message_id());
-  QCOMPARE(pushed.conversation_id(), accepted.conversation_id());
-  QCOMPARE(pushed.conversation_seq(), accepted.conversation_seq());
-  QCOMPARE(QString::fromStdString(pushed.client_message_id()), clientMessageId);
-  QCOMPARE(QByteArray(pushed.data()), text);
+  QCOMPARE(pushed.messageId(), accepted.messageId());
+  QCOMPARE(pushed.conversationId(), accepted.conversationId());
+  QCOMPARE(pushed.conversationSeq(), accepted.conversationSeq());
+  QCOMPARE(pushed.clientMessageId(), clientMessageId);
+  QCOMPARE(pushed.data(), text);
 
-  gatewayB.AcknowledgeTransport(pushed.message_id());
-  gatewayB.AcknowledgeDelivered(pushed.message_id(), pushed.conversation_id(),
-                                pushed.conversation_seq());
-  gatewayB.AcknowledgeRead(pushed.message_id(), pushed.conversation_id(),
-                           pushed.conversation_seq());
+  gatewayB.AcknowledgeTransport(pushed.messageId());
+  gatewayB.AcknowledgeDelivered(pushed.messageId(), pushed.conversationId(),
+                                pushed.conversationSeq());
+  gatewayB.AcknowledgeRead(pushed.messageId(), pushed.conversationId(),
+                           pushed.conversationSeq());
 
   responsesB.clear();
   const QString syncRequest = gatewayB.PullConversationMessages(
-      pushed.conversation_id(), pushed.conversation_seq() - 1, 20);
+      pushed.conversationId(), pushed.conversationSeq() - 1, 20);
   QTRY_VERIFY_WITH_TIMEOUT(!responsesB.isEmpty() || !failuresB.isEmpty(),
                            10'000);
   QVERIFY(failuresB.isEmpty());
@@ -159,14 +161,14 @@ void ClientLiveNetworkTest::authSendAndSyncAcrossRealGateways() {
            quint32(protocol::PullSessionMessagesResponse));
   wim::protocol::Packet synchronized;
   QVERIFY(ParsePacket(syncResponse.at(2).toByteArray(), &synchronized));
-  QCOMPARE(synchronized.has_error() ? synchronized.error() : 0,
+  QCOMPARE(synchronized.hasError() ? static_cast<int>(synchronized.error()) : 0,
            protocol::Success);
   bool foundMessage = false;
-  for (const auto &item : synchronized.message_list()) {
-    foundMessage = foundMessage ||
-                   (item.message_id() == pushed.message_id() &&
-                    item.conversation_seq() == pushed.conversation_seq() &&
-                    item.client_message_id() == pushed.client_message_id());
+  for (const auto &item : synchronized.messageList()) {
+    foundMessage =
+        foundMessage || (item.messageId() == pushed.messageId() &&
+                         item.conversationSeq() == pushed.conversationSeq() &&
+                         item.clientMessageId() == pushed.clientMessageId());
   }
   QVERIFY2(foundMessage, "accepted live message is missing from sync result");
 

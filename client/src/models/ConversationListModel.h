@@ -38,6 +38,7 @@ class ConversationListModel final : public QAbstractListModel {
                                std::int64_t remoteConversationId);
   void UpdatePreview(const QString &conversationId, const QString &preview,
                      const QString &timestamp);
+  bool SetUnreadCount(const QString &conversationId, int unreadCount);
   bool TogglePinned(int index);
   bool ToggleMuted(int index);
   bool MarkRead(int index);

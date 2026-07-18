@@ -54,19 +54,35 @@ Rectangle {
                 Layout.alignment: Qt.AlignHCenter
                 Layout.preferredWidth: 52
                 Layout.preferredHeight: 54
-                text: modelData.icon + "\n" + modelData.label
+                text: modelData.label
                 font.pixelSize: index === 0 ? Typography.bodySmall : Typography.caption
                 checked: root.currentSection === modelData.section
                 checkable: true
                 onClicked: root.sectionRequested(modelData.section)
                 Accessible.name: modelData.label
 
-                contentItem: Label {
-                    text: navigationButton.text
-                    color: navigationButton.checked ? Theme.accent : Theme.textSecondary
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                    font: navigationButton.font
+                contentItem: Item {
+                    Column {
+                        anchors.centerIn: parent
+                        spacing: Tokens.space1
+
+                        AppIcon {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            width: 18
+                            height: 18
+                            source: navigationButton.modelData.icon
+                            color: navigationButton.checked
+                                   ? Theme.accent : Theme.textSecondary
+                        }
+
+                        Label {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            text: navigationButton.text
+                            color: navigationButton.checked
+                                   ? Theme.accent : Theme.textSecondary
+                            font: navigationButton.font
+                        }
+                    }
                 }
 
                 background: Rectangle {

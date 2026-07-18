@@ -413,7 +413,8 @@ Item {
                     }
 
                     Label {
-                        text: qsTr("选择成员")
+                        visible: !root.controller.networkEnabled
+                        text: qsTr("选择成员（演示）")
                         color: Theme.textPrimary
                         font.bold: true
                     }
@@ -423,14 +424,19 @@ Item {
 
                         delegate: CheckBox {
                             required property string modelData
+                            visible: !root.controller.networkEnabled
                             text: modelData
                         }
                     }
 
                     Label {
-                        text: qsTr("Fake Scenario：确认后不写入服务端。")
+                        Layout.fillWidth: true
+                        text: root.controller.networkEnabled
+                              ? qsTr("创建后群里暂时只有你；其他用户可通过群 ID 申请加入。")
+                              : qsTr("Fake Scenario：确认后不写入服务端。")
                         color: Theme.textSecondary
                         font.pixelSize: Typography.caption
+                        wrapMode: Text.Wrap
                     }
                 }
             }
@@ -450,7 +456,10 @@ Item {
 
                 ToolButton {
                     visible: root.compactMode
-                    text: Icons.back + "  " + qsTr("联系人")
+                    text: qsTr("联系人")
+                    icon.source: Icons.back
+                    icon.color: Theme.textPrimary
+                    display: AbstractButton.TextBesideIcon
                     onClicked: root.profileVisible = false
                     Accessible.name: qsTr("返回联系人列表")
                 }

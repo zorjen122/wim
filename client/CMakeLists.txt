@@ -9,29 +9,35 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-find_package(Qt6 6.10 REQUIRED COMPONENTS Network Quick QuickControls2 Sql)
-find_package(Protobuf REQUIRED)
+find_package(Qt6 6.10 REQUIRED COMPONENTS Network Protobuf Quick QuickControls2 Sql)
 
-protobuf_generate_cpp(WIM_CLIENT_PROTOCOL_SOURCES WIM_CLIENT_PROTOCOL_HEADERS
-    ${CMAKE_CURRENT_SOURCE_DIR}/../server/public/proto/tcp_message.proto
+qt_standard_project_setup(REQUIRES 6.8)
+
+add_library(wim-client-protocol STATIC)
+set_target_properties(wim-client-protocol PROPERTIES
+    POSITION_INDEPENDENT_CODE ON
 )
-
-add_library(wim-client-protocol STATIC
-    ${WIM_CLIENT_PROTOCOL_SOURCES}
-    ${WIM_CLIENT_PROTOCOL_HEADERS}
+qt_add_protobuf(wim-client-protocol
+    PROTO_FILES
+        ${CMAKE_CURRENT_SOURCE_DIR}/../server/public/proto/tcp_message.proto
+    OUTPUT_DIRECTORY
+        ${CMAKE_CURRENT_BINARY_DIR}/generated
+)
+target_sources(wim-client-protocol PRIVATE
+    src/adapters/connection_gateway/ProtobufPacketCodec.cc
+    src/adapters/connection_gateway/ProtobufPacketCodec.h
 )
 target_include_directories(wim-client-protocol PUBLIC
-    ${CMAKE_CURRENT_BINARY_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_BINARY_DIR}/generated
 )
-target_link_libraries(wim-client-protocol PUBLIC protobuf::libprotobuf)
+target_link_libraries(wim-client-protocol PUBLIC Qt6::Protobuf)
 
 set(WIM_LINUX_DESKTOP FALSE)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT ANDROID)
     find_package(Qt6 6.10 REQUIRED COMPONENTS DBus)
     set(WIM_LINUX_DESKTOP TRUE)
 endif()
-
-qt_standard_project_setup(REQUIRES 6.8)
 
 qt_add_executable(wim-client
     src/main.cc
@@ -40,7 +46,19 @@ qt_add_executable(wim-client
 qt_add_resources(wim-client wim-client-icons
     PREFIX "/icons"
     BASE resources/icons
-    FILES resources/icons/wim-client.svg
+    FILES
+        resources/icons/wim-client.svg
+        resources/icons/ui/back.svg
+        resources/icons/ui/chats.svg
+        resources/icons/ui/compose.svg
+        resources/icons/ui/contacts.svg
+        resources/icons/ui/moon.svg
+        resources/icons/ui/more.svg
+        resources/icons/ui/muted.svg
+        resources/icons/ui/pin.svg
+        resources/icons/ui/search.svg
+        resources/icons/ui/send.svg
+        resources/icons/ui/settings.svg
 )
 
 set(WIM_QML_SINGLETONS
@@ -69,6 +87,7 @@ qt_add_qml_module(wim-client
         qml/AdaptiveShell.qml
         qml/AppNavigationRail.qml
         qml/AppBottomNavigation.qml
+        qml/AppIcon.qml
         qml/Avatar.qml
         qml/StatusBadge.qml
         qml/EmptyState.qml
@@ -121,6 +140,16 @@ target_link_libraries(wim-client PRIVATE
     wim-client-protocol
 )
 
+if(ANDROID)
+    set_target_properties(wim-client PROPERTIES
+        QT_ANDROID_APP_NAME "WIM"
+        QT_ANDROID_PACKAGE_NAME "org.wim.client"
+        QT_ANDROID_PACKAGE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/packaging/android"
+        QT_ANDROID_VERSION_CODE 1
+        QT_ANDROID_VERSION_NAME "${PROJECT_VERSION}"
+    )
+endif()
+
 include(GNUInstallDirs)
 if(WIM_LINUX_DESKTOP)
     target_sources(wim-client PRIVATE
@@ -138,6 +167,7 @@ endif()
 
 install(TARGETS wim-client
     BUNDLE DESTINATION .
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 

@@ -70,18 +70,14 @@ Rectangle {
             Layout.preferredWidth: Tokens.touchTarget
             Layout.preferredHeight: Tokens.touchTarget
             enabled: input.text.trim().length > 0
-            text: Icons.send
-            font.pixelSize: Typography.title
             onClicked: root.submit()
             Accessible.name: qsTr("发送消息")
 
-            contentItem: Label {
-                text: sendButton.text
-                color: sendButton.enabled ? (Theme.dark ? Theme.canvas : Theme.surface)
-                                          : Theme.textSecondary
-                horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
-                font: sendButton.font
+            contentItem: AppIcon {
+                source: Icons.send
+                color: sendButton.enabled
+                       ? (Theme.dark ? Theme.canvas : Theme.surface)
+                       : Theme.textSecondary
             }
 
             background: Rectangle {

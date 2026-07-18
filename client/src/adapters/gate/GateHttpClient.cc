@@ -68,64 +68,70 @@ void GateHttpClient::Post(const QString &operation, const QString &path,
                     QStringLiteral("application/json"));
   auto *reply = network_.post(
       request, QJsonDocument(body).toJson(QJsonDocument::Compact));
-  connect(reply, &QNetworkReply::finished, this, [this, reply, operation] {
-    const QByteArray payload = reply->readAll();
-    const auto networkError = reply->error();
-    const QString networkMessage = reply->errorString();
-    reply->deleteLater();
+  connect(
+      reply, &QNetworkReply::finished, this, [this, reply, operation, body] {
+        const QByteArray payload = reply->readAll();
+        const auto networkError = reply->error();
+        const QString networkMessage = reply->errorString();
+        reply->deleteLater();
 
-    if (networkError != QNetworkReply::NoError) {
-      emit OperationFailed(operation, protocol::DependencyUnavailable,
-                           networkMessage);
-      return;
-    }
+        if (networkError != QNetworkReply::NoError) {
+          emit OperationFailed(operation, protocol::DependencyUnavailable,
+                               networkMessage);
+          return;
+        }
 
-    QJsonParseError parseError;
-    const QJsonDocument document =
-        QJsonDocument::fromJson(payload, &parseError);
-    if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
-      emit OperationFailed(operation, protocol::JsonParser,
-                           tr("Auth Gate 返回了无效 JSON"));
-      return;
-    }
+        QJsonParseError parseError;
+        const QJsonDocument document =
+            QJsonDocument::fromJson(payload, &parseError);
+        if (parseError.error != QJsonParseError::NoError ||
+            !document.isObject()) {
+          emit OperationFailed(operation, protocol::JsonParser,
+                               tr("Auth Gate 返回了无效 JSON"));
+          return;
+        }
 
-    const QJsonObject response = document.object();
-    const int errorCode =
-        response.value(QStringLiteral("error")).toVariant().toInt();
-    if (errorCode != protocol::Success) {
-      emit OperationFailed(
-          operation, errorCode,
-          response.value(QStringLiteral("message")).toString().isEmpty()
-              ? tr("Auth Gate 请求失败（%1）").arg(errorCode)
-              : response.value(QStringLiteral("message")).toString());
-      return;
-    }
+        const QJsonObject response = document.object();
+        const int errorCode =
+            response.value(QStringLiteral("error")).toVariant().toInt();
+        if (errorCode != protocol::Success) {
+          emit OperationFailed(
+              operation, errorCode,
+              response.value(QStringLiteral("message")).toString().isEmpty()
+                  ? tr("Auth Gate 请求失败（%1）").arg(errorCode)
+                  : response.value(QStringLiteral("message")).toString());
+          return;
+        }
 
-    if (operation == QStringLiteral("sign-in")) {
-      GateSession session{
-          .uid = response.value(QStringLiteral("uid")).toVariant().toLongLong(),
-          .gatewayHost = response.value(QStringLiteral("ip")).toString(),
-          .gatewayPort = static_cast<quint16>(
-              response.value(QStringLiteral("port")).toInt()),
-          .gatewayId = response.value(QStringLiteral("gatewayId")).toString(),
-          .token = response.value(QStringLiteral("chatToken")).toString(),
-          .tokenExpiresInSeconds =
-              response.value(QStringLiteral("chatTokenExpiresIn"))
-                  .toVariant()
-                  .toLongLong(),
-          .profileInitializationRequired =
-              response.value(QStringLiteral("init")).toInt() != 0,
-      };
-      if (session.uid <= 0 || session.gatewayHost.isEmpty() ||
-          session.gatewayPort == 0 || session.token.isEmpty()) {
-        emit OperationFailed(operation, protocol::JsonParser,
-                             tr("登录响应缺少 Gateway 会话字段"));
-        return;
-      }
-      emit SignInSucceeded(session);
-    }
-    emit OperationSucceeded(operation, response);
-  });
+        if (operation == QStringLiteral("sign-in")) {
+          GateSession session{
+              .uid = response.value(QStringLiteral("uid"))
+                         .toVariant()
+                         .toLongLong(),
+              .gatewayHost = response.value(QStringLiteral("ip")).toString(),
+              .gatewayPort = static_cast<quint16>(
+                  response.value(QStringLiteral("port")).toInt()),
+              .gatewayId =
+                  response.value(QStringLiteral("gatewayId")).toString(),
+              .token = response.value(QStringLiteral("chatToken")).toString(),
+              .tokenExpiresInSeconds =
+                  response.value(QStringLiteral("chatTokenExpiresIn"))
+                      .toVariant()
+                      .toLongLong(),
+              .profileName = body.value(QStringLiteral("username")).toString(),
+              .profileInitializationRequired =
+                  response.value(QStringLiteral("init")).toInt() != 0,
+          };
+          if (session.uid <= 0 || session.gatewayHost.isEmpty() ||
+              session.gatewayPort == 0 || session.token.isEmpty()) {
+            emit OperationFailed(operation, protocol::JsonParser,
+                                 tr("登录响应缺少 Gateway 会话字段"));
+            return;
+          }
+          emit SignInSucceeded(session);
+        }
+        emit OperationSucceeded(operation, response);
+      });
 }
 
 QUrl GateHttpClient::Endpoint(const QString &path) const {

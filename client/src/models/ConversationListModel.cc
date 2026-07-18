@@ -120,6 +120,22 @@ void ConversationListModel::UpdatePreview(const QString &conversationId,
   }
 }
 
+bool ConversationListModel::SetUnreadCount(const QString &conversationId,
+                                           int unreadCount) {
+  for (int row = 0; row < records_.size(); ++row) {
+    auto &record = records_[row];
+    if (record.conversationId != conversationId ||
+        record.unreadCount == unreadCount) {
+      continue;
+    }
+    record.unreadCount = unreadCount;
+    const auto modelIndex = index(row);
+    emit dataChanged(modelIndex, modelIndex, {UnreadCountRole});
+    return true;
+  }
+  return false;
+}
+
 bool ConversationListModel::TogglePinned(int row) {
   if (row < 0 || row >= records_.size()) {
     return false;
