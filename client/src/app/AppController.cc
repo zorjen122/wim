@@ -159,6 +159,10 @@ QString AppController::selectedConversationTitle() const {
   return record == nullptr ? QString{} : record->title;
 }
 
+bool AppController::selectedConversationIsGroup() const {
+  return CurrentConversationId().startsWith(QStringLiteral("group:"));
+}
+
 int AppController::selectedConversationUnreadCount() const {
   const auto *record = conversations_.RecordAt(selected_conversation_index_);
   return record == nullptr ? 0 : record->unreadCount;
@@ -270,6 +274,7 @@ void AppController::setCurrentSection(const QString &currentSection) {
   static const QStringList sections = {
       QStringLiteral("chats"),
       QStringLiteral("contacts"),
+      QStringLiteral("requests"),
       QStringLiteral("settings"),
   };
   if (current_section_ == currentSection ||
@@ -288,7 +293,8 @@ void AppController::selectConversation(int index) {
 
   selected_conversation_index_ = index;
   messages_.SetRecords(snapshot_.messagesByConversation.value(
-      record->conversationId, QVector<MessageRecord>{}));
+                           record->conversationId, QVector<MessageRecord>{}),
+                       record->unreadCount);
   emit selectedConversationChanged();
   emit draftTextChanged();
   markRead(index);
@@ -368,6 +374,70 @@ void AppController::sendMessage(const QString &text) {
   }
 }
 
+void AppController::retryMessage(qlonglong clientMessageId) {
+  QString conversationId;
+  QString body;
+  for (auto iterator = snapshot_.messagesByConversation.begin();
+       iterator != snapshot_.messagesByConversation.end(); ++iterator) {
+    const auto found =
+        std::find_if(iterator->begin(), iterator->end(),
+                     [clientMessageId](const MessageRecord &message) {
+                       return message.clientMessageId == clientMessageId;
+                     });
+    if (found == iterator->end()) {
+      continue;
+    }
+    if (!found->outgoing ||
+        found->deliveryState != MessageDeliveryState::RetryableFailed) {
+      SetServiceActionStatus(tr("当前消息不需要手动重试"));
+      return;
+    }
+    conversationId = iterator.key();
+    body = found->body;
+    break;
+  }
+
+  if (conversationId.isEmpty()) {
+    SetServiceActionStatus(tr("未找到需要重试的消息"));
+    return;
+  }
+
+  if (!network_enabled_) {
+    UpdateMessageState(clientMessageId, MessageDeliveryState::PendingLocal);
+    ScheduleDeliveryLifecycle(clientMessageId);
+    return;
+  }
+  if (!gateway_client_.IsReady()) {
+    SetServiceActionStatus(tr("连接尚未就绪，请稍后重试"));
+    return;
+  }
+
+  const auto peerUid = DirectPeerUid(conversationId);
+  const auto groupId = GroupId(conversationId);
+  if (!peerUid.has_value() && !groupId.has_value()) {
+    SetServiceActionStatus(tr("当前会话没有可用的服务端接收者"));
+    return;
+  }
+
+  const int conversationIndex = conversations_.IndexOf(conversationId);
+  const auto *conversation = conversations_.RecordAt(conversationIndex);
+  const std::int64_t remoteConversationId =
+      conversation == nullptr ? 0
+                              : conversation->remoteConversationId.value_or(0);
+  UpdateMessageState(clientMessageId, MessageDeliveryState::WaitingAccept);
+  const QString wireClientMessageId =
+      QStringLiteral("%1:%2").arg(authenticated_uid_).arg(-clientMessageId);
+  const QString requestId =
+      peerUid.has_value()
+          ? gateway_client_.SendText(*peerUid, body.toUtf8(),
+                                     wireClientMessageId, remoteConversationId)
+          : gateway_client_.SendGroupText(*groupId, body.toUtf8(),
+                                          wireClientMessageId,
+                                          remoteConversationId);
+  outgoing_request_messages_.insert(requestId, clientMessageId);
+  SetServiceActionStatus(tr("正在重试消息"));
+}
+
 void AppController::togglePinned(int index) {
   conversations_.TogglePinned(index);
 }
@@ -438,8 +508,10 @@ void AppController::resolveRequest(int index, bool accepted) {
     return;
   }
   if (!network_enabled_) {
-    requests_.SetStatus(index, accepted ? QStringLiteral("accepted")
-                                        : QStringLiteral("declined"));
+    SetRequestStatus(
+        index,
+        accepted ? QStringLiteral("accepted") : QStringLiteral("declined"),
+        true);
     return;
   }
   if (!gateway_client_.IsReady()) {
@@ -473,6 +545,11 @@ void AppController::resolveRequest(int index, bool accepted) {
     requestId = gateway_client_.ReplyFriendRequest(userId, accepted, {});
   }
   friend_reply_requests_.insert(requestId, accepted ? index + 1 : -(index + 1));
+  SetRequestStatus(
+      index,
+      accepted ? QStringLiteral("accepting") : QStringLiteral("declining"),
+      false);
+  SetServiceActionStatus(tr("正在处理申请"));
 }
 
 void AppController::authenticate(const QString &username,
@@ -575,9 +652,19 @@ void AppController::sendFriendRequest(const QString &uid,
                                       const QString &message) {
   bool valid = false;
   const auto recipientUid = uid.toLongLong(&valid);
-  if (!network_enabled_ || !gateway_client_.IsReady() || !valid ||
-      recipientUid <= 0) {
-    SetServiceActionStatus(tr("请输入有效用户 ID，并确认连接已就绪"));
+  if (!valid || recipientUid <= 0) {
+    SetServiceActionStatus(tr("请输入有效用户 ID"));
+    return;
+  }
+  if (!network_enabled_) {
+    SetServiceActionStatus(
+        message.trimmed().isEmpty()
+            ? tr("演示：已向用户 %1 发送好友申请").arg(recipientUid)
+            : tr("演示：已向用户 %1 发送好友申请和验证消息").arg(recipientUid));
+    return;
+  }
+  if (!gateway_client_.IsReady()) {
+    SetServiceActionStatus(tr("连接尚未就绪，暂时不能发送好友申请"));
     return;
   }
   gateway_client_.SendFriendRequest(recipientUid, message.trimmed());
@@ -585,22 +672,44 @@ void AppController::sendFriendRequest(const QString &uid,
 }
 
 void AppController::createGroup(const QString &name) {
-  if (!network_enabled_ || !gateway_client_.IsReady() ||
-      name.trimmed().isEmpty()) {
-    SetServiceActionStatus(tr("群名不能为空，且连接必须已就绪"));
+  const QString trimmedName = name.trimmed();
+  if (trimmedName.isEmpty()) {
+    SetServiceActionStatus(tr("群名不能为空"));
     return;
   }
-  const QString requestId = gateway_client_.CreateGroup(name.trimmed());
-  create_group_requests_.insert(requestId, name.trimmed());
+  if (!network_enabled_) {
+    const QString conversationId =
+        EnsureGroupConversation(++next_fake_group_id_, trimmedName);
+    setCurrentSection(QStringLiteral("chats"));
+    selectConversation(conversations_.IndexOf(conversationId));
+    SetServiceActionStatus(tr("演示群聊已创建"));
+    return;
+  }
+  if (!gateway_client_.IsReady()) {
+    SetServiceActionStatus(tr("连接尚未就绪，暂时不能创建群聊"));
+    return;
+  }
+  const QString requestId = gateway_client_.CreateGroup(trimmedName);
+  create_group_requests_.insert(requestId, trimmedName);
   SetServiceActionStatus(tr("创建群请求已提交"));
 }
 
 void AppController::joinGroup(const QString &groupId, const QString &message) {
   bool valid = false;
   const auto numericGroupId = groupId.toLongLong(&valid);
-  if (!network_enabled_ || !gateway_client_.IsReady() || !valid ||
-      numericGroupId <= 0) {
-    SetServiceActionStatus(tr("请输入有效群 ID，并确认连接已就绪"));
+  if (!valid || numericGroupId <= 0) {
+    SetServiceActionStatus(tr("请输入有效群 ID"));
+    return;
+  }
+  if (!network_enabled_) {
+    SetServiceActionStatus(
+        message.trimmed().isEmpty()
+            ? tr("演示：已申请加入群 %1").arg(numericGroupId)
+            : tr("演示：已提交群 %1 的入群申请和说明").arg(numericGroupId));
+    return;
+  }
+  if (!gateway_client_.IsReady()) {
+    SetServiceActionStatus(tr("连接尚未就绪，暂时不能申请入群"));
     return;
   }
   gateway_client_.RequestJoinGroup(numericGroupId, message.trimmed());
@@ -921,7 +1030,7 @@ void AppController::HandleGatewayResponse(const QString &requestId,
           .conversationSeq = item.conversationSeq(),
           .senderId = QString::number(item.from()),
           .body = item.content(),
-          .timestamp = DisplayTimestamp(item.sendDateTime()),
+          .timestamp = item.sendDateTime(),
           .outgoing = item.from() == authenticated_uid_,
           .deliveryState = item.status() >= 3 ? MessageDeliveryState::Read
                            : item.status() >= 2
@@ -964,11 +1073,15 @@ void AppController::HandleGatewayResponse(const QString &requestId,
     friend_reply_requests_.erase(reply);
     if (errorCode == protocol::Success) {
       const int index = std::abs(encodedIndex) - 1;
-      requests_.SetStatus(index, encodedIndex > 0 ? QStringLiteral("accepted")
-                                                  : QStringLiteral("declined"));
+      SetRequestStatus(index,
+                       encodedIndex > 0 ? QStringLiteral("accepted")
+                                        : QStringLiteral("declined"),
+                       true);
       gateway_client_.PullFriendList();
       SetServiceActionStatus(tr("申请已处理"));
     } else {
+      SetRequestStatus(std::abs(encodedIndex) - 1, QStringLiteral("pending"),
+                       false);
       SetServiceActionStatus(tr("处理申请失败（%1）").arg(errorCode));
     }
     return;
@@ -1024,7 +1137,9 @@ void AppController::HandleGatewayPush(quint32 serviceId,
                 : std::nullopt,
         .senderId = QString::number(packet.from()),
         .body = QString::fromUtf8(packet.data()),
-        .timestamp = DisplayTimestamp(PacketSendDateTimeOrEmpty(packet)),
+        .timestamp = PacketSendDateTimeOrEmpty(packet).isEmpty()
+                         ? DisplayTimestamp(QString{})
+                         : PacketSendDateTimeOrEmpty(packet),
         .outgoing = false,
         .deliveryState = MessageDeliveryState::Delivered,
     };
@@ -1039,14 +1154,15 @@ void AppController::HandleGatewayPush(quint32 serviceId,
     if (CurrentConversationId() == localConversationId) {
       messages_.Append(incoming);
     }
+    const QString previewTimestamp = DisplayTimestamp(incoming.timestamp);
     conversations_.UpdatePreview(localConversationId, incoming.body,
-                                 incoming.timestamp);
+                                 previewTimestamp);
     for (auto &conversation : snapshot_.conversations) {
       if (conversation.conversationId != localConversationId) {
         continue;
       }
       conversation.preview = incoming.body;
-      conversation.timestamp = incoming.timestamp;
+      conversation.timestamp = previewTimestamp;
       break;
     }
     gateway_client_.AcknowledgeTransport(messageId);
@@ -1131,7 +1247,11 @@ void AppController::HandleGatewayFailure(const QString &requestId,
                            : MessageDeliveryState::PermanentFailed);
   }
   sync_request_conversations_.remove(requestId);
-  friend_reply_requests_.remove(requestId);
+  const int encodedRequestIndex = friend_reply_requests_.take(requestId);
+  if (encodedRequestIndex != 0) {
+    SetRequestStatus(std::abs(encodedRequestIndex) - 1,
+                     QStringLiteral("pending"), false);
+  }
   create_group_requests_.remove(requestId);
   SetServiceActionStatus(tr("请求 %1 失败：%2").arg(serviceId).arg(message));
 }
@@ -1212,6 +1332,16 @@ void AppController::AcknowledgeConversationRead(int index) {
                                     *iterator->conversationSeq);
     return;
   }
+}
+
+void AppController::SetRequestStatus(int index, const QString &status,
+                                     bool persist) {
+  if (!requests_.SetStatus(index, status) || !persist || index < 0 ||
+      index >= snapshot_.requests.size()) {
+    return;
+  }
+  snapshot_.requests[index].status = status;
+  repository_->ReplaceRequests(snapshot_.requests);
 }
 
 QString AppController::EnsureDirectConversation(std::int64_t peerUid,
@@ -1328,10 +1458,12 @@ void AppController::LoadScenario(const QString &scenarioName) {
 
   if (selected_conversation_index_ >= 0) {
     const auto &conversation = snapshot_.conversations.front();
-    messages_.SetRecords(snapshot_.messagesByConversation.value(
-        conversation.conversationId, QVector<MessageRecord>{}));
+    messages_.SetRecords(
+        snapshot_.messagesByConversation.value(conversation.conversationId,
+                                               QVector<MessageRecord>{}),
+        conversation.unreadCount);
   } else {
-    messages_.SetRecords({});
+    messages_.SetRecords({}, 0);
   }
 
   emit scenarioNameChanged();

@@ -8,6 +8,8 @@ namespace wim::client {
 
 class RequestListModel final : public QAbstractListModel {
   Q_OBJECT
+  Q_PROPERTY(int pendingCount READ pendingCount NOTIFY countsChanged)
+  Q_PROPERTY(int resolvedCount READ resolvedCount NOTIFY countsChanged)
 
  public:
   enum Role {
@@ -25,10 +27,15 @@ class RequestListModel final : public QAbstractListModel {
   int rowCount(const QModelIndex &parent = {}) const override;
   QVariant data(const QModelIndex &index, int role) const override;
   QHash<int, QByteArray> roleNames() const override;
+  int pendingCount() const;
+  int resolvedCount() const;
 
   void SetRecords(QVector<RequestRecord> records);
   const RequestRecord *RecordAt(int index) const;
   bool SetStatus(int index, const QString &status);
+
+ signals:
+  void countsChanged();
 
  private:
   QVector<RequestRecord> records_;

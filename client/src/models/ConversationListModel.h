@@ -12,6 +12,7 @@ class ConversationListModel final : public QAbstractListModel {
  public:
   enum Role {
     ConversationIdRole = Qt::UserRole + 1,
+    SourceIndexRole,
     TitleRole,
     PreviewRole,
     TimestampRole,

@@ -1,8 +1,54 @@
 #include "models/MessageListModel.h"
 
+#include <QDate>
+
+#include <algorithm>
 #include <utility>
 
 namespace wim::client {
+namespace {
+
+QDate MessageDate(const QString &timestamp) {
+  if (timestamp.size() < 10) {
+    return {};
+  }
+  return QDate::fromString(timestamp.left(10), QStringLiteral("yyyy-MM-dd"));
+}
+
+QString MessageTimeText(const QString &timestamp) {
+  const QDate date = MessageDate(timestamp);
+  if (!date.isValid()) {
+    return timestamp;
+  }
+  return timestamp.size() >= 16 ? timestamp.mid(11, 5) : timestamp;
+}
+
+QString MessageDateLabel(const QString &timestamp) {
+  const QDate date = MessageDate(timestamp);
+  if (!date.isValid()) {
+    if (timestamp == QStringLiteral("昨天") || timestamp.startsWith(u'周')) {
+      return timestamp;
+    }
+    return QStringLiteral("今天");
+  }
+
+  const QDate today = QDate::currentDate();
+  if (date == today) {
+    return QStringLiteral("今天");
+  }
+  if (date == today.addDays(-1)) {
+    return QStringLiteral("昨天");
+  }
+  if (date.year() == today.year()) {
+    return QStringLiteral("%1月%2日").arg(date.month()).arg(date.day());
+  }
+  return QStringLiteral("%1年%2月%3日")
+      .arg(date.year())
+      .arg(date.month())
+      .arg(date.day());
+}
+
+}  // namespace
 
 QString DeliveryStateName(MessageDeliveryState state) {
   switch (state) {
@@ -95,7 +141,17 @@ QVariant MessageListModel::data(const QModelIndex &index, int role) const {
     case BodyRole:
       return record.body;
     case TimestampRole:
-      return record.timestamp;
+      return MessageTimeText(record.timestamp);
+    case SourceIndexRole:
+      return index.row();
+    case DateLabelRole:
+      return MessageDateLabel(record.timestamp);
+    case ShowDateSeparatorRole:
+      return index.row() == 0 ||
+             MessageDateLabel(records_[index.row() - 1].timestamp) !=
+                 MessageDateLabel(record.timestamp);
+    case ShowUnreadSeparatorRole:
+      return index.row() == unread_separator_index_;
     case OutgoingRole:
       return record.outgoing;
     case DeliveryStateRole:
@@ -113,14 +169,27 @@ QHash<int, QByteArray> MessageListModel::roleNames() const {
       {SenderIdRole, "senderId"},
       {BodyRole, "body"},
       {TimestampRole, "timestamp"},
+      {SourceIndexRole, "sourceIndex"},
+      {DateLabelRole, "dateLabel"},
+      {ShowDateSeparatorRole, "showDateSeparator"},
+      {ShowUnreadSeparatorRole, "showUnreadSeparator"},
       {OutgoingRole, "outgoing"},
       {DeliveryStateRole, "deliveryState"},
   };
 }
 
-void MessageListModel::SetRecords(QVector<MessageRecord> records) {
+void MessageListModel::SetRecords(QVector<MessageRecord> records,
+                                  int unreadCount) {
   beginResetModel();
   records_ = std::move(records);
+  if (unreadCount >= 0) {
+    const int boundedUnreadCount =
+        std::min(unreadCount, static_cast<int>(records_.size()));
+    unread_separator_index_ =
+        boundedUnreadCount > 0
+            ? static_cast<int>(records_.size()) - boundedUnreadCount
+            : -1;
+  }
   endResetModel();
 }
 

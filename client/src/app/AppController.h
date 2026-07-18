@@ -35,6 +35,8 @@ class AppController : public QObject {
                  selectedConversationChanged)
   Q_PROPERTY(QString selectedConversationTitle READ selectedConversationTitle
                  NOTIFY selectedConversationChanged)
+  Q_PROPERTY(bool selectedConversationIsGroup READ selectedConversationIsGroup
+                 NOTIFY selectedConversationChanged)
   Q_PROPERTY(
       int selectedConversationUnreadCount READ selectedConversationUnreadCount
           NOTIFY selectedConversationChanged)
@@ -86,6 +88,7 @@ class AppController : public QObject {
   QString connectionStatus() const;
   int selectedConversationIndex() const;
   QString selectedConversationTitle() const;
+  bool selectedConversationIsGroup() const;
   int selectedConversationUnreadCount() const;
   QString draftText() const;
   QString currentSection() const;
@@ -114,6 +117,7 @@ class AppController : public QObject {
 
   Q_INVOKABLE void selectConversation(int index);
   Q_INVOKABLE void sendMessage(const QString &text);
+  Q_INVOKABLE void retryMessage(qlonglong clientMessageId);
   Q_INVOKABLE void togglePinned(int index);
   Q_INVOKABLE void toggleMuted(int index);
   Q_INVOKABLE void markRead(int index);
@@ -173,6 +177,7 @@ class AppController : public QObject {
   void SyncKnownConversations();
   void ResumePendingOutgoing();
   void AcknowledgeConversationRead(int index);
+  void SetRequestStatus(int index, const QString &status, bool persist);
   QString EnsureDirectConversation(std::int64_t peerUid, const QString &title,
                                    const QString &avatarColor);
   QString EnsureGroupConversation(std::int64_t groupId, const QString &title);
@@ -195,6 +200,7 @@ class AppController : public QObject {
   ClientSnapshot snapshot_;
   int selected_conversation_index_{-1};
   std::int64_t next_client_message_id_{-1000};
+  std::int64_t next_fake_group_id_{900000};
   int requested_window_width_{1280};
   int requested_window_height_{800};
   bool dark_theme_requested_{};

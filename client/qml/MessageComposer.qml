@@ -33,7 +33,9 @@ Rectangle {
         ToolButton {
             text: "+"
             font.pixelSize: Typography.title
+            enabled: false
             Accessible.name: qsTr("添加附件")
+            Accessible.description: qsTr("附件协议尚未接入")
         }
 
         TextArea {

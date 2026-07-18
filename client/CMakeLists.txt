@@ -56,6 +56,7 @@ qt_add_resources(wim-client wim-client-icons
         resources/icons/ui/more.svg
         resources/icons/ui/muted.svg
         resources/icons/ui/pin.svg
+        resources/icons/ui/requests.svg
         resources/icons/ui/search.svg
         resources/icons/ui/send.svg
         resources/icons/ui/settings.svg
@@ -90,6 +91,7 @@ qt_add_qml_module(wim-client
         qml/AppIcon.qml
         qml/Avatar.qml
         qml/StatusBadge.qml
+        qml/ConnectionBanner.qml
         qml/EmptyState.qml
         qml/ChatListPage.qml
         qml/ConversationRow.qml
@@ -97,6 +99,8 @@ qt_add_qml_module(wim-client
         qml/MessageBubble.qml
         qml/MessageComposer.qml
         qml/ContactsPage.qml
+        qml/RequestCard.qml
+        qml/RequestsPage.qml
         qml/SettingsPage.qml
         qml/AuthPage.qml
     SOURCES
@@ -285,6 +289,7 @@ if(BUILD_TESTING)
                 --width=${test_width}
                 --height=${test_height}
                 --theme=${test_theme}
+                --assert-populated=conversationList
         )
         set_tests_properties(ui-smoke-${test_name} PROPERTIES
             ENVIRONMENT
@@ -297,6 +302,7 @@ if(BUILD_TESTING)
         "compact-landscape;normal;chats;844;390;light"
         "compact-conversation;long-content;chats;390;844;dark"
         "contacts;friend-requests;contacts;1280;800;light"
+        "requests;friend-requests;requests;1280;800;light"
         "settings;normal;settings;390;844;dark"
         "auth-expired;auth-expired;chats;390;844;dark"
         "large-history;large-history;chats;1280;800;dark"
@@ -312,6 +318,16 @@ if(BUILD_TESTING)
         if(test_name STREQUAL "compact-conversation"
            OR test_name STREQUAL "large-history")
             list(APPEND extra_arguments --open-conversation)
+        endif()
+        if(test_name STREQUAL "compact-landscape")
+            list(APPEND extra_arguments --assert-populated=conversationList)
+        elseif(test_name STREQUAL "compact-conversation"
+               OR test_name STREQUAL "large-history")
+            list(APPEND extra_arguments --assert-populated=timeline)
+        elseif(test_name STREQUAL "contacts")
+            list(APPEND extra_arguments --assert-populated=contactList)
+        elseif(test_name STREQUAL "requests")
+            list(APPEND extra_arguments --assert-populated=requestList)
         endif()
 
         add_test(
@@ -341,6 +357,7 @@ if(BUILD_TESTING)
             --width=1280
             --height=800
             --theme=light
+            --assert-populated=conversationList
     )
     set_tests_properties(ui-smoke-sqlite-restore PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software"

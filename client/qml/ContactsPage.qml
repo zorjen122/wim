@@ -3,6 +3,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQml.Models
 import Wim.Client
 
 Item {
@@ -64,7 +65,99 @@ Item {
         id: contactBrowser
 
         Rectangle {
+            id: contactBrowserRoot
+
             color: Theme.surface
+
+            function matchesContact(userId, displayName, statusText) {
+                const query = contactSearchField.text.trim().toLocaleLowerCase()
+                return query.length === 0
+                        || userId.toLocaleLowerCase().includes(query)
+                        || displayName.toLocaleLowerCase().includes(query)
+                        || statusText.toLocaleLowerCase().includes(query)
+            }
+
+            DelegateModel {
+                id: filteredContacts
+                model: root.controller.contacts
+                filterOnGroup: "visibleContacts"
+
+                groups: DelegateModelGroup {
+                    name: "visibleContacts"
+                    includeByDefault: true
+                }
+
+                delegate: Item {
+                    id: contactDelegate
+
+                    required property string userId
+                    required property int sourceIndex
+                    required property string displayName
+                    required property string statusText
+                    required property string avatarColor
+                    required property bool online
+                    required property bool favorite
+
+                    DelegateModel.groups:
+                        contactBrowserRoot.matchesContact(userId, displayName,
+                                                          statusText)
+                        ? ["visibleContacts"] : []
+
+                    width: ListView.view.width
+                    height: 68
+
+                    ItemDelegate {
+                        anchors.fill: parent
+                        highlighted: contactDelegate.sourceIndex
+                                     === root.controller.selectedContactIndex
+                        onClicked: {
+                            root.controller.selectContact(
+                                contactDelegate.sourceIndex)
+                            if (root.compactMode)
+                                root.profileVisible = true
+                        }
+
+                        contentItem: RowLayout {
+                            spacing: Tokens.space3
+
+                            Avatar {
+                                name: contactDelegate.displayName
+                                avatarColor: contactDelegate.avatarColor
+                                online: contactDelegate.online
+                                size: Tokens.avatarLarge
+                            }
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: Tokens.space1
+
+                                Label {
+                                    Layout.fillWidth: true
+                                    text: contactDelegate.displayName
+                                    color: Theme.textPrimary
+                                    font.pixelSize: Typography.titleSmall
+                                    font.bold: true
+                                    elide: Text.ElideRight
+                                }
+
+                                Label {
+                                    Layout.fillWidth: true
+                                    text: contactDelegate.statusText
+                                    color: contactDelegate.online
+                                           ? Theme.success : Theme.textSecondary
+                                    font.pixelSize: Typography.bodySmall
+                                }
+                            }
+
+                            Label {
+                                visible: contactDelegate.favorite
+                                text: "★"
+                                color: Theme.warning
+                            }
+                        }
+                    }
+                }
+            }
 
             ColumnLayout {
                 anchors.fill: parent
@@ -95,17 +188,16 @@ Item {
                     }
                 }
 
-                TabBar {
-                    id: contactTabs
+                TextField {
+                    id: contactSearchField
+
                     Layout.fillWidth: true
-
-                    TabButton {
-                        text: qsTr("联系人")
-                    }
-
-                    TabButton {
-                        text: qsTr("申请")
-                    }
+                    Layout.leftMargin: Tokens.space3
+                    Layout.rightMargin: Tokens.space3
+                    Layout.bottomMargin: Tokens.space2
+                    placeholderText: qsTr("搜索联系人或用户 ID")
+                    selectByMouse: true
+                    Accessible.name: qsTr("搜索联系人")
                 }
 
                 Label {
@@ -120,198 +212,33 @@ Item {
                     wrapMode: Text.Wrap
                 }
 
-                StackLayout {
+                Item {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    currentIndex: contactTabs.currentIndex
 
-                    Item {
-                        ListView {
-                            id: contactList
-                            anchors.fill: parent
-                            model: root.controller.contacts
-                            clip: true
-                            boundsBehavior: Flickable.StopAtBounds
+                    ListView {
+                        id: contactList
+                        objectName: "contactList"
+                        anchors.fill: parent
+                        model: filteredContacts
+                        clip: true
+                        boundsBehavior: Flickable.StopAtBounds
 
-                            ScrollBar.vertical: ScrollBar {}
-
-                            delegate: Item {
-                                id: contactDelegate
-
-                                required property int index
-                                required property string displayName
-                                required property string statusText
-                                required property string avatarColor
-                                required property bool online
-                                required property bool favorite
-
-                                width: ListView.view.width
-                                height: 68
-
-                                ItemDelegate {
-                                    anchors.fill: parent
-                                    highlighted: contactDelegate.index
-                                                 === root.controller.selectedContactIndex
-                                    onClicked: {
-                                        root.controller.selectContact(contactDelegate.index)
-                                        if (root.compactMode)
-                                            root.profileVisible = true
-                                    }
-
-                                    contentItem: RowLayout {
-                                        spacing: Tokens.space3
-
-                                        Avatar {
-                                            name: contactDelegate.displayName
-                                            avatarColor: contactDelegate.avatarColor
-                                            online: contactDelegate.online
-                                            size: Tokens.avatarLarge
-                                        }
-
-                                        ColumnLayout {
-                                            Layout.fillWidth: true
-                                            spacing: Tokens.space1
-
-                                            Label {
-                                                Layout.fillWidth: true
-                                                text: contactDelegate.displayName
-                                                color: Theme.textPrimary
-                                                font.pixelSize: Typography.titleSmall
-                                                font.bold: true
-                                                elide: Text.ElideRight
-                                            }
-
-                                            Label {
-                                                Layout.fillWidth: true
-                                                text: contactDelegate.statusText
-                                                color: contactDelegate.online
-                                                       ? Theme.success : Theme.textSecondary
-                                                font.pixelSize: Typography.bodySmall
-                                            }
-                                        }
-
-                                        Label {
-                                            visible: contactDelegate.favorite
-                                            text: "★"
-                                            color: Theme.warning
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        EmptyState {
-                            anchors.centerIn: parent
-                            visible: contactList.count === 0
-                            title: qsTr("还没有联系人")
-                            description: qsTr("通过用户 ID 搜索并发送好友申请。")
-                        }
+                        ScrollBar.vertical: ScrollBar {}
                     }
 
-                    Item {
-                        ListView {
-                            id: requestList
-                            anchors.fill: parent
-                            model: root.controller.requests
-                            clip: true
-                            spacing: Tokens.space2
-                            topMargin: Tokens.space2
-                            bottomMargin: Tokens.space2
-                            boundsBehavior: Flickable.StopAtBounds
-
-                            ScrollBar.vertical: ScrollBar {}
-
-                            delegate: Item {
-                                id: requestDelegate
-
-                                required property int index
-                                required property string displayName
-                                required property string requestMessage
-                                required property string avatarColor
-                                required property string requestKind
-                                required property string requestStatus
-
-                                width: ListView.view.width
-                                height: 112
-
-                                Rectangle {
-                                    anchors.fill: parent
-                                    anchors.leftMargin: Tokens.space2
-                                    anchors.rightMargin: Tokens.space2
-                                    radius: Tokens.radiusMedium
-                                    color: Theme.surfaceMuted
-
-                                    RowLayout {
-                                        anchors.fill: parent
-                                        anchors.margins: Tokens.space3
-                                        spacing: Tokens.space3
-
-                                        Avatar {
-                                            name: requestDelegate.displayName
-                                            avatarColor: requestDelegate.avatarColor
-                                            size: Tokens.avatarMedium
-                                        }
-
-                                        ColumnLayout {
-                                            Layout.fillWidth: true
-                                            spacing: Tokens.space1
-
-                                            Label {
-                                                Layout.fillWidth: true
-                                                text: requestDelegate.displayName
-                                                color: Theme.textPrimary
-                                                font.pixelSize: Typography.titleSmall
-                                                font.bold: true
-                                            }
-
-                                            Label {
-                                                Layout.fillWidth: true
-                                                text: (requestDelegate.requestKind === "group"
-                                                       ? qsTr("群审批 · ") : "")
-                                                      + requestDelegate.requestMessage
-                                                color: Theme.textSecondary
-                                                font.pixelSize: Typography.bodySmall
-                                                wrapMode: Text.Wrap
-                                                maximumLineCount: 2
-                                                elide: Text.ElideRight
-                                            }
-
-                                            RowLayout {
-                                                visible: requestDelegate.requestStatus === "pending"
-
-                                                Button {
-                                                    text: qsTr("接受")
-                                                    onClicked: root.controller.resolveRequest(
-                                                                   requestDelegate.index, true)
-                                                }
-
-                                                Button {
-                                                    text: qsTr("忽略")
-                                                    flat: true
-                                                    onClicked: root.controller.resolveRequest(
-                                                                   requestDelegate.index, false)
-                                                }
-                                            }
-
-                                            Label {
-                                                visible: requestDelegate.requestStatus !== "pending"
-                                                text: requestDelegate.requestStatus === "accepted"
-                                                      ? qsTr("已接受") : qsTr("已忽略")
-                                                color: requestDelegate.requestStatus === "accepted"
-                                                       ? Theme.success : Theme.textSecondary
-                                                font.pixelSize: Typography.bodySmall
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        EmptyState {
-                            anchors.centerIn: parent
-                            visible: requestList.count === 0
-                            title: qsTr("没有待处理申请")
-                        }
+                    EmptyState {
+                        anchors.centerIn: parent
+                        visible: contactList.count === 0
+                        title: contactSearchField.text.length > 0
+                               ? qsTr("没有匹配的联系人")
+                               : qsTr("还没有联系人")
+                        description: contactSearchField.text.length > 0
+                                     ? qsTr("请尝试姓名、状态或用户 ID。")
+                                     : qsTr("通过用户 ID 搜索并发送好友申请。")
+                        actionText: contactSearchField.text.length > 0
+                                    ? qsTr("清除搜索") : ""
+                        onActionRequested: contactSearchField.clear()
                     }
                 }
             }

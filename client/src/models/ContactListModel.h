@@ -12,6 +12,7 @@ class ContactListModel final : public QAbstractListModel {
  public:
   enum Role {
     UserIdRole = Qt::UserRole + 1,
+    SourceIndexRole,
     DisplayNameRole,
     StatusTextRole,
     AvatarColorRole,

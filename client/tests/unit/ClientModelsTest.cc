@@ -125,7 +125,9 @@ class ClientModelsTest final : public QObject {
   void deliveryStateRejectsRegression();
   void draftsAreScopedToConversation();
   void sendLifecycleSurvivesConversationSwitch();
+  void retryableMessageKeepsItsClientIdentity();
   void contactAndRequestModelsUpdateInPlace();
+  void fakeServiceActionsProvideCompleteUiFeedback();
   void sqlitePersistsOutboxDraftAndSyncCursor();
   void sqliteMigratesVersionOneToCurrent();
   void sqliteRejectsNewerSchema();
@@ -204,6 +206,8 @@ void ClientModelsTest::conversationRolesExposeSnapshotData() {
   const auto index = model.index(0);
   QCOMPARE(model.data(index, ConversationListModel::TitleRole).toString(),
            QStringLiteral("测试会话"));
+  QCOMPARE(model.data(index, ConversationListModel::SourceIndexRole).toInt(),
+           0);
   QCOMPARE(model.data(index, ConversationListModel::UnreadCountRole).toInt(),
            4);
   QCOMPARE(model.data(index, ConversationListModel::PinnedRole).toBool(), true);
@@ -228,13 +232,32 @@ void ClientModelsTest::conversationUnreadCountUpdatesByConversation() {
 void ClientModelsTest::deliveryStateRejectsRegression() {
   MessageListModel model;
   model.SetRecords({MessageRecord{
-      .clientMessageId = -1,
-      .senderId = QStringLiteral("me"),
-      .body = QStringLiteral("hello"),
-      .timestamp = QStringLiteral("12:30"),
-      .outgoing = true,
-      .deliveryState = MessageDeliveryState::PendingLocal,
-  }});
+                        .clientMessageId = -2,
+                        .senderId = QStringLiteral("alice"),
+                        .body = QStringLiteral("yesterday"),
+                        .timestamp = QStringLiteral("2026-07-17 23:59:00"),
+                        .outgoing = false,
+                        .deliveryState = MessageDeliveryState::Read,
+                    },
+                    MessageRecord{
+                        .clientMessageId = -1,
+                        .senderId = QStringLiteral("me"),
+                        .body = QStringLiteral("hello"),
+                        .timestamp = QStringLiteral("2026-07-18 12:30:00"),
+                        .outgoing = true,
+                        .deliveryState = MessageDeliveryState::PendingLocal,
+                    }},
+                   1);
+
+  const auto pendingIndex = model.index(1);
+  QCOMPARE(model.data(pendingIndex, MessageListModel::TimestampRole).toString(),
+           QStringLiteral("12:30"));
+  QCOMPARE(model.data(pendingIndex, MessageListModel::SourceIndexRole).toInt(),
+           1);
+  QVERIFY(model.data(pendingIndex, MessageListModel::ShowDateSeparatorRole)
+              .toBool());
+  QVERIFY(model.data(pendingIndex, MessageListModel::ShowUnreadSeparatorRole)
+              .toBool());
 
   QVERIFY(model.UpdateDeliveryState(-1, MessageDeliveryState::WaitingAccept));
   QVERIFY(model.UpdateDeliveryState(-1, MessageDeliveryState::Accepted));
@@ -243,9 +266,9 @@ void ClientModelsTest::deliveryStateRejectsRegression() {
   QVERIFY(model.UpdateDeliveryState(-1, MessageDeliveryState::Read));
   QVERIFY(
       !model.UpdateDeliveryState(-1, MessageDeliveryState::RetryableFailed));
-  QCOMPARE(model.data(model.index(0), MessageListModel::DeliveryStateRole)
-               .toString(),
-           QStringLiteral("read"));
+  QCOMPARE(
+      model.data(pendingIndex, MessageListModel::DeliveryStateRole).toString(),
+      QStringLiteral("read"));
 }
 
 void ClientModelsTest::draftsAreScopedToConversation() {
@@ -253,10 +276,12 @@ void ClientModelsTest::draftsAreScopedToConversation() {
 
   controller.setDraftText(QStringLiteral("林晓草稿"));
   controller.selectConversation(1);
+  QVERIFY(controller.selectedConversationIsGroup());
   QCOMPARE(controller.draftText(), QString{});
   controller.setDraftText(QStringLiteral("设计组草稿"));
 
   controller.selectConversation(0);
+  QVERIFY(!controller.selectedConversationIsGroup());
   QCOMPARE(controller.draftText(), QStringLiteral("林晓草稿"));
   controller.selectConversation(1);
   QCOMPARE(controller.draftText(), QStringLiteral("设计组草稿"));
@@ -286,13 +311,48 @@ void ClientModelsTest::sendLifecycleSurvivesConversationSwitch() {
            QStringLiteral("read"));
 }
 
+void ClientModelsTest::retryableMessageKeepsItsClientIdentity() {
+  AppController controller;
+  controller.setScenarioName(QStringLiteral("send-lifecycle"));
+
+  const int originalCount = controller.messages()->rowCount();
+  const auto lastIndex = controller.messages()->index(originalCount - 1);
+  QCOMPARE(controller.messages()
+               ->data(lastIndex, MessageListModel::ClientMessageIdRole)
+               .toLongLong(),
+           -90);
+  QCOMPARE(controller.messages()
+               ->data(lastIndex, MessageListModel::DeliveryStateRole)
+               .toString(),
+           QStringLiteral("retryable-failed"));
+
+  controller.retryMessage(-90);
+
+  QCOMPARE(controller.messages()->rowCount(), originalCount);
+  QCOMPARE(controller.messages()
+               ->data(lastIndex, MessageListModel::ClientMessageIdRole)
+               .toLongLong(),
+           -90);
+  QCOMPARE(controller.messages()
+               ->data(lastIndex, MessageListModel::DeliveryStateRole)
+               .toString(),
+           QStringLiteral("pending"));
+}
+
 void ClientModelsTest::contactAndRequestModelsUpdateInPlace() {
   AppController controller;
+
+  controller.setCurrentSection(QStringLiteral("requests"));
+  QCOMPARE(controller.currentSection(), QStringLiteral("requests"));
 
   QVERIFY(controller.contacts()->rowCount() > 0);
   QVERIFY(controller.requests()->rowCount() > 0);
 
   const auto favoriteIndex = controller.contacts()->index(0);
+  QCOMPARE(controller.contacts()
+               ->data(favoriteIndex, ContactListModel::SourceIndexRole)
+               .toInt(),
+           0);
   const bool oldFavorite =
       controller.contacts()
           ->data(favoriteIndex, ContactListModel::FavoriteRole)
@@ -304,11 +364,19 @@ void ClientModelsTest::contactAndRequestModelsUpdateInPlace() {
            !oldFavorite);
 
   const auto requestIndex = controller.requests()->index(0);
+  QCOMPARE(controller.requests()->pendingCount(), 1);
+  QCOMPARE(controller.requests()->resolvedCount(), 2);
   QCOMPARE(controller.requests()
                ->data(requestIndex, RequestListModel::StatusRole)
                .toString(),
            QStringLiteral("pending"));
+  QVERIFY(controller.requests()->SetStatus(0, QStringLiteral("accepting")));
+  QCOMPARE(controller.requests()->pendingCount(), 1);
+  QCOMPARE(controller.requests()->resolvedCount(), 2);
+  QVERIFY(controller.requests()->SetStatus(0, QStringLiteral("pending")));
   controller.resolveRequest(0, true);
+  QCOMPARE(controller.requests()->pendingCount(), 0);
+  QCOMPARE(controller.requests()->resolvedCount(), 3);
   QCOMPARE(controller.requests()
                ->data(requestIndex, RequestListModel::StatusRole)
                .toString(),
@@ -318,6 +386,25 @@ void ClientModelsTest::contactAndRequestModelsUpdateInPlace() {
                ->data(requestIndex, RequestListModel::StatusRole)
                .toString(),
            QStringLiteral("accepted"));
+}
+
+void ClientModelsTest::fakeServiceActionsProvideCompleteUiFeedback() {
+  AppController controller;
+
+  controller.sendFriendRequest(QStringLiteral("42"), QStringLiteral("你好"));
+  QVERIFY(controller.serviceActionStatus().contains(QStringLiteral("42")));
+
+  const int originalConversationCount = controller.conversations()->rowCount();
+  controller.setCurrentSection(QStringLiteral("contacts"));
+  controller.createGroup(QStringLiteral("第一阶段演示群"));
+  QCOMPARE(controller.conversations()->rowCount(),
+           originalConversationCount + 1);
+  QCOMPARE(controller.currentSection(), QStringLiteral("chats"));
+  QCOMPARE(controller.selectedConversationTitle(),
+           QStringLiteral("第一阶段演示群"));
+
+  controller.joinGroup(QStringLiteral("9001"), QString{});
+  QVERIFY(controller.serviceActionStatus().contains(QStringLiteral("9001")));
 }
 
 void ClientModelsTest::sqlitePersistsOutboxDraftAndSyncCursor() {

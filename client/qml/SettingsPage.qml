@@ -33,6 +33,48 @@ Rectangle {
 
             GroupBox {
                 Layout.fillWidth: true
+                title: qsTr("个人资料")
+
+                RowLayout {
+                    anchors.fill: parent
+                    spacing: Tokens.space3
+
+                    Avatar {
+                        name: qsTr("我")
+                        avatarColor: Theme.accent
+                        size: Tokens.avatarLarge
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: Tokens.space1
+
+                        Label {
+                            text: qsTr("当前账号")
+                            color: Theme.textPrimary
+                            font.pixelSize: Typography.titleSmall
+                            font.bold: true
+                        }
+
+                        Label {
+                            Layout.fillWidth: true
+                            text: qsTr("头像、昵称和个人信息将在资料接口稳定后开放编辑。")
+                            color: Theme.textSecondary
+                            font.pixelSize: Typography.bodySmall
+                            wrapMode: Text.Wrap
+                        }
+                    }
+
+                    Button {
+                        text: qsTr("编辑")
+                        enabled: false
+                        Accessible.name: qsTr("编辑个人资料，暂不可用")
+                    }
+                }
+            }
+
+            GroupBox {
+                Layout.fillWidth: true
                 title: qsTr("外观")
 
                 ColumnLayout {
@@ -193,6 +235,88 @@ Rectangle {
                     Button {
                         text: qsTr("管理")
                         enabled: false
+                    }
+                }
+            }
+
+            GroupBox {
+                Layout.fillWidth: true
+                title: qsTr("隐私与安全")
+
+                ColumnLayout {
+                    anchors.fill: parent
+
+                    Switch {
+                        text: qsTr("应用锁")
+                        checked: false
+                        enabled: false
+                    }
+
+                    Label {
+                        Layout.fillWidth: true
+                        text: qsTr("正式凭据接入系统安全存储后，再开放本地锁和设备管理。")
+                        color: Theme.textSecondary
+                        font.pixelSize: Typography.bodySmall
+                        wrapMode: Text.Wrap
+                    }
+
+                    Button {
+                        text: qsTr("已登录设备")
+                        enabled: false
+                    }
+                }
+            }
+
+            GroupBox {
+                Layout.fillWidth: true
+                title: qsTr("高级")
+
+                GridLayout {
+                    anchors.fill: parent
+                    columns: 2
+                    columnSpacing: Tokens.space4
+                    rowSpacing: Tokens.space2
+
+                    Label {
+                        text: qsTr("平台")
+                        color: Theme.textSecondary
+                        font.pixelSize: Typography.bodySmall
+                    }
+
+                    Label {
+                        Layout.fillWidth: true
+                        text: root.controller.platformName
+                        color: Theme.textPrimary
+                        font.pixelSize: Typography.bodySmall
+                        horizontalAlignment: Text.AlignRight
+                    }
+
+                    Label {
+                        text: qsTr("数据源")
+                        color: Theme.textSecondary
+                        font.pixelSize: Typography.bodySmall
+                    }
+
+                    Label {
+                        Layout.fillWidth: true
+                        text: root.controller.repositoryKind.toUpperCase()
+                        color: Theme.textPrimary
+                        font.pixelSize: Typography.bodySmall
+                        horizontalAlignment: Text.AlignRight
+                    }
+
+                    Label {
+                        text: qsTr("连接状态")
+                        color: Theme.textSecondary
+                        font.pixelSize: Typography.bodySmall
+                    }
+
+                    Label {
+                        Layout.fillWidth: true
+                        text: root.controller.connectionStatus
+                        color: Theme.textPrimary
+                        font.pixelSize: Typography.bodySmall
+                        horizontalAlignment: Text.AlignRight
                     }
                 }
             }

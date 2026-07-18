@@ -1,6 +1,9 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQml.Models
 import Wim.Client
 
 Rectangle {
@@ -8,9 +11,137 @@ Rectangle {
 
     required property var controller
     property bool compactMode: false
+    property bool searchVisible: false
     signal backRequested()
 
     color: Theme.canvas
+
+    function setSearchVisible(visible) {
+        if (searchVisible === visible)
+            return
+        if (visible)
+            root.controller.saveTimelinePosition(timeline.contentY)
+        searchVisible = visible
+        if (visible) {
+            Qt.callLater(messageSearchField.forceActiveFocus)
+        } else {
+            messageSearchField.clear()
+            Qt.callLater(function() {
+                timeline.contentY = root.controller.timelinePosition()
+            })
+        }
+    }
+
+    DelegateModel {
+        id: filteredMessages
+        model: root.controller.messages
+        filterOnGroup: "visibleMessages"
+
+        groups: DelegateModelGroup {
+            name: "visibleMessages"
+            includeByDefault: true
+        }
+
+        delegate: Item {
+            id: messageDelegate
+
+            required property var clientMessageId
+            required property string body
+            required property string timestamp
+            required property int sourceIndex
+            required property string dateLabel
+            required property bool showDateSeparator
+            required property bool showUnreadSeparator
+            required property bool outgoing
+            required property string deliveryState
+
+            DelegateModel.groups: {
+                const query = messageSearchField.text.trim().toLocaleLowerCase()
+                return query.length === 0
+                        || body.toLocaleLowerCase().includes(query)
+                        ? ["visibleMessages"] : []
+            }
+
+            width: ListView.view.width
+            height: messageColumn.implicitHeight
+
+            Column {
+                id: messageColumn
+
+                width: parent.width
+                spacing: Tokens.space1
+
+                Item {
+                    visible: messageDelegate.showDateSeparator
+                    width: parent.width
+                    height: visible ? 32 : 0
+
+                    Rectangle {
+                        anchors.centerIn: parent
+                        width: dateLabel.implicitWidth + Tokens.space4
+                        height: 26
+                        radius: Tokens.radiusFull
+                        color: Theme.surface
+                        border.width: 1
+                        border.color: Theme.border
+
+                        Label {
+                            id: dateLabel
+                            anchors.centerIn: parent
+                            text: messageDelegate.dateLabel
+                            color: Theme.textSecondary
+                            font.pixelSize: Typography.caption
+                        }
+                    }
+                }
+
+                Item {
+                    visible: !root.searchVisible
+                             && messageDelegate.showUnreadSeparator
+                    width: parent.width
+                    height: visible ? 32 : 0
+
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        height: 1
+                        color: Theme.accent
+                    }
+
+                    Rectangle {
+                        anchors.centerIn: parent
+                        width: unreadLabel.implicitWidth + Tokens.space4
+                        height: 24
+                        color: Theme.canvas
+
+                        Label {
+                            id: unreadLabel
+                            anchors.centerIn: parent
+                            text: qsTr("未读消息")
+                            color: Theme.accent
+                            font.pixelSize: Typography.caption
+                            font.bold: true
+                        }
+                    }
+                }
+
+                MessageBubble {
+                    id: messageBubble
+
+                    width: parent.width
+                    messageText: messageDelegate.body
+                    timeText: messageDelegate.timestamp
+                    outgoing: messageDelegate.outgoing
+                    deliveryState: messageDelegate.deliveryState
+                    clientMessageId: messageDelegate.clientMessageId
+                    compactMode: root.compactMode
+                    onRetryRequested: clientMessageId =>
+                        root.controller.retryMessage(clientMessageId)
+                }
+            }
+        }
+    }
 
     ColumnLayout {
         anchors.fill: parent
@@ -57,7 +188,8 @@ Rectangle {
 
                     Label {
                         visible: root.controller.selectedConversationIndex >= 0
-                        text: qsTr("最近在线")
+                        text: root.controller.selectedConversationIsGroup
+                              ? qsTr("群聊") : qsTr("最近在线")
                         color: Theme.textSecondary
                         font.pixelSize: Typography.caption
                     }
@@ -66,14 +198,64 @@ Rectangle {
                 ToolButton {
                     icon.source: Icons.search
                     icon.color: Theme.textSecondary
+                    enabled: root.controller.selectedConversationIndex >= 0
+                    checked: root.searchVisible
+                    onClicked: root.setSearchVisible(!root.searchVisible)
                     Accessible.name: qsTr("在会话中搜索")
                 }
 
                 ToolButton {
                     icon.source: Icons.more
                     icon.color: Theme.textSecondary
+                    enabled: root.controller.selectedConversationIndex >= 0
                     onClicked: detailsDrawer.open()
                     Accessible.name: qsTr("会话详情")
+                }
+            }
+
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                height: 1
+                color: Theme.divider
+            }
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: root.searchVisible ? 56 : 0
+            visible: root.searchVisible
+            color: Theme.surface
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: Math.max(Tokens.space3,
+                                             (parent.width - 900) / 2)
+                anchors.rightMargin: Math.max(Tokens.space3,
+                                              (parent.width - 900) / 2)
+                spacing: Tokens.space2
+
+                TextField {
+                    id: messageSearchField
+
+                    Layout.fillWidth: true
+                    placeholderText: qsTr("搜索当前会话")
+                    selectByMouse: true
+                    Accessible.name: qsTr("搜索当前会话消息")
+                }
+
+                Label {
+                    visible: messageSearchField.text.length > 0
+                    text: qsTr("%1 条结果").arg(timeline.count)
+                    color: Theme.textSecondary
+                    font.pixelSize: Typography.bodySmall
+                }
+
+                ToolButton {
+                    text: "×"
+                    onClicked: root.setSearchVisible(false)
+                    Accessible.name: qsTr("关闭会话搜索")
                 }
             }
 
@@ -92,6 +274,7 @@ Rectangle {
 
             ListView {
                 id: timeline
+                objectName: "timeline"
                 anchors.fill: parent
                 anchors.leftMargin: Math.max(Tokens.space3,
                                              (parent.width - 900) / 2)
@@ -102,42 +285,27 @@ Rectangle {
                 visible: root.controller.selectedConversationIndex >= 0
                 clip: true
                 spacing: Tokens.space1
-                model: root.controller.messages
+                model: filteredMessages
                 boundsBehavior: Flickable.StopAtBounds
                 verticalLayoutDirection: ListView.TopToBottom
 
                 ScrollBar.vertical: ScrollBar {}
 
-                onCountChanged: Qt.callLater(positionViewAtEnd)
-                onMovementEnded: root.controller.saveTimelinePosition(contentY)
+                onCountChanged: {
+                    if (!root.searchVisible)
+                        Qt.callLater(positionViewAtEnd)
+                }
+                onMovementEnded: {
+                    if (!root.searchVisible)
+                        root.controller.saveTimelinePosition(contentY)
+                }
 
                 Component.onCompleted: Qt.callLater(function() {
                     contentY = root.controller.timelinePosition()
                 })
-                Component.onDestruction:
-                    root.controller.saveTimelinePosition(contentY)
-
-                delegate: Item {
-                    id: messageDelegate
-
-                    required property var clientMessageId
-                    required property string body
-                    required property string timestamp
-                    required property bool outgoing
-                    required property string deliveryState
-
-                    width: ListView.view.width
-                    height: messageBubble.height
-
-                    MessageBubble {
-                        id: messageBubble
-
-                        width: parent.width
-                        messageText: messageDelegate.body
-                        timeText: messageDelegate.timestamp
-                        outgoing: messageDelegate.outgoing
-                        deliveryState: messageDelegate.deliveryState
-                    }
+                Component.onDestruction: {
+                    if (!root.searchVisible)
+                        root.controller.saveTimelinePosition(contentY)
                 }
             }
 
@@ -146,7 +314,8 @@ Rectangle {
                 anchors.bottom: parent.bottom
                 anchors.rightMargin: Tokens.space4
                 anchors.bottomMargin: Tokens.space3
-                visible: root.controller.selectedConversationUnreadCount > 0
+                visible: !root.searchVisible
+                         && root.controller.selectedConversationUnreadCount > 0
                 text: qsTr("↓ %1 条未读")
                       .arg(root.controller.selectedConversationUnreadCount)
                 onClicked: {
@@ -165,6 +334,17 @@ Rectangle {
                 visible: root.controller.selectedConversationIndex < 0
                 title: qsTr("选择一个会话")
                 description: qsTr("从会话列表选择联系人，或开始一个新会话。")
+            }
+
+            EmptyState {
+                anchors.centerIn: parent
+                visible: root.searchVisible
+                         && messageSearchField.text.length > 0
+                         && timeline.count === 0
+                title: qsTr("没有匹配的消息")
+                description: qsTr("请尝试其他关键词。")
+                actionText: qsTr("清除搜索")
+                onActionRequested: messageSearchField.clear()
             }
         }
 
@@ -218,7 +398,8 @@ Rectangle {
 
                     Label {
                         Layout.fillWidth: true
-                        text: qsTr("会话详情")
+                        text: root.controller.selectedConversationIsGroup
+                              ? qsTr("群聊详情") : qsTr("会话详情")
                         color: Theme.textPrimary
                         font.pixelSize: Typography.title
                         font.bold: true
@@ -259,6 +440,10 @@ Rectangle {
                     Button {
                         Layout.fillWidth: true
                         text: qsTr("搜索")
+                        onClicked: {
+                            detailsDrawer.close()
+                            root.setSearchVisible(true)
+                        }
                     }
                 }
 
@@ -266,6 +451,54 @@ Rectangle {
                     Layout.fillWidth: true
                     Layout.preferredHeight: 1
                     color: Theme.divider
+                }
+
+                Label {
+                    visible: root.controller.selectedConversationIsGroup
+                    text: qsTr("群成员")
+                    color: Theme.textPrimary
+                    font.pixelSize: Typography.titleSmall
+                    font.bold: true
+                }
+
+                Rectangle {
+                    visible: root.controller.selectedConversationIsGroup
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 72
+                    radius: Tokens.radiusMedium
+                    color: Theme.surfaceMuted
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.margins: Tokens.space3
+                        spacing: Tokens.space3
+
+                        Avatar {
+                            name: qsTr("我")
+                            avatarColor: Theme.accent
+                            size: Tokens.avatarMedium
+                        }
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: Tokens.space1
+
+                            Label {
+                                text: qsTr("成员列表待同步")
+                                color: Theme.textPrimary
+                                font.pixelSize: Typography.body
+                                font.bold: true
+                            }
+
+                            Label {
+                                Layout.fillWidth: true
+                                text: qsTr("群成员接口稳定后在此展示完整列表。")
+                                color: Theme.textSecondary
+                                font.pixelSize: Typography.bodySmall
+                                wrapMode: Text.Wrap
+                            }
+                        }
+                    }
                 }
 
                 Label {

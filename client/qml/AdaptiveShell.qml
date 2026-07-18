@@ -45,6 +45,7 @@ Item {
                 Layout.fillHeight: true
                 Layout.preferredWidth: Tokens.navigationRailWidth
                 currentSection: root.controller.currentSection
+                pendingRequestCount: root.controller.requests.pendingCount
                 onSectionRequested: section =>
                     root.controller.currentSection = section
             }
@@ -53,7 +54,8 @@ Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 currentIndex: root.controller.currentSection === "chats" ? 0
-                              : root.controller.currentSection === "contacts" ? 1 : 2
+                              : root.controller.currentSection === "contacts" ? 1
+                              : root.controller.currentSection === "requests" ? 2 : 3
 
                 RowLayout {
                     spacing: 0
@@ -84,6 +86,11 @@ Item {
                     compactMode: false
                 }
 
+                RequestsPage {
+                    controller: root.controller
+                    compactMode: false
+                }
+
                 SettingsPage {
                     controller: root.controller
                     compactMode: false
@@ -104,6 +111,8 @@ Item {
                 sourceComponent: {
                     if (root.controller.currentSection === "contacts")
                         return compactContacts
+                    if (root.controller.currentSection === "requests")
+                        return compactRequests
                     if (root.controller.currentSection === "settings")
                         return compactSettings
                     return root.compactConversationVisible
@@ -115,6 +124,7 @@ Item {
                 Layout.fillWidth: true
                 visible: !root.compactConversationVisible
                 currentSection: root.controller.currentSection
+                pendingRequestCount: root.controller.requests.pendingCount
                 onSectionRequested: section =>
                     root.controller.currentSection = section
             }
@@ -144,6 +154,15 @@ Item {
         id: compactContacts
 
         ContactsPage {
+            controller: root.controller
+            compactMode: true
+        }
+    }
+
+    Component {
+        id: compactRequests
+
+        RequestsPage {
             controller: root.controller
             compactMode: true
         }

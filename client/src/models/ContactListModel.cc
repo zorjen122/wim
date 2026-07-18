@@ -20,6 +20,8 @@ QVariant ContactListModel::data(const QModelIndex &index, int role) const {
   switch (role) {
     case UserIdRole:
       return record.userId;
+    case SourceIndexRole:
+      return index.row();
     case DisplayNameRole:
       return record.displayName;
     case StatusTextRole:
@@ -37,9 +39,10 @@ QVariant ContactListModel::data(const QModelIndex &index, int role) const {
 
 QHash<int, QByteArray> ContactListModel::roleNames() const {
   return {
-      {UserIdRole, "userId"},         {DisplayNameRole, "displayName"},
-      {StatusTextRole, "statusText"}, {AvatarColorRole, "avatarColor"},
-      {OnlineRole, "online"},         {FavoriteRole, "favorite"},
+      {UserIdRole, "userId"},           {SourceIndexRole, "sourceIndex"},
+      {DisplayNameRole, "displayName"}, {StatusTextRole, "statusText"},
+      {AvatarColorRole, "avatarColor"}, {OnlineRole, "online"},
+      {FavoriteRole, "favorite"},
   };
 }
 

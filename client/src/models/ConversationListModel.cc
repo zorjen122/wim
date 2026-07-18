@@ -20,6 +20,8 @@ QVariant ConversationListModel::data(const QModelIndex &index, int role) const {
   switch (role) {
     case ConversationIdRole:
       return record.conversationId;
+    case SourceIndexRole:
+      return index.row();
     case TitleRole:
       return record.title;
     case PreviewRole:
@@ -48,6 +50,7 @@ QVariant ConversationListModel::data(const QModelIndex &index, int role) const {
 QHash<int, QByteArray> ConversationListModel::roleNames() const {
   return {
       {ConversationIdRole, "conversationId"},
+      {SourceIndexRole, "sourceIndex"},
       {TitleRole, "title"},
       {PreviewRole, "preview"},
       {TimestampRole, "timestamp"},

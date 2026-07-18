@@ -3,6 +3,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQml.Models
 import Wim.Client
 
 Rectangle {
@@ -10,6 +11,7 @@ Rectangle {
 
     required property var controller
     signal conversationOpened()
+    property string filterMode: "all"
 
     color: Theme.surface
 
@@ -18,6 +20,87 @@ Rectangle {
             return
         root.controller.selectConversation(index)
         root.conversationOpened()
+    }
+
+    function sourceIndexOf(item) {
+        return item ? item.sourceIndex : -1
+    }
+
+    function matchesConversation(conversationId, title, preview, unreadCount) {
+        const query = searchField.text.trim().toLocaleLowerCase()
+        const matchesQuery = query.length === 0
+                || title.toLocaleLowerCase().includes(query)
+                || preview.toLocaleLowerCase().includes(query)
+        if (!matchesQuery)
+            return false
+
+        switch (filterMode) {
+        case "unread":
+            return unreadCount > 0
+        case "groups":
+            return conversationId.startsWith("group:")
+        default:
+            return true
+        }
+    }
+
+    DelegateModel {
+        id: filteredConversations
+        model: root.controller.conversations
+        filterOnGroup: "visibleConversations"
+
+        groups: DelegateModelGroup {
+            name: "visibleConversations"
+            includeByDefault: true
+        }
+
+        delegate: Item {
+            id: conversationDelegate
+
+            required property string conversationId
+            required property int sourceIndex
+            required property string title
+            required property string preview
+            required property string timestamp
+            required property string avatarColor
+            required property int unreadCount
+            required property bool pinned
+            required property bool muted
+            required property bool online
+
+            DelegateModel.groups:
+                root.matchesConversation(conversationId, title, preview,
+                                         unreadCount)
+                ? ["visibleConversations"] : []
+
+            width: ListView.view.width
+            height: conversationRow.height
+
+            ConversationRow {
+                id: conversationRow
+
+                anchors.left: parent.left
+                anchors.right: parent.right
+                conversationTitle: conversationDelegate.title
+                previewText: conversationDelegate.preview
+                timeText: conversationDelegate.timestamp
+                avatarColor: conversationDelegate.avatarColor
+                unreadCount: conversationDelegate.unreadCount
+                pinned: conversationDelegate.pinned
+                muted: conversationDelegate.muted
+                online: conversationDelegate.online
+                selected: conversationDelegate.sourceIndex
+                          === root.controller.selectedConversationIndex
+                onActivated:
+                    root.openConversation(conversationDelegate.sourceIndex)
+                onPinRequested:
+                    root.controller.togglePinned(conversationDelegate.sourceIndex)
+                onMuteRequested:
+                    root.controller.toggleMuted(conversationDelegate.sourceIndex)
+                onMarkReadRequested:
+                    root.controller.markRead(conversationDelegate.sourceIndex)
+            }
+        }
     }
 
     ColumnLayout {
@@ -44,6 +127,7 @@ Rectangle {
                 icon.source: Icons.compose
                 icon.color: Theme.textPrimary
                 Accessible.name: qsTr("新建会话")
+                onClicked: root.controller.currentSection = "contacts"
             }
         }
 
@@ -77,17 +161,50 @@ Rectangle {
             }
         }
 
+        ButtonGroup {
+            id: conversationFilterGroup
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.leftMargin: Tokens.space3
+            Layout.rightMargin: Tokens.space3
+            Layout.bottomMargin: Tokens.space2
+            spacing: Tokens.space1
+
+            Repeater {
+                model: [
+                    { "label": qsTr("全部"), "mode": "all" },
+                    { "label": qsTr("未读"), "mode": "unread" },
+                    { "label": qsTr("群聊"), "mode": "groups" }
+                ]
+
+                delegate: Button {
+                    required property var modelData
+
+                    Layout.fillWidth: true
+                    text: modelData.label
+                    checkable: true
+                    checked: root.filterMode === modelData.mode
+                    flat: !checked
+                    ButtonGroup.group: conversationFilterGroup
+                    Accessible.name: qsTr("筛选：%1").arg(text)
+                    onClicked: root.filterMode = modelData.mode
+                }
+            }
+        }
+
         Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
 
             ListView {
                 id: conversationList
+                objectName: "conversationList"
                 anchors.fill: parent
                 visible: count > 0
                 clip: true
-                currentIndex: root.controller.selectedConversationIndex
-                model: root.controller.conversations
+                model: filteredConversations
                 boundsBehavior: Flickable.StopAtBounds
                 keyNavigationEnabled: true
                 focus: true
@@ -101,65 +218,39 @@ Rectangle {
                     root.controller.saveConversationListPosition(contentY)
 
                 Keys.onReturnPressed: event => {
-                    root.openConversation(currentIndex)
+                    root.openConversation(root.sourceIndexOf(currentItem))
                     event.accepted = true
                 }
                 Keys.onEnterPressed: event => {
-                    root.openConversation(currentIndex)
+                    root.openConversation(root.sourceIndexOf(currentItem))
                     event.accepted = true
                 }
 
                 ScrollBar.vertical: ScrollBar {}
 
-                delegate: Item {
-                    id: conversationDelegate
-
-                    required property int index
-                    required property string title
-                    required property string preview
-                    required property string timestamp
-                    required property string avatarColor
-                    required property int unreadCount
-                    required property bool pinned
-                    required property bool muted
-                    required property bool online
-
-                    width: ListView.view.width
-                    height: conversationRow.height
-
-                    ConversationRow {
-                        id: conversationRow
-
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        conversationTitle: conversationDelegate.title
-                        previewText: conversationDelegate.preview
-                        timeText: conversationDelegate.timestamp
-                        avatarColor: conversationDelegate.avatarColor
-                        unreadCount: conversationDelegate.unreadCount
-                        pinned: conversationDelegate.pinned
-                        muted: conversationDelegate.muted
-                        online: conversationDelegate.online
-                        selected: conversationDelegate.index
-                                  === root.controller.selectedConversationIndex
-                        onActivated:
-                            root.openConversation(conversationDelegate.index)
-                        onPinRequested:
-                            root.controller.togglePinned(conversationDelegate.index)
-                        onMuteRequested:
-                            root.controller.toggleMuted(conversationDelegate.index)
-                        onMarkReadRequested:
-                            root.controller.markRead(conversationDelegate.index)
-                    }
-                }
             }
 
             EmptyState {
                 anchors.centerIn: parent
                 visible: conversationList.count === 0
-                title: qsTr("还没有会话")
-                description: qsTr("添加联系人或创建群聊后，会话会出现在这里。")
-                actionText: qsTr("开始新会话")
+                title: searchField.text.length > 0 || root.filterMode !== "all"
+                       ? qsTr("没有匹配的会话") : qsTr("还没有会话")
+                description: searchField.text.length > 0
+                             ? qsTr("请尝试其他关键词。")
+                             : root.filterMode !== "all"
+                               ? qsTr("当前筛选条件下没有会话。")
+                               : qsTr("添加联系人或创建群聊后，会话会出现在这里。")
+                actionText: searchField.text.length > 0
+                            || root.filterMode !== "all"
+                            ? qsTr("清除筛选") : qsTr("开始新会话")
+                onActionRequested: {
+                    if (searchField.text.length > 0 || root.filterMode !== "all") {
+                        searchField.clear()
+                        root.filterMode = "all"
+                    } else {
+                        root.controller.currentSection = "contacts"
+                    }
+                }
             }
         }
     }

@@ -1,8 +1,18 @@
 #include "models/RequestListModel.h"
 
+#include <algorithm>
 #include <utility>
 
 namespace wim::client {
+namespace {
+
+bool IsPendingStatus(const QString &status) {
+  return status == QStringLiteral("pending") ||
+         status == QStringLiteral("accepting") ||
+         status == QStringLiteral("declining");
+}
+
+}  // namespace
 
 RequestListModel::RequestListModel(QObject *parent)
     : QAbstractListModel(parent) {}
@@ -43,10 +53,22 @@ QHash<int, QByteArray> RequestListModel::roleNames() const {
   };
 }
 
+int RequestListModel::pendingCount() const {
+  return static_cast<int>(std::count_if(records_.cbegin(), records_.cend(),
+                                        [](const RequestRecord &record) {
+                                          return IsPendingStatus(record.status);
+                                        }));
+}
+
+int RequestListModel::resolvedCount() const {
+  return records_.size() - pendingCount();
+}
+
 void RequestListModel::SetRecords(QVector<RequestRecord> records) {
   beginResetModel();
   records_ = std::move(records);
   endResetModel();
+  emit countsChanged();
 }
 
 const RequestRecord *RequestListModel::RecordAt(int index) const {
@@ -57,12 +79,13 @@ const RequestRecord *RequestListModel::RecordAt(int index) const {
 }
 
 bool RequestListModel::SetStatus(int row, const QString &status) {
-  if (row < 0 || row >= records_.size() || records_[row].status != "pending") {
+  if (row < 0 || row >= records_.size() || records_[row].status == status) {
     return false;
   }
   records_[row].status = status;
   const auto modelIndex = index(row);
   emit dataChanged(modelIndex, modelIndex, {StatusRole});
+  emit countsChanged();
   return true;
 }
 

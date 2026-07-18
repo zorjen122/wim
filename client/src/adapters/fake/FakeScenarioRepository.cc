@@ -78,6 +78,12 @@ ClientSnapshot FakeScenarioRepository::LoadScenario(
         Message(-91, 0, 0, QStringLiteral("me"),
                 QStringLiteral("连接中断后，这条消息的结果尚未确认。"),
                 QStringLiteral("10:44"), true, MessageDeliveryState::Unknown));
+  } else if (scenarioName == QStringLiteral("send-lifecycle")) {
+    auto &messages = snapshot.messagesByConversation[QStringLiteral("alice")];
+    messages.push_back(Message(
+        -90, 0, 0, QStringLiteral("me"),
+        QStringLiteral("这条消息可使用原 client_message_id 重试。"),
+        QStringLiteral("10:43"), true, MessageDeliveryState::RetryableFailed));
   }
 
   if (scenarioName == QStringLiteral("friend-requests")) {
@@ -149,7 +155,7 @@ ClientSnapshot FakeScenarioRepository::NormalScenario(
                .pinned = true,
                .muted = false,
                .online = true},
-              {.conversationId = QStringLiteral("design"),
+              {.conversationId = QStringLiteral("group:4001"),
                .title = QStringLiteral("WIM 设计组"),
                .preview = QStringLiteral("周宁：深色主题的对比度已调整"),
                .timestamp = QStringLiteral("09:18"),
@@ -167,7 +173,7 @@ ClientSnapshot FakeScenarioRepository::NormalScenario(
                .pinned = false,
                .muted = false,
                .online = false},
-              {.conversationId = QStringLiteral("backend"),
+              {.conversationId = QStringLiteral("group:4002"),
                .title = QStringLiteral("服务端路线"),
                .preview = QStringLiteral("Outbox 阶段放到同步闭环之后"),
                .timestamp = QStringLiteral("周二"),
@@ -258,7 +264,7 @@ ClientSnapshot FakeScenarioRepository::NormalScenario(
       });
 
   snapshot.messagesByConversation.insert(
-      QStringLiteral("design"),
+      QStringLiteral("group:4001"),
       {
           Message(-10, 4001, 12, QStringLiteral("zhou"),
                   QStringLiteral(
@@ -279,7 +285,7 @@ ClientSnapshot FakeScenarioRepository::NormalScenario(
                QStringLiteral("昨天"), false)});
 
   snapshot.messagesByConversation.insert(
-      QStringLiteral("backend"),
+      QStringLiteral("group:4002"),
       {Message(-30, 6001, 21, QStringLiteral("backend"),
                QStringLiteral(
                    "先完成持久幂等接受与断线同步，再扩展 Kafka 和路由层。"),

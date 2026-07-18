@@ -10,6 +10,9 @@ Item {
     required property string timeText
     required property bool outgoing
     required property string deliveryState
+    required property var clientMessageId
+    property bool compactMode: false
+    signal retryRequested(var clientMessageId)
 
     readonly property string stateText: {
         switch (deliveryState) {
@@ -36,6 +39,118 @@ Item {
 
     implicitHeight: bubble.implicitHeight + Tokens.space1
 
+    function copyMessage() {
+        messageTextItem.selectAll()
+        messageTextItem.copy()
+        messageTextItem.deselect()
+    }
+
+    function retryMessage() {
+        root.retryRequested(root.clientMessageId)
+    }
+
+    HoverHandler {
+        id: hoverHandler
+    }
+
+    TapHandler {
+        acceptedButtons: Qt.RightButton
+        onTapped: messageMenu.popup()
+    }
+
+    TapHandler {
+        acceptedButtons: Qt.LeftButton
+        onLongPressed: {
+            if (root.compactMode)
+                messageActionSheet.open()
+            else
+                messageMenu.popup()
+        }
+    }
+
+    Menu {
+        id: messageMenu
+
+        MenuItem {
+            text: qsTr("复制")
+            onTriggered: root.copyMessage()
+        }
+
+        MenuItem {
+            text: qsTr("回复（待协议）")
+            enabled: false
+        }
+
+        MenuItem {
+            visible: root.deliveryState === "retryable-failed"
+            text: qsTr("重试发送")
+            onTriggered: root.retryMessage()
+        }
+    }
+
+    Drawer {
+        id: messageActionSheet
+
+        parent: Overlay.overlay
+        edge: Qt.BottomEdge
+        width: parent ? parent.width : 0
+        height: messageActions.implicitHeight + Tokens.space6
+        modal: true
+        dim: true
+
+        contentItem: ColumnLayout {
+            id: messageActions
+
+            spacing: Tokens.space1
+
+            Label {
+                Layout.fillWidth: true
+                Layout.leftMargin: Tokens.space4
+                Layout.rightMargin: Tokens.space4
+                Layout.topMargin: Tokens.space3
+                text: qsTr("消息操作")
+                color: Theme.textPrimary
+                font.pixelSize: Typography.titleSmall
+                font.bold: true
+            }
+
+            Button {
+                Layout.fillWidth: true
+                text: qsTr("复制")
+                flat: true
+                onClicked: {
+                    root.copyMessage()
+                    messageActionSheet.close()
+                }
+            }
+
+            Button {
+                Layout.fillWidth: true
+                text: qsTr("回复（待协议）")
+                flat: true
+                enabled: false
+            }
+
+            Button {
+                Layout.fillWidth: true
+                visible: root.deliveryState === "retryable-failed"
+                text: qsTr("重试发送")
+                flat: true
+                onClicked: {
+                    root.retryMessage()
+                    messageActionSheet.close()
+                }
+            }
+
+            Button {
+                Layout.fillWidth: true
+                text: qsTr("取消")
+                flat: true
+                onClicked: messageActionSheet.close()
+            }
+        }
+    }
+
     Rectangle {
         id: bubble
 
@@ -56,13 +171,18 @@ Item {
             anchors.margins: Tokens.space3
             spacing: Tokens.space1
 
-            Label {
+            TextEdit {
+                id: messageTextItem
+
                 Layout.fillWidth: true
                 text: root.messageText
                 color: Theme.textPrimary
                 font.pixelSize: Typography.body
                 wrapMode: Text.WrapAnywhere
                 textFormat: Text.PlainText
+                readOnly: true
+                selectByMouse: true
+                Accessible.name: root.messageText
             }
 
             RowLayout {
@@ -85,5 +205,16 @@ Item {
             }
         }
     }
-}
 
+    ToolButton {
+        anchors.verticalCenter: bubble.verticalCenter
+        anchors.right: root.outgoing ? bubble.left : undefined
+        anchors.left: root.outgoing ? undefined : bubble.right
+        visible: !root.compactMode
+                 && (hoverHandler.hovered || messageMenu.opened)
+        icon.source: Icons.more
+        icon.color: Theme.textSecondary
+        onClicked: messageMenu.popup()
+        Accessible.name: qsTr("消息操作")
+    }
+}

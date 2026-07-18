@@ -1,4 +1,5 @@
 #include <QGuiApplication>
+#include <QDebug>
 #include <QIcon>
 #include <QQmlApplicationEngine>
 #include <QQuickWindow>
@@ -55,7 +56,28 @@ int main(int argc, char *argv[]) {
         });
   } else if (HasArgument(application.arguments(),
                          QStringLiteral("--smoke-test"))) {
-    QTimer::singleShot(300, &application, &QCoreApplication::quit);
+    const QString populatedObjectName = ArgumentValue(
+        application.arguments(), QStringLiteral("assert-populated"));
+    QTimer::singleShot(
+        populatedObjectName.isEmpty() ? 300 : 500, &application,
+        [&application, &engine, populatedObjectName] {
+          if (!populatedObjectName.isEmpty()) {
+            QObject *root = engine.rootObjects().value(0);
+            QObject *object =
+                root == nullptr
+                    ? nullptr
+                    : root->findChild<QObject *>(populatedObjectName);
+            const int count =
+                object == nullptr ? 0 : object->property("count").toInt();
+            if (count <= 0) {
+              qCritical() << "Smoke assertion failed: expected populated"
+                          << populatedObjectName;
+              application.exit(EXIT_FAILURE);
+              return;
+            }
+          }
+          application.quit();
+        });
   }
 
   return application.exec();

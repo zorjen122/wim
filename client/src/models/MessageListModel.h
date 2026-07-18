@@ -17,6 +17,10 @@ class MessageListModel final : public QAbstractListModel {
     SenderIdRole,
     BodyRole,
     TimestampRole,
+    SourceIndexRole,
+    DateLabelRole,
+    ShowDateSeparatorRole,
+    ShowUnreadSeparatorRole,
     OutgoingRole,
     DeliveryStateRole,
   };
@@ -28,13 +32,14 @@ class MessageListModel final : public QAbstractListModel {
   QVariant data(const QModelIndex &index, int role) const override;
   QHash<int, QByteArray> roleNames() const override;
 
-  void SetRecords(QVector<MessageRecord> records);
+  void SetRecords(QVector<MessageRecord> records, int unreadCount = -1);
   void Append(MessageRecord record);
   bool UpdateDeliveryState(std::int64_t clientMessageId,
                            MessageDeliveryState state);
 
  private:
   QVector<MessageRecord> records_;
+  int unread_separator_index_{-1};
 };
 
 }  // namespace wim::client

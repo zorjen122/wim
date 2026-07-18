@@ -38,8 +38,9 @@ ApplicationWindow {
         spacing: 0
 
         Rectangle {
+            visible: !app.networkEnabled
             Layout.fillWidth: true
-            Layout.preferredHeight: 48
+            Layout.preferredHeight: visible ? 48 : 0
             color: Theme.surface
 
             RowLayout {
@@ -105,6 +106,11 @@ ApplicationWindow {
                 height: 1
                 color: Theme.divider
             }
+        }
+
+        ConnectionBanner {
+            Layout.fillWidth: true
+            status: app.connectionStatus
         }
 
         AdaptiveShell {
