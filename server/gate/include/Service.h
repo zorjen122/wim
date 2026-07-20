@@ -27,7 +27,7 @@ class Service : public Singleton<Service> {
   void OnPostHandle(std::string, HttpHandler);
 
  private:
-  bool verifycode(HttpSession::ResponsePtr, Json::Value &);
+  bool requestVerificationCode(HttpSession::ResponsePtr, Json::Value &);
   bool signUp(HttpSession::ResponsePtr, Json::Value &);
   bool signIn(HttpSession::ResponsePtr, Json::Value &);
   bool logoutHandle(HttpSession::ResponsePtr, Json::Value &);

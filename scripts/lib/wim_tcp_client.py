@@ -63,6 +63,10 @@ FIELD_MAP = {
     "receiptType": "receipt_type",
     "requestTimeoutMs": "request_timeout_ms",
     "requestId": "request_id",
+    "conversationId": "conversation_id",
+    "conversationSeq": "conversation_seq",
+    "clientMessageId": "client_message_id",
+    "afterSeq": "after_seq",
 }
 
 
@@ -139,6 +143,14 @@ def decode_packet(data):
         ("receipt_type", "receiptType"),
         ("retryable", "retryable"),
         ("request_id", "requestId"),
+        ("conversation_id", "conversationId"),
+        ("conversation_seq", "conversationSeq"),
+        ("client_message_id", "clientMessageId"),
+        ("after_seq", "afterSeq"),
+        ("next_seq", "nextSeq"),
+        ("has_more", "hasMore"),
+        ("latest_seq", "latestSeq"),
+        ("conversation_type", "conversationType"),
     ]
 
     for proto_name, json_name in scalar_fields:
@@ -179,6 +191,9 @@ def decode_packet(data):
             "status": item.status,
             "sendDateTime": item.send_date_time,
             "readDateTime": item.read_date_time,
+            "conversationId": item.conversation_id,
+            "conversationSeq": item.conversation_seq,
+            "clientMessageId": item.client_message_id,
         }
         for item in packet.message_list
     ]
@@ -260,8 +275,14 @@ class WimClient:
         finally:
             self.sock.settimeout(old_timeout)
 
-    def ack(self, seq, receipt_type=1):
-        self.send_packet(ID_ACK, {"seq": seq, "receiptType": receipt_type})
+    def ack(self, seq, receipt_type=1, conversation_id=None,
+            conversation_seq=None):
+        body = {"seq": seq, "receiptType": receipt_type}
+        if conversation_id is not None:
+            body["conversationId"] = conversation_id
+        if conversation_seq is not None:
+            body["conversationSeq"] = conversation_seq
+        self.send_packet(ID_ACK, body)
 
     def ack_async(self, service_id, payload):
         if service_id in self.async_ack_ids and "seq" in payload:

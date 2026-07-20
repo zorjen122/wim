@@ -17,6 +17,8 @@ DROP TABLE IF EXISTS `groupMembers`;
 DROP TABLE IF EXISTS `groupInfo`;
 DROP TABLE IF EXISTS `groups`;
 DROP TABLE IF EXISTS `messages`;
+DROP TABLE IF EXISTS `conversationMembers`;
+DROP TABLE IF EXISTS `conversations`;
 DROP TABLE IF EXISTS `friends`;
 DROP TABLE IF EXISTS `friendApplys`;
 DROP TABLE IF EXISTS `userInfo`;
@@ -63,10 +65,35 @@ CREATE TABLE `friends` (
   KEY `idx_friends_sessionId` (`sessionId`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE `conversations` (
+  `conversationId` BIGINT UNSIGNED NOT NULL,
+  `type` SMALLINT NOT NULL COMMENT '1 direct, 2 group',
+  `businessId` BIGINT UNSIGNED NOT NULL,
+  `latestSeq` BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  `createTime` VARCHAR(32) NOT NULL DEFAULT '',
+  PRIMARY KEY (`conversationId`),
+  UNIQUE KEY `uk_conversations_type_business` (`type`, `businessId`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `conversationMembers` (
+  `conversationId` BIGINT UNSIGNED NOT NULL,
+  `uid` BIGINT UNSIGNED NOT NULL,
+  `joinedSeq` BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  `leftSeq` BIGINT UNSIGNED NULL,
+  `deliveredSeq` BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  `readSeq` BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  PRIMARY KEY (`conversationId`, `uid`),
+  KEY `idx_conversationMembers_uid` (`uid`, `conversationId`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE `messages` (
   `messageId` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `senderId` BIGINT UNSIGNED NOT NULL,
   `receiverId` BIGINT UNSIGNED NOT NULL,
+  `conversationId` BIGINT UNSIGNED NULL,
+  `conversationSeq` BIGINT UNSIGNED NULL,
+  `clientMessageId` VARCHAR(128) NULL,
+  `commandHash` VARCHAR(128) NULL,
   `sessionKey` VARCHAR(128) NOT NULL DEFAULT '',
   `type` SMALLINT NOT NULL DEFAULT 1 COMMENT '1 text, 2 image, 3 audio, 4 video, 5 file',
   `content` TEXT NOT NULL,
@@ -74,6 +101,9 @@ CREATE TABLE `messages` (
   `sendDateTime` VARCHAR(32) NOT NULL DEFAULT '',
   `readDateTime` VARCHAR(32) NOT NULL DEFAULT '',
   PRIMARY KEY (`messageId`),
+  UNIQUE KEY `uk_messages_conversation_seq` (`conversationId`, `conversationSeq`),
+  UNIQUE KEY `uk_messages_sender_client` (`senderId`, `clientMessageId`),
+  KEY `idx_messages_conversation_pull` (`conversationId`, `conversationSeq`),
   KEY `idx_messages_session_pull` (`senderId`, `receiverId`, `messageId`),
   KEY `idx_messages_receiver_pull` (`receiverId`, `messageId`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -127,13 +157,23 @@ INSERT INTO `friends` (`uidA`, `uidB`, `sessionId`, `createTime`) VALUES
   (1001, 1002, 9001002, '2026-05-19 00:00:00'),
   (1002, 1001, 9001002, '2026-05-19 00:00:00');
 
+INSERT INTO `conversations` (`conversationId`, `type`, `businessId`, `latestSeq`, `createTime`) VALUES
+  (9001002, 1, 9001002, 2, '2026-05-19 00:00:00'),
+  (93001, 2, 3001, 0, '2026-05-19 00:00:00');
+
+INSERT INTO `conversationMembers` (`conversationId`, `uid`, `joinedSeq`, `leftSeq`, `deliveredSeq`, `readSeq`) VALUES
+  (9001002, 1001, 1, NULL, 2, 2),
+  (9001002, 1002, 1, NULL, 2, 2),
+  (93001, 1001, 1, NULL, 0, 0),
+  (93001, 1002, 1, NULL, 0, 0);
+
 INSERT INTO `friendApplys` (`fromUid`, `toUid`, `content`, `status`, `createTime`) VALUES
   (1001, 1002, 'hello', 1, '2026-05-19 00:00:00'),
   (1002, 1001, 'hello', 1, '2026-05-19 00:00:00');
 
-INSERT INTO `messages` (`messageId`, `senderId`, `receiverId`, `sessionKey`, `type`, `content`, `status`, `sendDateTime`, `readDateTime`) VALUES
-  (1000001, 1001, 1002, '9001002', 1, 'Hello Alice', 2, '2026-05-19 00:00:00', '2026-05-19 00:00:01'),
-  (1000002, 1002, 1001, '9001002', 1, 'Hello Zorjen', 2, '2026-05-19 00:00:02', '2026-05-19 00:00:03');
+INSERT INTO `messages` (`messageId`, `senderId`, `receiverId`, `conversationId`, `conversationSeq`, `clientMessageId`, `commandHash`, `sessionKey`, `type`, `content`, `status`, `sendDateTime`, `readDateTime`) VALUES
+  (1000001, 1001, 1002, 9001002, 1, NULL, NULL, '9001002', 1, 'Hello Alice', 2, '2026-05-19 00:00:00', '2026-05-19 00:00:01'),
+  (1000002, 1002, 1001, 9001002, 2, NULL, NULL, '9001002', 1, 'Hello Zorjen', 2, '2026-05-19 00:00:02', '2026-05-19 00:00:03');
 
 INSERT INTO `groupInfo` (`gid`, `sessionKey`, `name`, `createTime`) VALUES
   (3001, 93001, 'test-group', '2026-05-19 00:00:00');

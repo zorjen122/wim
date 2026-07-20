@@ -25,7 +25,7 @@ db::SessionLease SessionRegistry::Bind(
   if (lease.generation <= 0)
     return {};
 
-  // rebind
+  // rebind 会话，如果旧的会话存在，目前的规则是直接关闭旧的会话（没有明确通知）
   std::shared_ptr<GatewaySession> oldSession;
   {
     std::lock_guard<std::mutex> lock(mutex);

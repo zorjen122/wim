@@ -2,31 +2,30 @@
 
 **语言：** [English](README.md) | 中文
 
-wim 是一个 C++ 即时通讯服务器练习项目，按职责拆分为 gate、verify、state、
-chat、file 等服务。当前仓库已经补充了本地构建、配置集中管理、数据库初始化、
-Redis 启动和 smoke 测试脚本，便于重新把完整流程跑起来。
+wim 是一个 C++20 即时通讯系统，按职责拆分为 Auth/API Gate、Connection
+Gateway、State、Message 和 File 节点。仓库提供本地构建、集中配置、数据库
+初始化、Redis 启动和 smoke 测试脚本。
 
 主要流程如下：
 
 1. 客户端通过 gate 请求邮箱验证码。
-2. gate 将验证码请求转发到 Node.js verify 服务。
-3. 客户端提交注册信息，然后通过 gate 登录。
-4. gate 向 state 请求可用 chat 节点。
-5. 客户端拿到 chat TCP 端点后建立连接。
-6. chat 节点本地投递在线消息；如果接收者在其他 chat 节点，则通过 chat gRPC
-   转发。
+2. Gate 在进程内生成验证码，并通过 Redis 完成限频、保存和消费；真实邮件由
+   libcurl SMTP 投递。
+3. 客户端通过 Gate 注册和登录。
+4. Gate 向 State 请求 Connection Gateway 地址并签发短期连接 token。
+5. 客户端与 Connection Gateway 保持 TCP 长连接。
+6. Gateway 与 Message 节点通过既有双向 gRPC 流传递命令和推送。
 
 ## 目录结构
 
 | 路径 | 说明 |
 | --- | --- |
 | `server/gate` | 验证码、注册、登录和节点路由的 HTTP 入口。 |
-| `server/verify` | Node.js gRPC 验证码服务。 |
-| `server/state` | chat 节点选择服务。 |
-| `server/chat` | TCP 聊天服务、chat gRPC 转发、好友和消息数据访问。 |
+| `server/gateway` | 客户端长连接、鉴权、流控和物理推送。 |
+| `server/state` | Gateway 选址和版本化 Message 节点拓扑。 |
+| `server/chat` | Message 节点：关系、会话、消息持久化和投递生成。 |
 | `server/file` | 文件上传服务。 |
 | `server/public` | 公共 C++ 工具、protobuf、数据库和 Redis 封装。 |
-| `server/test` | 交互式测试客户端和 smoke 测试入口。 |
 | `server/conf` | 本地配置文件统一目录。 |
 | `scripts` | 构建、初始化、启动和 smoke 脚本。 |
 | `docs` | 依赖说明和功能验证文档。 |
@@ -43,7 +42,7 @@ Redis 启动和 smoke 测试脚本，便于重新把完整流程跑起来。
 - 启用 MySQL X Plugin 的 MySQL Server。
 - 支持 X DevAPI 的 MySQL Connector/C++。
 - Redis。
-- verify 服务所需的 Node.js 和 npm。
+- Gate SMTP 投递所需的 libcurl 开发包。
 - 格式检查所需的 `clang-format`。
 
 ## 配置
@@ -54,21 +53,18 @@ Redis 启动和 smoke 测试脚本，便于重新把完整流程跑起来。
 - `server/conf/gate.yaml`
 - `server/conf/state-single.yaml`
 - `server/conf/chat-hunan-im.yaml`
+- `server/conf/gateway-hunan.yaml`
 - `server/conf/test-client.yaml`
-- `server/conf/verify.json`
 
-`server/conf/verify.json` 中的隐私字段刻意留空。需要真实发邮件或连接带认证的
-外部服务时，通过环境变量注入：
+本地 `gate.yaml` 默认不发送真实邮件，而是在 HTTP 响应中返回验证码。启用 SMTP
+时应关闭 `exposeCodeInResponse`、启用 email 配置，并用环境变量注入密钥：
 
 ```bash
 export WIM_VERIFY_EMAIL_USER="your-email@example.com"
 export WIM_VERIFY_EMAIL_PASS="your-email-app-password"
-export WIM_VERIFY_REDIS_PASSWORD="root"
-export WIM_VERIFY_MYSQL_PASSWORD="root"
+export WIM_VERIFY_SEND_EMAIL=1
+export WIM_VERIFY_EXPOSE_CODE=0
 ```
-
-本地 smoke 测试中，`scripts/run_local_services.sh` 会使用
-`WIM_VERIFY_SEND_EMAIL=0` 启动 verify，因此不会发送真实邮件。
 
 ## 构建
 
@@ -90,43 +86,39 @@ export WIM_VERIFY_MYSQL_PASSWORD="root"
 
 ## 启动服务
 
-启动默认单 chat 节点服务：
+启动默认本地 Gateway/Message 服务：
 
 ```bash
 ./scripts/run_local_services.sh
 ```
 
-启动双 chat 节点，用于验证跨节点消息转发：
+启动 `G=2、N=2` 本地拓扑：
 
 ```bash
 WIM_STATE_CONFIG="$PWD/server/conf/state-multi.yaml" \
 WIM_CHAT_CONFIGS="$PWD/server/conf/chat-hunan-im.yaml $PWD/server/conf/chat-beijing-im.yaml" \
+WIM_GATEWAY_CONFIGS="$PWD/server/conf/gateway-hunan.yaml $PWD/server/conf/gateway-beijing.yaml" \
 ./scripts/run_local_services.sh
 ```
 
 ## Smoke 测试
 
-服务启动后，运行单节点 smoke：
+默认服务启动后，运行聚焦协议 smoke：
 
 ```bash
-./scripts/smoke.sh
-```
-
-双 chat 节点模式下运行：
-
-```bash
-./scripts/smoke_multi_chat.sh
-```
-
-其他聚焦测试：
-
-```bash
-./scripts/smoke_relationships.sh
 ./scripts/smoke_text_delivery.sh
+./scripts/smoke_relationships.sh
 ```
 
-这些脚本会使用 `server/test` 中的测试客户端，覆盖注册、登录路由、文本消息、
-好友/群关系相关路径、消息拉取和文件上传等能力。
+`G=2、N=2` 拓扑下运行：
+
+```bash
+./scripts/smoke_gateway_message.sh
+```
+
+这些 smoke 脚本使用 `scripts/lib` 中的 Python TCP 协议 helper，覆盖 Gate
+登录、Gateway 鉴权、文本投递、关系路径、消息同步、ACK 处理和 Gateway-Message
+路由。
 
 ## 格式化
 
@@ -149,6 +141,8 @@ WIM_CHAT_CONFIGS="$PWD/server/conf/chat-hunan-im.yaml $PWD/server/conf/chat-beij
 
 - [docs/requirements.md](docs/requirements.md)：依赖、构建、本地端口和 smoke
   流程。
-- [docs/feature-verification.md](docs/feature-verification.md)：功能清单、验证状态、
-  代码索引和手动测试建议。
+- [docs/feature-server-verification.md](docs/feature-server-verification.md)：
+  Server 功能清单、验证状态和代码索引。
+- [docs/client-feature-verification.md](docs/client-feature-verification.md)：
+  Client 功能清单、验证状态和代码索引。
 - [server/conf/README.md](server/conf/README.md)：配置命名和覆盖规则。

@@ -157,6 +157,10 @@ class GatewayStreamReactor final
       Enqueue(std::move(responseFrame));
       return;
     }
+
+    // 通过后，不在 gRPC reactor 回调线程里直接跑业务，而是投递到 chat
+    // 的后台线程池。 gRPC
+    // 流线程只负责收发和轻量分发，真正消息服务逻辑在线程池里跑。
     const std::string originGatewayId = gatewayId;
     const std::string originInstanceId = instanceId;
     auto *originReactor = this;
@@ -192,6 +196,10 @@ class GatewayStreamReactor final
             return;
           }
 
+          // 接着查 Redis 里的在线 lease：目的是验证/对齐它和 Gateway
+          // 传来的身份完全一致
+          // 除了保证连接本身的一致性，也是防旧连接、旧登录、伪造连接继续发命令。
+          // 用户重新登录后，旧连接 generation 不匹配，Message 端会拒绝。
           auto actorLease =
               db::RedisDao::GetInstance()->getSessionLease(command.actor_uid());
           if (actorLease.empty() || actorLease.gatewayId != originGatewayId ||
@@ -209,6 +217,8 @@ class GatewayStreamReactor final
             return;
           }
 
+          // 接着解析原始 TCP 业务包并进入业务层
+          // Gateway 传来的 command.packet() 是 TCP packet 序列化结果。
           if (!ParseTcpPacket(command.packet(), packet)) {
             auto error = MakeErrorPacket(ErrorCodes::JsonParser);
             response->set_error(ErrorCodes::JsonParser);

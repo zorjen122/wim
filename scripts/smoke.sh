@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # 作用：
-#   面向本地单 chat 节点的端到端 smoke 测试。
+#   面向本地 Connection Gateway 拓扑的端到端 smoke 测试。
 #   覆盖验证码、注册、登录、state 路由、文本消息落库、文件上传和在线直发消息。
 # 前置条件：
 #   已执行 ./scripts/build.sh 和 ./scripts/init_mysql.sh，
@@ -60,9 +60,11 @@ verify_rsp="$(curl --max-time 10 -sS -H 'Content-Type: application/json' \
   -d "{\"email\":\"$signup_email\"}" \
   "$GATE_URL/post-verifycode")"
 require_error_zero verify "$verify_rsp"
+verification_code="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["verificationCode"])' \
+  <<<"$verify_rsp")"
 
 signup_rsp="$(curl --max-time 10 -sS -H 'Content-Type: application/json' \
-  -d "{\"username\":\"$signup_user\",\"password\":\"123456\",\"email\":\"$signup_email\"}" \
+  -d "{\"username\":\"$signup_user\",\"password\":\"123456\",\"email\":\"$signup_email\",\"verifycode\":\"$verification_code\"}" \
   "$GATE_URL/post-signUp")"
 require_error_zero signup "$signup_rsp"
 
@@ -71,13 +73,20 @@ signin_rsp="$(curl --max-time 10 -sS -H 'Content-Type: application/json' \
   "$GATE_URL/post-signIn")"
 require_error_zero signin "$signin_rsp"
 grep -q '"ip" : "127.0.0.1"' <<<"$signin_rsp"
-grep -q '"port" : 8090' <<<"$signin_rsp"
-echo "state route ok"
+read -r gateway_host gateway_port < <(
+  python3 -c 'import json,sys; response=json.load(sys.stdin); print(response["ip"], response["port"])' \
+    <<<"$signin_rsp"
+)
+if [[ -z "$gateway_host" || ! "$gateway_port" =~ ^[0-9]+$ || "$gateway_port" == "0" ]]; then
+  echo "state route did not return a usable Gateway endpoint"
+  exit 1
+fi
+echo "state route ok: $gateway_host:$gateway_port"
 
 { printf 'textSend\n1002\n%s\n' "$text_payload"; sleep 1; printf 'q\n'; } | \
   (cd "$ROOT_DIR/server/test" && \
     WIM_CONFIG="$ROOT_DIR/server/conf/test-client.yaml" \
-    timeout 15 "$BUILD_DIR/test/imTest" zorjen 123456 1001 127.0.0.1 8090 >/tmp/wim-smoke-chat.log) || true
+    timeout 15 "$BUILD_DIR/test/imTest" zorjen 123456 1001 "$gateway_host" "$gateway_port" >/tmp/wim-smoke-chat.log) || true
 
 for _ in {1..10}; do
   text_count="$(mysql --protocol=tcp -h"$MYSQL_HOST" -P"$MYSQL_PORT" \
@@ -98,7 +107,7 @@ printf 'file smoke %s\n' "$stamp" > "$upload_src"
 { printf 'uploadFile\n%s\n' "$upload_file"; sleep 1; printf 'q\n'; } | \
   (cd "$ROOT_DIR/server/test" && \
     WIM_CONFIG="$ROOT_DIR/server/conf/test-client.yaml" \
-    timeout 15 "$BUILD_DIR/test/imTest" zorjen 123456 1001 127.0.0.1 8090 >/tmp/wim-smoke-file.log) || true
+    timeout 15 "$BUILD_DIR/test/imTest" zorjen 123456 1001 "$gateway_host" "$gateway_port" >/tmp/wim-smoke-file.log) || true
 
 for _ in {1..10}; do
   if [[ -f "$upload_dst" ]] && cmp -s "$upload_src" "$upload_dst"; then
@@ -116,7 +125,7 @@ mkfifo "$receiver_fifo"
 (
   cd "$ROOT_DIR/server/test"
   WIM_CONFIG="$ROOT_DIR/server/conf/test-client.yaml" \
-    "$BUILD_DIR/test/imTest" alice 123456 1002 127.0.0.1 8090 \
+    "$BUILD_DIR/test/imTest" alice 123456 1002 "$gateway_host" "$gateway_port" \
     < "$receiver_fifo" || true
 ) > "$receiver_log" 2>&1 &
 receiver_pid="$!"
@@ -137,7 +146,7 @@ online_payload="hello_online_$stamp"
 { printf 'textSend\n1002\n%s\n' "$online_payload"; sleep 1; printf 'q\n'; } | \
   (cd "$ROOT_DIR/server/test" && \
     WIM_CONFIG="$ROOT_DIR/server/conf/test-client.yaml" \
-    timeout 15 "$BUILD_DIR/test/imTest" zorjen 123456 1001 127.0.0.1 8090 >/tmp/wim-smoke-online-sender.log) || true
+    timeout 15 "$BUILD_DIR/test/imTest" zorjen 123456 1001 "$gateway_host" "$gateway_port" >/tmp/wim-smoke-online-sender.log) || true
 
 for _ in {1..10}; do
   if grep -q "$online_payload" "$receiver_log" 2>/dev/null; then

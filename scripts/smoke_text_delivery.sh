@@ -211,7 +211,7 @@ mysql_scalar() {
 }
 
 for _ in {1..10}; do
-  row_count="$(mysql_scalar "SELECT COUNT(*) FROM messages WHERE messageId = $server_seq AND senderId = 1001 AND receiverId = 1002 AND sessionKey = '0' AND content = '$payload' AND status = 3 AND readDateTime <> '';")"
+  row_count="$(mysql_scalar "SELECT COUNT(*) FROM messages WHERE messageId = $server_seq AND senderId = 1001 AND receiverId = 1002 AND conversationId > 0 AND conversationSeq > 0 AND CAST(sessionKey AS UNSIGNED) = conversationId AND content = '$payload' AND status = 3 AND readDateTime <> '';")"
   if [[ "$row_count" == "1" ]]; then
     echo "online text persisted, delivered and read ok"
     break

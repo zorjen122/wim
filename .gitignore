@@ -2,10 +2,9 @@ build/
 .vscode/
 bin/
 rpc/
-node_modules/
 .cache/
 logs/
-.demos/
+.demos/*
 .agents/
 .codex/
 __pycache__/
@@ -13,3 +12,4 @@ __pycache__/
 *.o
 *.out
 compile_commands.json
+docs/.*

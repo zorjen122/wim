@@ -54,41 +54,10 @@ TcpPacket FriendService::NotifyAddFriend(unsigned int msgID,
     return rsp;
   }
 
-  auto target = deliveryService.Locate(to);
-  if (target.location == DeliveryService::Location::Local) {
-    // 本地在线推送
-    deliveryService.SendLocal(to, SerializeTcpPacket(senderRsp),
-                              ID_NOTIFY_ADD_FRIEND_REQ);
-
-    rsp.set_error(ErrorCodes::Success);
-    return rsp;
-  }
-
-  // 全局查找在线用户，所有设备中的在线用户都存放在redis中
-  if (target.location == DeliveryService::Location::Remote) {
-    // rpc转发
-    auto machineId = target.machineId;
-    // 通过MachineID路由到对应的机器，并转发
-    LOG_INFO(wim::businessLogger,
-             "forwardNotifyAddFriend(from: {}, to: {}) to machine: {}", from,
-             to, machineId);
-    auto deliveryResult = deliveryService.ForwardFriendApply(
-        machineId, from, to, request.request_message());
-    if (!deliveryResult.nodeFound) {
-      rsp.set_message("RPC目标机器不存在");
-      rsp.set_error(ErrorCodes::RPCFailed);
-      return rsp;
-    }
-
-    if (deliveryResult.success) {
-      rsp.set_error(ErrorCodes::Success);
-    } else {
-      rsp.set_message("RPC转发异常");
-      rsp.set_error(ErrorCodes::RPCFailed);
-    }
-    return rsp;
-  }
-
+  LOG_DEBUG(businessLogger,
+            "friend apply stored but target is not on a healthy gateway, from: "
+            "{}, to: {}",
+            from, to);
   rsp.set_error(ErrorCodes::Success);
   return rsp;
 }
@@ -129,39 +98,10 @@ TcpPacket FriendService::ReplyAddFriend(unsigned int msgID,
     return rsp;
   }
 
-  auto target = deliveryService.Locate(to);
-  if (target.location == DeliveryService::Location::Local) {
-    deliveryService.SendLocal(to, SerializeTcpPacket(senderRsp),
-                              ID_REPLY_ADD_FRIEND_REQ);
-
-    rsp.set_error(ErrorCodes::Success);
-    return rsp;
-  }
-
-  if (target.location == DeliveryService::Location::Remote) {
-    std::string machineId = target.machineId;
-
-    auto deliveryResult = deliveryService.ForwardFriendReply(
-        machineId, from, to, accept, replyMessage);
-    if (!deliveryResult.nodeFound) {
-      rsp.set_error(ErrorCodes::RPCFailed);
-      rsp.set_message("RPC目标机器不存在");
-      return rsp;
-    }
-    LOG_INFO(
-        businessLogger,
-        "forwardReplyAddFriend(from: {}, to: {}) to machine: {}, response: {}",
-        from, to, machineId, deliveryResult.status);
-
-    if (deliveryResult.success) {
-      rsp.set_error(ErrorCodes::Success);
-    } else {
-      rsp.set_error(ErrorCodes::RPCFailed);
-      rsp.set_message("RPC转发异常");
-    }
-    return rsp;
-  }
-
+  LOG_DEBUG(businessLogger,
+            "friend reply stored but target is not on a healthy gateway, from: "
+            "{}, to: {}",
+            from, to);
   rsp.set_error(ErrorCodes::Success);
   return rsp;
 }

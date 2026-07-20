@@ -404,7 +404,8 @@ class MysqlDao : public Singleton<MysqlDao>,
           auto result = session->sql("SELECT 1 FROM userInfo WHERE uid = ?")
                             .bind(uid)
                             .execute();
-          return (result.fetchOne() != 0);
+          const auto row = result.fetchOne();
+          return static_cast<bool>(row);
         });
   }
 

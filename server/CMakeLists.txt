@@ -23,7 +23,3 @@ add_subdirectory(chat)
 add_subdirectory(gate)
 add_subdirectory(gateway)
 add_subdirectory(state)
-
-if(BUILD_TESTING)
-    add_subdirectory(test) 
-endif()

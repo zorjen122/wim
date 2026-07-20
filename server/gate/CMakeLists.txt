@@ -10,16 +10,15 @@ find_package(Threads REQUIRED)
 find_package(Protobuf REQUIRED)
 find_package(Boost REQUIRED COMPONENTS filesystem)
 find_package(gRPC REQUIRED)
+find_package(CURL REQUIRED)
 
 set(protobuf_MODULE_COMPATIBLE TRUE)
-wim_generate_grpc_proto(VERIFY_PROTO ../verify/message.proto)
 
 file(GLOB SOURCE src/**/*.cc)
-add_library(imGate ${SOURCE} ${VERIFY_PROTO})
+add_library(imGate ${SOURCE})
 add_executable(gate src/main.cc)
 
-target_include_directories(imGate PUBLIC ./include ${VERIFY_PROTO_INCLUDE_DIR}
-                                        ../public/include)
+target_include_directories(imGate PUBLIC ./include ../public/include)
 target_link_directories(imGate PUBLIC ../public/build)
 
 target_link_libraries(
@@ -30,6 +29,7 @@ target_link_libraries(
          Boost::filesystem
          gRPC::grpc++
          gRPC::grpc++_reflection
+         CURL::libcurl
          fmt::fmt
          yaml-cpp
          spdlog
@@ -46,4 +46,10 @@ target_compile_options(gate PRIVATE -Wall)
 
 if(WIM_BUILD_UNIT_TESTS)
   add_subdirectory(test)
+endif()
+
+if(BUILD_TESTING)
+  add_executable(gateVerificationInputTest test/verificationInputTest.cc)
+  target_link_libraries(gateVerificationInputTest PRIVATE imGate)
+  add_test(NAME gate.verification_input COMMAND gateVerificationInputTest)
 endif()

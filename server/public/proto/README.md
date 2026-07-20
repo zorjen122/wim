@@ -12,8 +12,5 @@ more than one module.
 
 The C++ build generates these files once in `server/public` as the `imProto`
 target. Service targets depend on `imPublic`/`imProto` instead of generating
-their own copies.
-
-`server/verify/message.proto` remains beside the Node.js verify service because
-it is loaded directly by that runtime and is also generated for the C++ gate
-client.
+their own copies. Email verification is an in-process Gate capability and does
+not require an internal RPC protocol.

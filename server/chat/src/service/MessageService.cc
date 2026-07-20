@@ -37,8 +37,9 @@ MessageService::AcceptedText MessageService::AcceptText(TcpPacket request) {
     return result;
   }
 
+  const std::string sendDateTime = getCurrentDateTime();
   auto accepted = db::MysqlDao::GetInstance()->acceptDirectText(
-      from, to, clientMessageId, data, getCurrentDateTime());
+      from, to, clientMessageId, data, sendDateTime);
   result.response.set_error(accepted.error);
   result.response.set_retryable(isRetryableError(accepted.error));
   if (accepted.error != ErrorCodes::Success) {
@@ -68,6 +69,7 @@ MessageService::AcceptedText MessageService::AcceptText(TcpPacket request) {
   request.set_conversation_seq(accepted.conversationSeq);
   request.set_session_key(accepted.conversationId);
   request.set_message_state(protocol::MESSAGE_STATE_ACCEPTED);
+  request.set_send_date_time(sendDateTime);
   result.delivery = std::move(request);
   result.recipientUid = to;
   result.shouldDeliver = !accepted.duplicate;
@@ -101,8 +103,9 @@ MessageService::AcceptedGroupText MessageService::AcceptGroupText(
     return result;
   }
 
+  const std::string sendDateTime = getCurrentDateTime();
   auto accepted = db::MysqlDao::GetInstance()->acceptGroupText(
-      sender, groupId, clientMessageId, content, getCurrentDateTime());
+      sender, groupId, clientMessageId, content, sendDateTime);
   result.response.set_error(accepted.error);
   result.response.set_retryable(isRetryableError(accepted.error));
   if (accepted.error != ErrorCodes::Success) {
@@ -132,6 +135,7 @@ MessageService::AcceptedGroupText MessageService::AcceptGroupText(
   request.set_conversation_seq(accepted.conversationSeq);
   request.set_session_key(accepted.conversationId);
   request.set_message_state(protocol::MESSAGE_STATE_ACCEPTED);
+  request.set_send_date_time(sendDateTime);
   result.delivery = std::move(request);
   result.recipientUids = std::move(accepted.recipientUids);
   result.shouldDeliver = !accepted.duplicate;
@@ -219,128 +223,9 @@ TcpPacket MessageService::SendGroupText(uint32_t msgID, TcpPacket &request) {
 }
 
 TcpPacket MessageService::SendText(uint32_t msgID, TcpPacket &request) {
-  TcpPacket rsp;
-
-  int64_t clientSeq = request.seq();
-  // uid 是入口注入的 canonical actor；from 仅用于兼容下行协议。
-  int64_t from = request.uid();
-  int64_t to = request.to();
-  int64_t sessionHashKey = request.session_key();
-  std::string data = request.data();
-
-  // 发送者回应包中包含它的消息序列号，表示已接收并处理了请求
-  rsp.set_seq(clientSeq);
-
-  if (clientSeq <= 0 || to <= 0 || data.empty()) {
-    rsp.set_error(ErrorCodes::JsonParser);
-    rsp.set_message("seq, to and data are required");
-    rsp.set_retryable(false);
-    return rsp;
-  }
-
-  request.set_from(from);
-
-  bool missMessageCache =
-      db::RedisDao::GetInstance()->getUserMsgId(from, clientSeq);
-  if (missMessageCache) {
-    LOG_INFO(businessLogger, "重复消息, 客户端消息序列号为: {}", clientSeq);
-    db::RedisDao::GetInstance()->expireUserMsgId(
-        from, clientSeq, MESSAGE_CACHE_EXPIRE_TIME_SECONDS);
-    rsp.set_error(ErrorCodes::RepeatMessage);
-    rsp.set_message("重复消息");
-    return rsp;
-  }
-
-  auto target = deliveryService.Locate(to);
-  bool isLocalMachineOnline =
-      target.location == DeliveryService::Location::Local;
-  if (target.location == DeliveryService::Location::Remote) {
-    LOG_INFO(businessLogger, "用户不在本地机器，转发消息到其他机器, 用户ID: {}",
-             to);
-    std::string machineId = target.machineId;
-    std::string requestId;
-    if (auto *context = RequestContextScope::Current()) {
-      requestId = context->requestId;
-    }
-
-    auto deliveryResult = deliveryService.ForwardText(
-        machineId, from, to, data, clientSeq, sessionHashKey, requestId);
-    if (!deliveryResult.nodeFound) {
-      LOG_WARN(businessLogger, "未找到目标IM机器的RPC连接, machineId: {}",
-               machineId);
-      rsp.set_status("wait");
-      rsp.set_error(ErrorCodes::RPCFailed);
-      rsp.set_message("目标IM机器不可达");
-      rsp.set_retryable(true);
-      return rsp;
-    }
-
-    LOG_INFO(businessLogger, "转发完成，目标机器: {}, 状态: {}", machineId,
-             deliveryResult.status);
-    rsp.set_status(deliveryResult.success ? "accepted" : "wait");
-    if (!deliveryResult.success) {
-      rsp.set_error(deliveryResult.error);
-      rsp.set_retryable(isRetryableError(deliveryResult.error));
-    } else {
-      rsp.set_error(ErrorCodes::Success);
-      rsp.set_message_id(deliveryResult.messageId);
-      rsp.set_message_state(protocol::MESSAGE_STATE_ACCEPTED);
-      rsp.set_retryable(false);
-    }
-    return rsp;
-  }
-
-  db::RedisDao::GetInstance()->setUserMsgId(from, clientSeq,
-                                            MESSAGE_CACHE_EXPIRE_TIME_SECONDS);
-  int64_t serverMsgSeq = db::RedisDao::GetInstance()->generateMsgId();
-  const std::string sendTime = getCurrentDateTime();
-
-  if (isLocalMachineOnline) {
-    LOG_INFO(businessLogger, "用户本地在线，发送消息给目标用户，ID: {}", to);
-    db::Message::Ptr message(new db::Message(
-        serverMsgSeq, from, to, std::to_string(sessionHashKey),
-        db::Message::Type::TEXT, data, db::Message::Status::WAIT, sendTime));
-    int sqlStatus = db::MysqlDao::GetInstance()->insertMessage(message);
-    if (sqlStatus == -1) {
-      rsp.set_error(ErrorCodes::MysqlFailed);
-      rsp.set_message("消息落库失败");
-      rsp.set_retryable(true);
-      return rsp;
-    }
-
-    rsp.set_status("accepted");
-    rsp.set_error(ErrorCodes::Success);
-    rsp.set_message_id(serverMsgSeq);
-    rsp.set_message_state(protocol::MESSAGE_STATE_ACCEPTED);
-    rsp.set_retryable(false);
-
-    // 替换成服务端消息序列号，因需维护服务端道接收者的消息查收状态
-    request.set_seq(serverMsgSeq);
-    request.set_message_id(serverMsgSeq);
-    request.set_message_state(protocol::MESSAGE_STATE_ACCEPTED);
-    deliveryService.SendLocalReliable(
-        to, serverMsgSeq, SerializeTcpPacket(request), ID_TEXT_SEND_REQ);
-    return rsp;
-  }
-
-  LOG_INFO(businessLogger, "用户不在线，存储离线消息, 用户ID: {}", to);
-  db::Message::Ptr message = nullptr;
-  message.reset(new db::Message(
-      serverMsgSeq, from, to, std::to_string(sessionHashKey),
-      db::Message::Type::TEXT, data, db::Message::Status::WAIT, sendTime));
-
-  int sqlStatus = db::MysqlDao::GetInstance()->insertMessage(message);
-  rsp.set_status("accepted");
-  if (sqlStatus != -1) {
-    rsp.set_error(ErrorCodes::Success);
-    rsp.set_message_id(serverMsgSeq);
-    rsp.set_message_state(protocol::MESSAGE_STATE_ACCEPTED);
-    rsp.set_retryable(false);
-  } else {
-    rsp.set_error(ErrorCodes::MysqlFailed);
-    rsp.set_retryable(true);
-  }
-  return rsp;
+  (void)msgID;
+  auto accepted = AcceptText(request);
+  return accepted.response;
 }
 
 TcpPacket MessageService::PullSessionMessages(uint32_t msgID,

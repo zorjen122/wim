@@ -2,9 +2,16 @@ server:
   gateway:
     host: 127.0.0.1
     port: 18080
-  verifyRPC:
-    host: 127.0.0.1
-    port: 50051
+  verification:
+    codeTtlSeconds: 180
+    resendCooldownSeconds: 60
+    maxAttempts: 5
+    exposeCodeInResponse: true
+    email:
+      enabled: false
+      smtpUrl: smtps://smtp.qq.com:465
+      username: ""
+      password: ""
   stateRPC:
     host: 127.0.0.1
     port: 50052

@@ -5,17 +5,14 @@
 #include <memory>
 #include <spdlog/spdlog.h>
 
-#include "ChatSession.h"
 #include "Const.h"
 #include "DeliveryService.h"
 #include "FileService.h"
 #include "FriendService.h"
 #include "GroupService.h"
 #include "MessageService.h"
-#include "RequestContext.h"
 #include "TcpMessageCodec.h"
 #include "ThreadPool.h"
-#include "UserService.h"
 
 namespace wim {
 
@@ -27,11 +24,9 @@ class Service : public Singleton<Service> {
   friend class Singleton<Service>;
 
  public:
-  using HandleType =
-      std::function<TcpPacket(ChatSession::Ptr, uint32_t, TcpPacket &)>;
+  using HandleType = std::function<TcpPacket(uint32_t, TcpPacket &)>;
 
   ~Service();
-  void Dispatch(std::shared_ptr<Channel> package);
   bool PostBackgroundTask(ThreadPool::Task task);
   DeliveryService &Deliveries();
   MessageService &Messages();
@@ -48,15 +43,9 @@ class Service : public Singleton<Service> {
 
   Service();
   void Init();
-  void ProcessChannel(const Channel::Ptr &channel, RequestContext context);
-  void HandleRejectedChannel(const Channel::Ptr &channel,
-                             ThreadPool::PostStatus status,
-                             const RequestContext &context);
   void RegisterHandle(uint32_t msgID, TaskType taskType, HandleType handle);
-  TcpPacket Ping(ChatSession::Ptr session, uint32_t msgID, TcpPacket &request);
 
   DeliveryService deliveryService;
-  UserService userService;
   FriendService friendService;
   GroupService groupService;
   MessageService messageService;

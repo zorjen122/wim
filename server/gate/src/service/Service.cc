@@ -1,24 +1,18 @@
 #include "Service.h"
 #include "StateClient.h"
+#include "VerificationService.h"
 
 #include "Const.h"
 #include "HttpSession.h"
 #include "Logger.h"
 #include "Mysql.h"
-#include "Metrics.h"
 #include "Redis.h"
-#include "RequestContext.h"
-#include "message.grpc.pb.h"
-#include "message.pb.h"
 #include "spdlog/spdlog.h"
-#include <grpcpp/grpcpp.h>
 #include <jsoncpp/json/json.h>
 #include <jsoncpp/json/value.h>
 #include <yaml-cpp/parser.h>
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>
-#include <algorithm>
-#include <chrono>
 
 namespace wim {
 namespace {
@@ -30,43 +24,6 @@ std::string GenerateChatAuthToken() {
 }
 
 constexpr long kChatAuthTokenTtlSeconds = 15 * 60;
-
-int requestVerifyCode(const std::string &email) {
-  auto config = Configer::getNode("server");
-  if (!config || !config["verifyRPC"]) {
-    businessLogger->error("[post_verifycode] verifyRPC config not found");
-    return ErrorCodes::RPCFailed;
-  }
-
-  const auto host = config["verifyRPC"]["host"].as<std::string>();
-  const auto port = config["verifyRPC"]["port"].as<std::string>();
-  auto channel = grpc::CreateChannel(host + ":" + port,
-                                     grpc::InsecureChannelCredentials());
-  auto stub = message::VarifyService::NewStub(channel);
-
-  message::GetVarifyReq req;
-  req.set_email(email);
-  message::GetVarifyRsp rsp;
-  grpc::ClientContext context;
-  auto deadline =
-      RequestContextScope::CurrentDeadlineOr(std::chrono::milliseconds(1000));
-  auto remaining =
-      std::max(std::chrono::duration_cast<std::chrono::milliseconds>(
-                   deadline - RequestContext::Clock::now()),
-               std::chrono::milliseconds(0));
-  context.set_deadline(std::chrono::system_clock::now() + remaining);
-  auto status = stub->GetVarifyCode(&context, req, &rsp);
-  if (status.error_code() == grpc::StatusCode::DEADLINE_EXCEEDED) {
-    Metrics::Increment(Metric::RpcDeadlineExceeded);
-  }
-  if (!status.ok()) {
-    businessLogger->error("[post_verifycode] verify rpc failed: {}",
-                          status.error_message());
-    return ErrorCodes::RPCFailed;
-  }
-
-  return rsp.error();
-}
 }  // namespace
 
 Service::Service() {
@@ -93,7 +50,7 @@ Service::Service() {
               });
 
   OnPostHandle("/post-verifycode",
-               std::bind(&Service::verifycode, this, _1, _2));
+               std::bind(&Service::requestVerificationCode, this, _1, _2));
   OnPostHandle("/post-signUp", std::bind(&Service::signUp, this, _1, _2));
   OnPostHandle("/post-forget-password",
                std::bind(&Service::forgetPassword, this, _1, _2));
@@ -175,9 +132,10 @@ bool Service::Handle(std::shared_ptr<HttpSession> connection, std::string path,
   bool handleSuccess = handler(response, source);
 
   return handleSuccess;
-}  // namespace wim
-bool Service::verifycode(HttpSession::ResponsePtr response,
-                         Json::Value &requestData) {
+}
+
+bool Service::requestVerificationCode(HttpSession::ResponsePtr response,
+                                      Json::Value &requestData) {
   Json::Value rspInfo;
   Defer _([&]() { responseWrite(response, rspInfo.toStyledString()); });
 
@@ -188,12 +146,17 @@ bool Service::verifycode(HttpSession::ResponsePtr response,
     return false;
   }
 
-  auto email = requestData["email"].asString();
+  auto email =
+      VerificationService::NormalizeEmail(requestData["email"].asString());
   businessLogger->info("service-post_verifycode] email as {}", email);
 
-  rspInfo["error"] = requestVerifyCode(email);
-  rspInfo["email"] = requestData["email"];
-  return true;
+  auto result = VerificationService::GetInstance()->RequestEmailCode(email);
+  rspInfo["error"] = result.error;
+  rspInfo["email"] = email;
+  rspInfo["issued"] = result.issued;
+  if (!result.developmentCode.empty())
+    rspInfo["verificationCode"] = result.developmentCode;
+  return result.error == ErrorCodes::Success;
 }
 
 bool Service::signUp(HttpSession::ResponsePtr response,
@@ -201,26 +164,43 @@ bool Service::signUp(HttpSession::ResponsePtr response,
   Json::Value rspInfo;
   Defer _([&]() { responseWrite(response, rspInfo.toStyledString()); });
 
+  if (!requestData.isMember("username") || !requestData.isMember("password") ||
+      !requestData.isMember("email") || !requestData.isMember("verifycode")) {
+    rspInfo["error"] = ErrorCodes::JsonParser;
+    return false;
+  }
+
   auto username = requestData["username"].asString();
   auto password = requestData["password"].asString();
-  auto email = requestData["email"].asString();
+  auto email =
+      VerificationService::NormalizeEmail(requestData["email"].asString());
+  auto verificationCode = requestData["verifycode"].asString();
+  if (username.empty() || password.empty() ||
+      !VerificationService::IsValidEmail(email)) {
+    rspInfo["error"] = ErrorCodes::JsonParser;
+    return false;
+  }
   businessLogger->info("[signUp]: start, username: {}, email: {}", username,
                        email);
-
-  std::string verifycode = "1234";
-  // verifycode logic...
 
   int hasEmail = db::MysqlDao::GetInstance()->hasEmail(email);
   if (hasEmail != 0) {
     businessLogger->info("[signUp]: email is exist");
-    rspInfo["error"] = -1;
+    rspInfo["error"] = ErrorCodes::UserExist;
     return false;
   }
 
   int hasUsername = db::MysqlDao::GetInstance()->hasUsername(username);
   if (hasUsername != 0) {
     businessLogger->info("[signUp]: username is exist");
-    rspInfo["error"] = -1;
+    rspInfo["error"] = ErrorCodes::UserExist;
+    return false;
+  }
+
+  if (!VerificationService::GetInstance()->VerifyAndConsume(email,
+                                                            verificationCode)) {
+    businessLogger->info("[signUp]: invalid or expired verification code");
+    rspInfo["error"] = ErrorCodes::VerificationCodeInvalid;
     return false;
   }
   auto uid = db::RedisDao::GetInstance()->generateUserId();
@@ -233,7 +213,6 @@ bool Service::signUp(HttpSession::ResponsePtr response,
     return false;
   }
 
-  // verifycode logic...
   businessLogger->info(
       "[signUp]: success! uid as {}, username as {}, email as {}", uid,
       username, email);
@@ -357,26 +336,42 @@ bool Service::forgetPassword(HttpSession::ResponsePtr response,
   Json::Value rspInfo;
   Defer _([&]() { responseWrite(response, rspInfo.toStyledString()); });
 
-  auto username = requestData["username"].asString();
-  auto email = requestData["email"].asString();
-  auto verifycode = requestData["verifycode"].asString();
-
-  bool hasVerifycode =
-      db::RedisDao::GetInstance()->authVerifycode(email, verifycode);
-  if (!hasVerifycode) {
-    businessLogger->info(" Verify code is expired or not existed");
-    rspInfo["error"] = ErrorCodes::VarifyCodeErr;
+  if (!requestData.isMember("username") || !requestData.isMember("password") ||
+      !requestData.isMember("email") || !requestData.isMember("verifycode")) {
+    rspInfo["error"] = ErrorCodes::JsonParser;
     return false;
   }
+
+  auto username = requestData["username"].asString();
+  auto password = requestData["password"].asString();
+  auto email =
+      VerificationService::NormalizeEmail(requestData["email"].asString());
+  auto verificationCode = requestData["verifycode"].asString();
 
   auto user = db::MysqlDao::GetInstance()->getUser(username);
   if (user == nullptr) {
-    businessLogger->info(" user is not existd!");
-    rspInfo["error"] = -1;
+    businessLogger->info("user does not exist");
+    rspInfo["error"] = ErrorCodes::NotFound;
     return false;
   }
-  bool updateSuccess = db::MysqlDao::GetInstance()->userModifyPassword(user);
-  if (!updateSuccess) {
+  if (VerificationService::NormalizeEmail(user->email) != email) {
+    rspInfo["error"] = ErrorCodes::EmailNotMatch;
+    return false;
+  }
+  if (password.empty()) {
+    rspInfo["error"] = ErrorCodes::PasswdInvalid;
+    return false;
+  }
+  if (!VerificationService::GetInstance()->VerifyAndConsume(email,
+                                                            verificationCode)) {
+    businessLogger->info("verification code is expired or invalid");
+    rspInfo["error"] = ErrorCodes::VerificationCodeInvalid;
+    return false;
+  }
+
+  user->password = password;
+  int updateResult = db::MysqlDao::GetInstance()->userModifyPassword(user);
+  if (updateResult != 0) {
     businessLogger->error(" update password is failed");
     rspInfo["error"] = ErrorCodes::PasswdUpFailed;
     return false;
@@ -386,7 +381,6 @@ bool Service::forgetPassword(HttpSession::ResponsePtr response,
 
   rspInfo["error"] = 0;
   rspInfo["username"] = username;
-  rspInfo["password"] = user->password;
 
   return true;
 }

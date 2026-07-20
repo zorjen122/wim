@@ -1,22 +1,20 @@
 #pragma once
 // ChatServiceManager.h
-#include "ChatServer.h"
 #include "Configer.h"
 #include "Const.h"
-#include "IocPool.h"
 #include "Logger.h"
-#include "RpcService.h"
 #include "GatewayStreamService.h"
 #include "GrpcSecurity.h"
-#include "Service.h"
-
-#include "Logger.h"
 #include "Mysql.h"
 #include "Redis.h"
+#include "Service.h"
+
 #include <boost/asio.hpp>
 #include <boost/asio/io_context.hpp>
 #include <grpc/impl/codegen/grpc_types.h>
+#include <grpcpp/server_builder.h>
 #include <atomic>
+#include <csignal>
 #include <cstddef>
 #include <thread>
 namespace wim {
@@ -34,14 +32,6 @@ class ImServiceRunner : public Singleton<ImServiceRunner> {
     }
 
     size_t refCount;
-    // 减去instance实例拷贝的一份引用
-    refCount = IocPool::GetInstance().use_count() - 1;
-    if (refCount > 1) {
-      LOG_ERROR(wim::businessLogger, "IocPool资源池状态异常, 引用计数: {}",
-                refCount);
-    }
-    IocPool::GetInstance()->Stop();
-
     refCount = db::MysqlDao::GetInstance().use_count() - 1;
     db::MysqlDao::GetInstance()->Close();
     if (refCount > 1)
@@ -57,62 +47,43 @@ class ImServiceRunner : public Singleton<ImServiceRunner> {
   bool Activate() {
     try {
       auto config = Configer::getNode("server");
-      unsigned short port = config["self"]["port"].as<int>();
       std::string host = config["self"]["host"].as<std::string>();
       std::string rpcPort = config["self"]["rpcPort"].as<std::string>();
-      const bool legacyClientTcp = !config["self"]["legacyClientTcp"] ||
-                                   config["self"]["legacyClientTcp"].as<bool>();
-      const bool legacyPeerRpc = !config["self"]["legacyPeerRpc"] ||
-                                 config["self"]["legacyPeerRpc"].as<bool>();
       std::string address = host + ":" + rpcPort;
-      LOG_INFO(wim::netLogger,
-               "IM网络服务器配置: host: {}, port: {}, rpcPort: {}", host, port,
-               rpcPort);
+      LOG_INFO(wim::netLogger, "Message网络服务器配置: host: {}, rpcPort: {}",
+               host, rpcPort);
 
-      wim::IocPool::GetInstance();
       wim::db::MysqlDao::GetInstance();
       wim::db::RedisDao::GetInstance();
 
       // grpc服务
-      rpc::ImRpcService service;
       auto transportSecurity = LoadGrpcSecurityConfig(config);
       rpc::GatewayStreamService gatewayStreamService(
           config["self"]["name"].as<std::string>(), transportSecurity.Mtls());
       Service::GetInstance()->SetGatewayStreamService(&gatewayStreamService);
-      rpc::ServerBuilder builder;
+      grpc::ServerBuilder builder;
       builder.AddChannelArgument(GRPC_ARG_ALLOW_REUSEPORT, 0);
       builder.AddListeningPort(address,
                                BuildServerCredentials(transportSecurity));
-      if (legacyPeerRpc)
-        builder.RegisterService(&service);
       builder.RegisterService(&gatewayStreamService);
       rpcServer = builder.BuildAndStart();
       LOG_INFO(wim::businessLogger, "IM RPC服务启动成功, 监听端口: {}",
                rpcPort);
 
-      net::io_context acceptIoc;
-
-      // 通讯服务
-      if (legacyClientTcp) {
-        imServer = std::make_unique<ChatServer>(acceptIoc, port);
-        imServer->Start();
-      } else {
-        LOG_INFO(wim::businessLogger, "Message 节点客户端 TCP 回滚入口已关闭");
-      }
-
       rpcRunThread = std::thread([&]() { rpcServer->Wait(); });
 
-      boost::asio::signal_set signals(acceptIoc, SIGINT, SIGTERM);
+      boost::asio::io_context signalIoc;
+      boost::asio::signal_set signals(signalIoc, SIGINT, SIGTERM);
       signals.async_wait(
-          [&acceptIoc, &gatewayStreamService](
+          [&signalIoc, &gatewayStreamService](
               const boost::system::error_code &error, int signalNumber) {
             if (error)
               return;
             gatewayStreamService.DrainAll("message node is shutting down");
-            acceptIoc.stop();
+            signalIoc.stop();
           });
 
-      acceptIoc.run();
+      signalIoc.run();
       ClearUp();
       Service::GetInstance()->SetGatewayStreamService(nullptr);
 
@@ -133,7 +104,6 @@ class ImServiceRunner : public Singleton<ImServiceRunner> {
 
  private:
   std::unique_ptr<grpc::Server> rpcServer;
-  std::shared_ptr<ChatServer> imServer;
   std::thread rpcRunThread;
   std::atomic<bool> cleaned{false};
 };

@@ -69,18 +69,10 @@ int GroupService::NotifyMemberJoin(int64_t uid, int64_t gid,
                                     ID_GROUP_NOTIFY_JOIN_REQ, serverSeq))
       continue;
 
-    auto target = deliveryService.Locate(manager->uid);
-    if (target.location == DeliveryService::Location::Remote) {
-      // rpc
-      LOG_INFO(businessLogger, "RPC转发通知群成员加入请求，待实现");
-      continue;
-    }
-    if (target.location == DeliveryService::Location::Local) {
-      // 同好友申请一样，通知REQ发送到客户端则表示通知接收者
-      deliveryService.SendLocalReliable(manager->uid, serverSeq,
-                                        SerializeTcpPacket(notifyRequest),
-                                        ID_GROUP_NOTIFY_JOIN_REQ);
-    }
+    LOG_DEBUG(businessLogger,
+              "group join notify stored but manager is not on a healthy "
+              "gateway, gid: {}, manager_uid: {}",
+              gid, manager->uid);
   }
   return 0;
 }
@@ -174,18 +166,10 @@ int GroupService::NotifyMemberReply(int64_t gid, int64_t managerUid,
                                     ID_GROUP_REPLY_JOIN_REQ, serverSeq))
       continue;
 
-    auto target = deliveryService.Locate(member->uid);
-    if (target.location == DeliveryService::Location::Remote) {
-      // rpc
-      LOG_INFO(businessLogger, "RPC转发通知群成员加入请求，待实现");
-      continue;
-    }
-    if (target.location == DeliveryService::Location::Local) {
-      // 同好友申请一样，通知REQ发送到客户端则表示通知接收者
-      deliveryService.SendLocalReliable(member->uid, serverSeq,
-                                        SerializeTcpPacket(notifyRequest),
-                                        ID_GROUP_REPLY_JOIN_REQ);
-    }
+    LOG_DEBUG(businessLogger,
+              "group reply notify stored but member is not on a healthy "
+              "gateway, gid: {}, member_uid: {}",
+              gid, member->uid);
   }
 
   return 0;

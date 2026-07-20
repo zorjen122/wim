@@ -2,35 +2,36 @@
 
 **Language:** English | [中文](README.zh-CN.md)
 
-wim is a C++ instant messaging server playground with separate gate, verify,
-state, chat, and file services. It was originally written as a local learning
-project, and the repository now includes scripts and configuration conventions
-for bringing the full flow back up on a development machine.
+wim is a C++20 instant messaging system with Auth/API Gate, Connection Gateway,
+State, Message, and File nodes. The repository includes scripts and
+configuration conventions for bringing the full flow up on a development
+machine.
 
 The main verified path is:
 
 1. The client requests an email verification code through the gate service.
-2. The gate forwards the request to the Node.js verify service.
-3. The client registers and then signs in through the gate.
-4. The gate asks the state service for an available chat node.
-5. The client connects to the returned chat TCP endpoint.
-6. Chat nodes deliver text messages locally or forward them to another chat node
-   through gRPC when the receiver is online elsewhere.
+2. Gate generates, rate-limits, stores, and verifies the code through Redis; it
+   can deliver real mail through libcurl SMTP.
+3. The client registers and signs in through Gate.
+4. Gate asks State for a Connection Gateway endpoint and returns a short-lived
+   connection token.
+5. The client keeps a TCP connection to Connection Gateway.
+6. Gateway and Message nodes exchange commands and deliveries through their
+   existing bidirectional gRPC streams.
 
 ## Repository Layout
 
 | Path | Purpose |
 | --- | --- |
 | `server/gate` | HTTP entrypoint for verification, registration, sign-in, and routing. |
-| `server/verify` | Node.js gRPC verification-code service. |
-| `server/state` | Chat-node selection service. |
-| `server/chat` | TCP chat server, chat gRPC forwarding, friend/message data access. |
+| `server/gateway` | Long-lived client connections, authentication, flow control, and physical push. |
+| `server/state` | Gateway placement and versioned Message-node topology. |
+| `server/chat` | Message node: relationships, conversations, persistence, and delivery generation. |
 | `server/file` | File upload service. |
 | `server/public` | Shared C++ utilities, protobuf definitions, database and Redis helpers. |
-| `server/test` | Interactive and smoke-test client. |
 | `server/conf` | Canonical local configuration directory. |
 | `scripts` | Build, database initialization, Redis startup, service startup, and smoke tests. |
-| `docs` | Requirements and feature-verification notes. |
+| `docs` | Public requirements and feature-verification status. |
 
 ## Requirements
 
@@ -47,7 +48,7 @@ At a high level, the local environment needs:
 - MySQL Server with MySQL X Plugin enabled.
 - MySQL Connector/C++ with X DevAPI support.
 - Redis.
-- Node.js and npm for the verify service.
+- libcurl development files for SMTP delivery from Gate.
 - `clang-format` for formatting checks.
 
 ## Configuration
@@ -58,22 +59,19 @@ Scripts default to these files:
 - `server/conf/gate.yaml`
 - `server/conf/state-single.yaml`
 - `server/conf/chat-hunan-im.yaml`
+- `server/conf/gateway-hunan.yaml`
 - `server/conf/test-client.yaml`
-- `server/conf/verify.json`
 
-`server/conf/verify.json` intentionally leaves private values blank. Supply
-secrets through environment variables when real email or authenticated external
-services are required:
+Local `gate.yaml` disables real mail and exposes the code in the HTTP response.
+For SMTP delivery, disable `exposeCodeInResponse`, enable the email section, and
+supply secrets through environment variables:
 
 ```bash
 export WIM_VERIFY_EMAIL_USER="your-email@example.com"
 export WIM_VERIFY_EMAIL_PASS="your-email-app-password"
-export WIM_VERIFY_REDIS_PASSWORD="root"
-export WIM_VERIFY_MYSQL_PASSWORD="root"
+export WIM_VERIFY_SEND_EMAIL=1
+export WIM_VERIFY_EXPOSE_CODE=0
 ```
-
-For local smoke tests, `scripts/run_local_services.sh` starts verify with
-`WIM_VERIFY_SEND_EMAIL=0`, so no real email is sent.
 
 ## Build
 
@@ -96,44 +94,39 @@ MySQL defaults are documented in [docs/requirements.md](docs/requirements.md).
 
 ## Run Services
 
-Start the default single-chat-node stack:
+Start the default local Gateway/Message stack:
 
 ```bash
 ./scripts/run_local_services.sh
 ```
 
-Start a two-chat-node stack for cross-node message forwarding:
+Start a `G=2, N=2` local topology:
 
 ```bash
 WIM_STATE_CONFIG="$PWD/server/conf/state-multi.yaml" \
 WIM_CHAT_CONFIGS="$PWD/server/conf/chat-hunan-im.yaml $PWD/server/conf/chat-beijing-im.yaml" \
+WIM_GATEWAY_CONFIGS="$PWD/server/conf/gateway-hunan.yaml $PWD/server/conf/gateway-beijing.yaml" \
 ./scripts/run_local_services.sh
 ```
 
 ## Smoke Tests
 
-After the services are running, run the single-node smoke test:
+After the default services are running, run the focused protocol smoke tests:
 
 ```bash
-./scripts/smoke.sh
-```
-
-For a two-chat-node stack, run:
-
-```bash
-./scripts/smoke_multi_chat.sh
-```
-
-Additional focused checks:
-
-```bash
-./scripts/smoke_relationships.sh
 ./scripts/smoke_text_delivery.sh
+./scripts/smoke_relationships.sh
 ```
 
-The smoke scripts use the test client in `server/test` and cover registration,
-sign-in routing, text messaging, friend/group relationship paths where
-available, message pull behavior, and file upload.
+For the `G=2, N=2` topology, run:
+
+```bash
+./scripts/smoke_gateway_message.sh
+```
+
+These smoke scripts use the Python TCP protocol helper in `scripts/lib` and
+cover Gate login, Gateway authentication, text delivery, relationship paths,
+message synchronization, ACK handling, and Gateway-Message routing.
 
 ## Formatting
 
@@ -156,8 +149,10 @@ check when running against older clang-format versions.
 
 - [docs/requirements.md](docs/requirements.md): dependency, build, local port,
   and smoke-test details.
-- [docs/feature-verification.md](docs/feature-verification.md): feature list,
-  verification status, code indexes, and manual test ideas.
+- [docs/feature-server-verification.md](docs/feature-server-verification.md):
+  server feature list, verification status, and code indexes.
+- [docs/client-feature-verification.md](docs/client-feature-verification.md):
+  client feature list, verification status, and code indexes.
 - [CHANGELOG.md](CHANGELOG.md): verified baseline and subsequent architectural
   changes.
 - [server/conf/README.md](server/conf/README.md): configuration naming and

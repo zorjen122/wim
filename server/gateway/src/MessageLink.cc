@@ -209,6 +209,9 @@ class MessageLink final
     healthy.store(false, std::memory_order_release);
     LOG_WARN(netLogger, "Gateway-Message stream closed, node: {}, status: {}",
              node.id, status.error_message());
+
+    // 当 gRPC 流最终 OnDone，manager 会在 OnLinkDone 中移除旧 link、
+    // 尝试重试 pending 命令，并用指数退避加 jitter 重连
     manager.OnLinkDone(node.id, this);
   }
 
@@ -378,6 +381,9 @@ void MessageLinkManager::SetDeliveryHandler(DeliveryHandler handler) {
 asio::awaitable<void> MessageLinkManager::TopologyLoop() {
   asio::steady_timer timer(ioContext);
   uint64_t heartbeatSequence = 0;
+
+  // 如果配置了 stateRPC，循环会定期调用 StateService 拉最新 message
+  // 节点拓扑；否则就使用本地配置。
   while (!stopping.load(std::memory_order_acquire)) {
     if (!stateAddress.empty()) {
       auto snapshot = co_await asio::co_spawn(
@@ -396,6 +402,10 @@ asio::awaitable<void> MessageLinkManager::TopologyLoop() {
       for (auto &[_, link] : links)
         current.push_back(link);
     }
+
+    // 每 5 秒还会做两件事：给健康 link 发 heartbeat；
+    // 如果某条 link 超过 30 秒没有读到任何帧，就主动 stop 它。
+
     const int64_t now = NowUnixMilliseconds();
     for (auto &link : current) {
       if (link->Healthy())

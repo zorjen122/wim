@@ -27,7 +27,7 @@ is_source_file() {
 
 is_ignored_path() {
   case "$1" in
-    build/*|cmake-build-*/*|server/verify/node_modules/*) return 0 ;;
+    build/*|cmake-build-*/*|.demos/*) return 0 ;;
     *) return 1 ;;
   esac
 }

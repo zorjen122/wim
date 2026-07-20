@@ -454,11 +454,81 @@ return 1
     });
   }
 
-  bool authVerifycode(const std::string &email, const std::string &verifycode) {
-    return executeTemplate([&](std::unique_ptr<sw::redis::Redis> &redis) {
-      auto result = redis->get(email);
+  int issueVerificationCode(const std::string &email, const std::string &code,
+                            long ttlSeconds, long cooldownSeconds) {
+    if (email.empty() || code.empty() || ttlSeconds <= 0 ||
+        cooldownSeconds <= 0)
+      return -1;
 
-      return result.has_value() && result.value() == verifycode;
+    return executeTemplate([&](std::unique_ptr<sw::redis::Redis> &redis) {
+      static const std::string script = R"(
+if redis.call('EXISTS', KEYS[2]) == 1 then return 0 end
+redis.call('SETEX', KEYS[1], ARGV[2], ARGV[1])
+redis.call('SETEX', KEYS[2], ARGV[3], '1')
+redis.call('DEL', KEYS[3])
+return 1
+)";
+      const std::string prefix = "im:verify:{" + email + "}:";
+      return static_cast<int>(redis->eval<long long>(
+          script, {prefix + "code", prefix + "cooldown", prefix + "attempts"},
+          {code, std::to_string(ttlSeconds), std::to_string(cooldownSeconds)}));
+    });
+  }
+
+  bool consumeVerificationCode(const std::string &email,
+                               const std::string &code, int maxAttempts) {
+    if (email.empty() || code.empty() || maxAttempts <= 0)
+      return false;
+
+    return executeTemplate([&](std::unique_ptr<sw::redis::Redis> &redis) {
+      static const std::string script = R"(
+local current = redis.call('GET', KEYS[1])
+if not current then return 0 end
+if current == ARGV[1] then
+  redis.call('DEL', KEYS[1], KEYS[2], KEYS[3])
+  return 1
+end
+local attempts = redis.call('INCR', KEYS[2])
+local ttl = redis.call('TTL', KEYS[1])
+if attempts == 1 and ttl > 0 then redis.call('EXPIRE', KEYS[2], ttl) end
+if attempts >= tonumber(ARGV[2]) then
+  redis.call('DEL', KEYS[1], KEYS[2])
+end
+return 0
+)";
+      const std::string prefix = "im:verify:{" + email + "}:";
+      return redis->eval<long long>(
+                 script,
+                 {prefix + "code", prefix + "attempts", prefix + "cooldown"},
+                 {code, std::to_string(maxAttempts)}) == 1;
+    });
+  }
+
+  std::string getVerificationCode(const std::string &email) {
+    if (email.empty())
+      return {};
+    return executeTemplate([&](std::unique_ptr<sw::redis::Redis> &redis) {
+      const std::string key = "im:verify:{" + email + "}:code";
+      auto code = redis->get(key);
+      return code.value_or("");
+    });
+  }
+
+  bool clearVerificationCode(const std::string &email,
+                             const std::string &expectedCode) {
+    if (email.empty() || expectedCode.empty())
+      return false;
+    return executeTemplate([&](std::unique_ptr<sw::redis::Redis> &redis) {
+      static const std::string script = R"(
+if redis.call('GET', KEYS[1]) ~= ARGV[1] then return 0 end
+redis.call('DEL', KEYS[1], KEYS[2], KEYS[3])
+return 1
+)";
+      const std::string prefix = "im:verify:{" + email + "}:";
+      return redis->eval<long long>(
+                 script,
+                 {prefix + "code", prefix + "attempts", prefix + "cooldown"},
+                 {expectedCode}) == 1;
     });
   }
 

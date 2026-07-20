@@ -85,6 +85,7 @@ ctest --test-dir build/client-clang --output-on-failure
 
 未指定 `--database` 时，数据库写入 Qt 的应用本地数据目录，并按 `--account`
 隔离。当前 SQLite 模式会在空数据库中写入可交互的演示数据。
+纯表结构初始化脚本位于 `client/sql/init_client_sqlite.sql`，与当前 schema v3 对齐。
 
 ## 真实服务模式
 
@@ -192,3 +193,5 @@ APK 启动后可在“设置 → 服务端”保存 Auth Gate 地址；地址持
 
 完整路线与协议边界见
 [`docs/qt-qml-client-plan.md`](../docs/qt-qml-client-plan.md)。
+当前架构、网络链路、请求时序和代码组织分析见
+[`docs/client-architecture-analysis.md`](../docs/client-architecture-analysis.md)。

@@ -309,6 +309,7 @@ asio::awaitable<void> GatewaySession::HandlePacket(uint32_t protocolId,
   }
 
   // 对所有需要进入 Message Core 的命令执行连接级固定窗口限流。
+  // 目前这种超过一秒则重置窗口的局部策略仅作为一个功能点的示例
   const auto rateNow = std::chrono::steady_clock::now();
   if (rateNow - rateWindowStarted >= std::chrono::seconds(1)) {
     rateWindowStarted = rateNow;
@@ -444,13 +445,20 @@ GatewaySession::AuthResult GatewaySession::Authenticate(TcpPacket request) {
 
   db::UserInfo::Ptr info;
   if (request.init()) {
-    info =
+    auto initialInfo =
         std::make_shared<db::UserInfo>(uid, request.name(), request.age(),
                                        request.sex(), request.head_image_url());
-    if (db::MysqlDao::GetInstance()->insertUserInfo(info) != 0) {
-      result.error = ErrorCodes::MysqlFailed;
-      result.response = MakeErrorPacket(ErrorCodes::MysqlFailed);
-      return result;
+    if (db::MysqlDao::GetInstance()->insertUserInfo(initialInfo) == 0) {
+      info = std::move(initialInfo);
+    } else {
+      // 首次登录响应丢失后客户端可能携带 init=true 重连；此时复用已经
+      // 落库的资料，使初始化操作保持幂等。真正的写入失败仍由二次查询识别。
+      info = db::MysqlDao::GetInstance()->getUserInfo(uid);
+      if (!info) {
+        result.error = ErrorCodes::MysqlFailed;
+        result.response = MakeErrorPacket(ErrorCodes::MysqlFailed);
+        return result;
+      }
     }
   } else {
     info = db::MysqlDao::GetInstance()->getUserInfo(uid);
