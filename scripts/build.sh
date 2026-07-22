@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # 作用：
-#   配置并构建整个 server 工程，默认输出到 build/wim。
+#   配置并构建整个 server 工程，默认输出到 build/wimi。
 #   同时开启测试目标、关闭 demo 目标，并导出 compile_commands.json 供 clangd 使用。
 # 常用方式：
 #   ./scripts/build.sh
@@ -10,7 +10,7 @@ set -euo pipefail
 #   BUILD_DIR 指定构建目录，CC/CXX 指定编译器，JOBS 指定并行构建数量。
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/build/wim}"
+BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/build/wimi}"
 
 : "${CC:=clang}"
 : "${CXX:=clang++}"

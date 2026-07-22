@@ -35,16 +35,16 @@ fi
 
 : "${MYSQL_HOST:=127.0.0.1}"
 : "${MYSQL_PORT:=3306}"
-: "${WIM_DB:=chatServ}"
-: "${WIM_DB_USER:=zorjen}"
-: "${WIM_DB_PASSWORD:=root}"
+: "${WIMI_DB:=chatServ}"
+: "${WIMI_DB_USER:=zorjen}"
+: "${WIMI_DB_PASSWORD:=root}"
 : "${CHAT_HOST:=127.0.0.1}"
 : "${CHAT_PORT:=8090}"
 : "${GATE_URL:=http://127.0.0.1:18080}"
 
 stamp="$(date +%s%N)"
 payload="online_text_persist_${stamp}"
-result_file="$(mktemp /tmp/wim-text-delivery.XXXXXX.json)"
+result_file="$(mktemp /tmp/wimi-text-delivery.XXXXXX.json)"
 trap 'rm -f "$result_file"' EXIT
 
 UID_SENDER=1001 \
@@ -55,9 +55,9 @@ CHAT_PORT="$CHAT_PORT" \
 GATE_URL="$GATE_URL" \
 MYSQL_HOST="$MYSQL_HOST" \
 MYSQL_PORT="$MYSQL_PORT" \
-WIM_DB="$WIM_DB" \
-WIM_DB_USER="$WIM_DB_USER" \
-WIM_DB_PASSWORD="$WIM_DB_PASSWORD" \
+WIMI_DB="$WIMI_DB" \
+WIMI_DB_USER="$WIMI_DB_USER" \
+WIMI_DB_PASSWORD="$WIMI_DB_PASSWORD" \
 RESULT_FILE="$result_file" \
 PYTHONPATH="$ROOT_DIR/scripts/lib${PYTHONPATH:+:$PYTHONPATH}" \
 python3 - <<'PY'
@@ -67,7 +67,7 @@ import socket
 import subprocess
 import time
 
-from wim_tcp_client import WimClient, request_chat_auth, require
+from wimi_tcp_client import WimClient, request_chat_auth, require
 
 UID_SENDER = int(os.environ["UID_SENDER"])
 UID_RECEIVER = int(os.environ["UID_RECEIVER"])
@@ -78,9 +78,9 @@ RESULT_FILE = os.environ["RESULT_FILE"]
 GATE_URL = os.environ["GATE_URL"]
 MYSQL_HOST = os.environ["MYSQL_HOST"]
 MYSQL_PORT = os.environ["MYSQL_PORT"]
-WIM_DB = os.environ["WIM_DB"]
-WIM_DB_USER = os.environ["WIM_DB_USER"]
-WIM_DB_PASSWORD = os.environ["WIM_DB_PASSWORD"]
+WIMI_DB = os.environ["WIMI_DB"]
+WIMI_DB_USER = os.environ["WIMI_DB_USER"]
+WIMI_DB_PASSWORD = os.environ["WIMI_DB_PASSWORD"]
 
 ID_TEXT_SEND_REQ = 1027
 ID_ACK = 1033
@@ -99,7 +99,7 @@ def message_status(message_id):
     output = subprocess.check_output(
         [
             "mysql", "--protocol=tcp", f"-h{MYSQL_HOST}", f"-P{MYSQL_PORT}",
-            f"-u{WIM_DB_USER}", f"-p{WIM_DB_PASSWORD}", "-N", "-B", WIM_DB,
+            f"-u{WIMI_DB_USER}", f"-p{WIMI_DB_PASSWORD}", "-N", "-B", WIMI_DB,
             "-e", f"SELECT status FROM messages WHERE messageId={message_id}",
         ],
         stderr=subprocess.DEVNULL,
@@ -206,7 +206,7 @@ server_seq="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["s
 
 mysql_scalar() {
   mysql --protocol=tcp -h"$MYSQL_HOST" -P"$MYSQL_PORT" \
-    -u"$WIM_DB_USER" -p"$WIM_DB_PASSWORD" "$WIM_DB" \
+    -u"$WIMI_DB_USER" -p"$WIMI_DB_PASSWORD" "$WIMI_DB" \
     -N -B -e "$1" 2>/dev/null
 }
 
@@ -222,7 +222,7 @@ done
 if [[ "${row_count:-0}" != "1" ]]; then
   echo "online text row did not reach READ"
   mysql --protocol=tcp -h"$MYSQL_HOST" -P"$MYSQL_PORT" \
-    -u"$WIM_DB_USER" -p"$WIM_DB_PASSWORD" "$WIM_DB" \
+    -u"$WIMI_DB_USER" -p"$WIMI_DB_PASSWORD" "$WIMI_DB" \
     -e "SELECT * FROM messages WHERE messageId = $server_seq;" || true
   exit 1
 fi

@@ -12,9 +12,9 @@ Usage: ./scripts/smoke_gateway_message.sh
 
 Start the multi-node stack first:
   ./scripts/init_mysql.sh
-  WIM_STATE_CONFIG="\$PWD/server/conf/state-multi.yaml" \
-  WIM_CHAT_CONFIGS="\$PWD/server/conf/chat-hunan-im.yaml \$PWD/server/conf/chat-beijing-im.yaml" \
-  WIM_GATEWAY_CONFIGS="\$PWD/server/conf/gateway-hunan.yaml \$PWD/server/conf/gateway-beijing.yaml" \
+  WIMI_STATE_CONFIG="\$PWD/server/conf/state-multi.yaml" \
+  WIMI_CHAT_CONFIGS="\$PWD/server/conf/chat-hunan-im.yaml \$PWD/server/conf/chat-beijing-im.yaml" \
+  WIMI_GATEWAY_CONFIGS="\$PWD/server/conf/gateway-hunan.yaml \$PWD/server/conf/gateway-beijing.yaml" \
     ./scripts/run_local_services.sh
 
 Checks:
@@ -35,12 +35,12 @@ fi
 
 : "${MYSQL_HOST:=127.0.0.1}"
 : "${MYSQL_PORT:=3306}"
-: "${WIM_DB:=chatServ}"
-: "${WIM_DB_USER:=zorjen}"
-: "${WIM_DB_PASSWORD:=root}"
-: "${WIM_REDIS_HOST:=127.0.0.1}"
-: "${WIM_REDIS_PORT:=6380}"
-: "${WIM_REDIS_PASSWORD:=root}"
+: "${WIMI_DB:=chatServ}"
+: "${WIMI_DB_USER:=zorjen}"
+: "${WIMI_DB_PASSWORD:=root}"
+: "${WIMI_REDIS_HOST:=127.0.0.1}"
+: "${WIMI_REDIS_PORT:=6380}"
+: "${WIMI_REDIS_PASSWORD:=root}"
 : "${GATEWAY_A_HOST:=127.0.0.1}"
 : "${GATEWAY_A_PORT:=8090}"
 : "${GATEWAY_B_HOST:=127.0.0.1}"
@@ -86,12 +86,12 @@ user_a="gateway_a_${stamp}"
 user_b="gateway_b_${stamp}"
 payload="gateway_text_${stamp}"
 client_message_id="client_${stamp}"
-result_file="$(mktemp /tmp/wim-gateway-message.XXXXXX.json)"
+result_file="$(mktemp /tmp/wimi-gateway-message.XXXXXX.json)"
 trap 'rm -f "$result_file"' EXIT
 
 mysql_exec() {
   mysql --protocol=tcp -h"$MYSQL_HOST" -P"$MYSQL_PORT" \
-    -u"$WIM_DB_USER" -p"$WIM_DB_PASSWORD" "$WIM_DB" "$@"
+    -u"$WIMI_DB_USER" -p"$WIMI_DB_PASSWORD" "$WIMI_DB" "$@"
 }
 
 mysql_exec <<SQL
@@ -118,15 +118,15 @@ CLIENT_MESSAGE_ID="$client_message_id" GATEWAY_A_HOST="$GATEWAY_A_HOST" \
 GATEWAY_A_PORT="$GATEWAY_A_PORT" GATEWAY_B_HOST="$GATEWAY_B_HOST" \
 GATEWAY_B_PORT="$GATEWAY_B_PORT" GATEWAY_A_ID="$GATEWAY_A_ID" \
 GATEWAY_B_ID="$GATEWAY_B_ID" GATE_URL="$GATE_URL" \
-WIM_REDIS_HOST="$WIM_REDIS_HOST" WIM_REDIS_PORT="$WIM_REDIS_PORT" \
-WIM_REDIS_PASSWORD="$WIM_REDIS_PASSWORD" RESULT_FILE="$result_file" \
+WIMI_REDIS_HOST="$WIMI_REDIS_HOST" WIMI_REDIS_PORT="$WIMI_REDIS_PORT" \
+WIMI_REDIS_PASSWORD="$WIMI_REDIS_PASSWORD" RESULT_FILE="$result_file" \
 PYTHONPATH="$ROOT_DIR/scripts/lib${PYTHONPATH:+:$PYTHONPATH}" \
 python3 - <<'PY'
 import json
 import os
 import subprocess
 
-from wim_tcp_client import WimClient, request_chat_auth, require
+from wimi_tcp_client import WimClient, request_chat_auth, require
 
 ID_PULL_SESSION_MESSAGE_LIST_REQ = 1005
 ID_TEXT_SEND_REQ = 1027
@@ -144,9 +144,9 @@ client_message_id = os.environ["CLIENT_MESSAGE_ID"]
 def lease(uid):
     value = subprocess.check_output(
         [
-            "redis-cli", "-h", os.environ["WIM_REDIS_HOST"],
-            "-p", os.environ["WIM_REDIS_PORT"],
-            "-a", os.environ["WIM_REDIS_PASSWORD"],
+            "redis-cli", "-h", os.environ["WIMI_REDIS_HOST"],
+            "-p", os.environ["WIMI_REDIS_PORT"],
+            "-a", os.environ["WIMI_REDIS_PASSWORD"],
             "GET", f"im:session:{uid}",
         ],
         stderr=subprocess.DEVNULL,

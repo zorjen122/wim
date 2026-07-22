@@ -3,7 +3,7 @@ set -euo pipefail
 
 # 作用：
 #   验证两个 chat 节点同时运行时的跨节点核心流程。
-#   用户 A 登录 chat-1，用户 B 登录 chat-2，脚本检查 Redis 在线路由、
+#   用户 A 登录 gateway-1，用户 B 登录 gateway-2，脚本检查 Redis 会话路由、
 #   跨节点文本 ACCEPTED/投递/ACK 落库、跨节点好友申请/回复、好友拉取和消息拉取。
 # 前置条件：
 #   使用 server/conf/state-multi.yaml 和两个 chat config 启动服务。
@@ -17,15 +17,16 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   cat <<EOF
 Usage: ./scripts/smoke_multi_chat.sh
 
-Requires two chat services and shared dependencies to be running, for example:
+Requires two gateway services, two chat services, and shared dependencies to be running, for example:
   ./scripts/init_mysql.sh
-  WIM_STATE_CONFIG="\$PWD/server/conf/state-multi.yaml" \\
-  WIM_CHAT_CONFIGS="\$PWD/server/conf/chat-hunan-im.yaml \$PWD/server/conf/chat-beijing-im.yaml" \\
+  WIMI_STATE_CONFIG="\$PWD/server/conf/state-multi.yaml" \\
+  WIMI_CHAT_CONFIGS="\$PWD/server/conf/chat-hunan-im.yaml \$PWD/server/conf/chat-beijing-im.yaml" \\
+  WIMI_GATEWAY_CONFIGS="\$PWD/server/conf/gateway-hunan.yaml \$PWD/server/conf/gateway-beijing.yaml" \\
     ./scripts/run_local_services.sh
 
 Verifies the currently supported multi-chat path:
-  - user A logs in to chat node 1, user B logs in to chat node 2
-  - Redis records both users on different IM machines
+  - user A logs in to gateway node 1, user B logs in to gateway node 2
+  - Redis records both users on different gateway session leases
   - cross-node text returns ACCEPTED with a message_id
   - delivery reaches the receiver and is ACKed as DELIVERED in MySQL
   - cross-node friend apply/reply succeeds and can be pulled
@@ -42,18 +43,18 @@ fi
 
 : "${MYSQL_HOST:=127.0.0.1}"
 : "${MYSQL_PORT:=3306}"
-: "${WIM_DB:=chatServ}"
-: "${WIM_DB_USER:=zorjen}"
-: "${WIM_DB_PASSWORD:=root}"
-: "${WIM_REDIS_HOST:=127.0.0.1}"
-: "${WIM_REDIS_PORT:=6380}"
-: "${WIM_REDIS_PASSWORD:=root}"
+: "${WIMI_DB:=chatServ}"
+: "${WIMI_DB_USER:=zorjen}"
+: "${WIMI_DB_PASSWORD:=root}"
+: "${WIMI_REDIS_HOST:=127.0.0.1}"
+: "${WIMI_REDIS_PORT:=6380}"
+: "${WIMI_REDIS_PASSWORD:=root}"
 : "${CHAT_A_HOST:=127.0.0.1}"
 : "${CHAT_A_PORT:=8090}"
 : "${CHAT_B_HOST:=127.0.0.1}"
 : "${CHAT_B_PORT:=8091}"
-: "${CHAT_A_MACHINE:=hunan-im}"
-: "${CHAT_B_MACHINE:=beijing-im}"
+: "${GATEWAY_A_ID:=hunan-gateway}"
+: "${GATEWAY_B_ID:=beijing-gateway}"
 : "${GATE_URL:=http://127.0.0.1:18080}"
 
 check_chat_port() {
@@ -78,19 +79,20 @@ except OSError as exc:
 PY
 }
 
-if ! check_chat_port "chat node A" "$CHAT_A_HOST" "$CHAT_A_PORT" ||
-  ! check_chat_port "chat node B" "$CHAT_B_HOST" "$CHAT_B_PORT"; then
+if ! check_chat_port "gateway node A" "$CHAT_A_HOST" "$CHAT_A_PORT" ||
+  ! check_chat_port "gateway node B" "$CHAT_B_HOST" "$CHAT_B_PORT"; then
   cat >&2 <<EOF
-smoke_multi_chat.sh requires two chat nodes before it writes test data.
+smoke_multi_chat.sh requires two gateway nodes before it writes test data.
 
 Start the local stack in multi-chat mode:
-  WIM_STATE_CONFIG="\$PWD/server/conf/state-multi.yaml" \\
-  WIM_CHAT_CONFIGS="\$PWD/server/conf/chat-hunan-im.yaml \$PWD/server/conf/chat-beijing-im.yaml" \\
+  WIMI_STATE_CONFIG="\$PWD/server/conf/state-multi.yaml" \\
+  WIMI_CHAT_CONFIGS="\$PWD/server/conf/chat-hunan-im.yaml \$PWD/server/conf/chat-beijing-im.yaml" \\
+  WIMI_GATEWAY_CONFIGS="\$PWD/server/conf/gateway-hunan.yaml \$PWD/server/conf/gateway-beijing.yaml" \\
     ./scripts/run_local_services.sh
 
 Current expected TCP endpoints:
-  chat node A: $CHAT_A_HOST:$CHAT_A_PORT
-  chat node B: $CHAT_B_HOST:$CHAT_B_PORT
+  gateway node A: $CHAT_A_HOST:$CHAT_A_PORT
+  gateway node B: $CHAT_B_HOST:$CHAT_B_PORT
 EOF
   exit 1
 fi
@@ -103,12 +105,12 @@ user_b="multi_b_${stamp}"
 friend_msg="multi_friend_apply_${stamp}"
 friend_reply="multi_friend_reply_${stamp}"
 text_payload="multi_text_${stamp}"
-result_file="$(mktemp /tmp/wim-multi-chat.XXXXXX.json)"
+result_file="$(mktemp /tmp/wimi-multi-chat.XXXXXX.json)"
 trap 'rm -f "$result_file"' EXIT
 
 mysql_exec() {
   mysql --protocol=tcp -h"$MYSQL_HOST" -P"$MYSQL_PORT" \
-    -u"$WIM_DB_USER" -p"$WIM_DB_PASSWORD" "$WIM_DB" "$@"
+    -u"$WIMI_DB_USER" -p"$WIMI_DB_PASSWORD" "$WIMI_DB" "$@"
 }
 
 mysql_scalar() {
@@ -129,8 +131,8 @@ expect_count() {
   echo "$label ok"
 }
 
-timeout 3 redis-cli -h "$WIM_REDIS_HOST" -p "$WIM_REDIS_PORT" \
-  -a "$WIM_REDIS_PASSWORD" DEL "im:user:$uid_a" "im:user:$uid_b" \
+timeout 3 redis-cli -h "$WIMI_REDIS_HOST" -p "$WIMI_REDIS_PORT" \
+  -a "$WIMI_REDIS_PASSWORD" DEL "im:session:$uid_a" "im:session:$uid_b" \
   >/dev/null 2>&1 || true
 
 mysql_exec <<SQL
@@ -154,12 +156,12 @@ CHAT_A_HOST="$CHAT_A_HOST" \
 CHAT_A_PORT="$CHAT_A_PORT" \
 CHAT_B_HOST="$CHAT_B_HOST" \
 CHAT_B_PORT="$CHAT_B_PORT" \
-CHAT_A_MACHINE="$CHAT_A_MACHINE" \
-CHAT_B_MACHINE="$CHAT_B_MACHINE" \
+GATEWAY_A_ID="$GATEWAY_A_ID" \
+GATEWAY_B_ID="$GATEWAY_B_ID" \
 GATE_URL="$GATE_URL" \
-WIM_REDIS_HOST="$WIM_REDIS_HOST" \
-WIM_REDIS_PORT="$WIM_REDIS_PORT" \
-WIM_REDIS_PASSWORD="$WIM_REDIS_PASSWORD" \
+WIMI_REDIS_HOST="$WIMI_REDIS_HOST" \
+WIMI_REDIS_PORT="$WIMI_REDIS_PORT" \
+WIMI_REDIS_PASSWORD="$WIMI_REDIS_PASSWORD" \
 RESULT_FILE="$result_file" \
 PYTHONPATH="$ROOT_DIR/scripts/lib${PYTHONPATH:+:$PYTHONPATH}" \
 python3 - <<'PY'
@@ -168,7 +170,7 @@ import os
 import subprocess
 import time
 
-from wim_tcp_client import WimClient, request_chat_auth, require
+from wimi_tcp_client import WimClient, request_chat_auth, require
 
 UID_A = int(os.environ["UID_A"])
 UID_B = int(os.environ["UID_B"])
@@ -181,11 +183,11 @@ CHAT_A_HOST = os.environ["CHAT_A_HOST"]
 CHAT_A_PORT = int(os.environ["CHAT_A_PORT"])
 CHAT_B_HOST = os.environ["CHAT_B_HOST"]
 CHAT_B_PORT = int(os.environ["CHAT_B_PORT"])
-CHAT_A_MACHINE = os.environ["CHAT_A_MACHINE"]
-CHAT_B_MACHINE = os.environ["CHAT_B_MACHINE"]
-REDIS_HOST = os.environ["WIM_REDIS_HOST"]
-REDIS_PORT = os.environ["WIM_REDIS_PORT"]
-REDIS_PASSWORD = os.environ["WIM_REDIS_PASSWORD"]
+GATEWAY_A_ID = os.environ["GATEWAY_A_ID"]
+GATEWAY_B_ID = os.environ["GATEWAY_B_ID"]
+REDIS_HOST = os.environ["WIMI_REDIS_HOST"]
+REDIS_PORT = os.environ["WIMI_REDIS_PORT"]
+REDIS_PASSWORD = os.environ["WIMI_REDIS_PASSWORD"]
 RESULT_FILE = os.environ["RESULT_FILE"]
 GATE_URL = os.environ["GATE_URL"]
 
@@ -198,7 +200,7 @@ ID_REPLY_ADD_FRIEND_REQ = 1023
 ID_TEXT_SEND_REQ = 1027
 
 
-def redis_machine(uid):
+def redis_session_lease(uid):
     output = subprocess.check_output(
         [
             "redis-cli",
@@ -209,13 +211,19 @@ def redis_machine(uid):
             "-a",
             REDIS_PASSWORD,
             "GET",
-            f"im:user:{uid}",
+            f"im:session:{uid}",
         ],
         stderr=subprocess.DEVNULL,
         text=True,
     ).strip()
-    require(output, f"redis online info missing for uid {uid}")
-    return json.loads(output)["machineId"]
+    require(output, f"redis session lease missing for uid {uid}")
+    lease = json.loads(output)
+    require(lease.get("gatewayId"), f"redis session lease has no gatewayId: {lease}")
+    require(lease.get("instanceId"), f"redis session lease has no instanceId: {lease}")
+    require(lease.get("connectionId"), f"redis session lease has no connectionId: {lease}")
+    require(lease.get("generation", 0) > 0,
+            f"redis session lease has invalid generation: {lease}")
+    return lease
 
 auth_a = request_chat_auth(USER_A, "123456", GATE_URL)
 auth_b = request_chat_auth(USER_B, "123456", GATE_URL)
@@ -229,67 +237,13 @@ try:
     a.login(init=False)
     b.login(init=False)
 
-    machine_a = redis_machine(UID_A)
-    machine_b = redis_machine(UID_B)
-    require(machine_a == CHAT_A_MACHINE, f"uid {UID_A} is on {machine_a}, expected {CHAT_A_MACHINE}")
-    require(machine_b == CHAT_B_MACHINE, f"uid {UID_B} is on {machine_b}, expected {CHAT_B_MACHINE}")
-    print("redis online route ok")
-
-    client_seq = int(time.time_ns() % 900000000000)
-    text_rsp = a.request(
-        ID_TEXT_SEND_REQ,
-        {
-            "from": UID_A,
-            "to": UID_B,
-            "seq": client_seq,
-            "sessionKey": 0,
-            "data": TEXT_PAYLOAD,
-        },
-    )
-    require(text_rsp.get("error") == 0, f"cross-node text response failed: {text_rsp}")
-    require(text_rsp.get("seq") == client_seq, f"cross-node client seq changed: {text_rsp}")
-    require(text_rsp.get("messageState") == 1, f"cross-node text was not accepted: {text_rsp}")
-    require(text_rsp.get("messageId", 0) > 0, f"cross-node message id missing: {text_rsp}")
-
-    text_push = b.expect_async(
-        ID_TEXT_SEND_REQ,
-        lambda payload: payload.get("from") == UID_A
-        and payload.get("to") == UID_B
-        and payload.get("data") == TEXT_PAYLOAD,
-    )
-    server_seq = int(text_push["seq"])
-    require(text_rsp["messageId"] == server_seq,
-            f"response/push message id mismatch: {text_rsp}, {text_push}")
-    b.ack(server_seq)
-    print("cross-node text push ok")
-
-    if os.environ.get("WIM_TEST_RPC_DELAY") == "1":
-        delayed_client_seq = client_seq + 1
-        delayed_body = {
-            "from": UID_A,
-            "to": UID_B,
-            "seq": delayed_client_seq,
-            "sessionKey": 0,
-            "data": "rpc_delay_after_accept",
-            "requestTimeoutMs": 100,
-        }
-        delayed_first = a.request(ID_TEXT_SEND_REQ, delayed_body)
-        require(delayed_first.get("error", 0) != 0 and
-                delayed_first.get("retryable") is True,
-                f"delayed RPC did not time out retryably: {delayed_first}")
-        delayed_push = b.expect_async(
-            ID_TEXT_SEND_REQ,
-            lambda payload: payload.get("data") == "rpc_delay_after_accept",
-        )
-        delayed_server_seq = int(delayed_push["seq"])
-
-        delayed_body["requestTimeoutMs"] = 2000
-        delayed_retry = a.request(ID_TEXT_SEND_REQ, delayed_body)
-        require(delayed_retry.get("error", 0) != 0 and
-                delayed_retry.get("retryable") is False,
-                f"delayed RPC retry was not rejected as duplicate: {delayed_retry}")
-        b.ack(delayed_server_seq)
-        print("RPC deadline duplicate suppression ok")
+    lease_a = redis_session_lease(UID_A)
+    lease_b = redis_session_lease(UID_B)
+    require(lease_a["gatewayId"] == GATEWAY_A_ID,
+            f"uid {UID_A} is on {lease_a['gatewayId']}, expected {GATEWAY_A_ID}")
+    require(lease_b["gatewayId"] == GATEWAY_B_ID,
+            f"uid {UID_B} is on {lease_b['gatewayId']}, expected {GATEWAY_B_ID}")
+    print("redis gateway session routes ok")
 
     apply_rsp = a.request(
         ID_NOTIFY_ADD_FRIEND_REQ,
@@ -338,6 +292,62 @@ try:
     )
     print("cross-node friend pull ok")
 
+    client_seq = int(time.time_ns() % 900000000000)
+    text_rsp = a.request(
+        ID_TEXT_SEND_REQ,
+        {
+            "from": UID_A,
+            "to": UID_B,
+            "seq": client_seq,
+            "sessionKey": 0,
+            "data": TEXT_PAYLOAD,
+        },
+    )
+    require(text_rsp.get("error") == 0, f"cross-node text response failed: {text_rsp}")
+    require(text_rsp.get("seq") == client_seq, f"cross-node client seq changed: {text_rsp}")
+    require(text_rsp.get("messageState") == 1, f"cross-node text was not accepted: {text_rsp}")
+    require(text_rsp.get("messageId", 0) > 0, f"cross-node message id missing: {text_rsp}")
+
+    text_push = b.expect_async(
+        ID_TEXT_SEND_REQ,
+        lambda payload: payload.get("from") == UID_A
+        and payload.get("to") == UID_B
+        and payload.get("data") == TEXT_PAYLOAD,
+    )
+    server_seq = int(text_push["seq"])
+    require(text_rsp["messageId"] == server_seq,
+            f"response/push message id mismatch: {text_rsp}, {text_push}")
+    b.ack(server_seq)
+    print("cross-node text push ok")
+
+    if os.environ.get("WIMI_TEST_RPC_DELAY") == "1":
+        delayed_client_seq = client_seq + 1
+        delayed_body = {
+            "from": UID_A,
+            "to": UID_B,
+            "seq": delayed_client_seq,
+            "sessionKey": 0,
+            "data": "rpc_delay_after_accept",
+            "requestTimeoutMs": 100,
+        }
+        delayed_first = a.request(ID_TEXT_SEND_REQ, delayed_body)
+        require(delayed_first.get("error", 0) != 0 and
+                delayed_first.get("retryable") is True,
+                f"delayed RPC did not time out retryably: {delayed_first}")
+        delayed_push = b.expect_async(
+            ID_TEXT_SEND_REQ,
+            lambda payload: payload.get("data") == "rpc_delay_after_accept",
+        )
+        delayed_server_seq = int(delayed_push["seq"])
+
+        delayed_body["requestTimeoutMs"] = 2000
+        delayed_retry = a.request(ID_TEXT_SEND_REQ, delayed_body)
+        require(delayed_retry.get("error", 0) != 0 and
+                delayed_retry.get("retryable") is False,
+                f"delayed RPC retry was not rejected as duplicate: {delayed_retry}")
+        b.ack(delayed_server_seq)
+        print("RPC deadline duplicate suppression ok")
+
     session_messages = b.request(
         ID_PULL_SESSION_MESSAGE_LIST_REQ,
         {"from": UID_A, "to": UID_B, "lastMsgId": 0, "limit": 20},
@@ -373,7 +383,7 @@ server_seq="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["s
 delayed_server_seq="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["delayed_server_seq"])' "$result_file")"
 
 for _ in {1..10}; do
-  text_count="$(mysql_scalar "SELECT COUNT(*) FROM messages WHERE messageId = $server_seq AND senderId = $uid_a AND receiverId = $uid_b AND sessionKey = '0' AND content = '$text_payload' AND status = 2 AND COALESCE(readDateTime, '') = '';")"
+  text_count="$(mysql_scalar "SELECT COUNT(*) FROM messages WHERE messageId = $server_seq AND senderId = $uid_a AND receiverId = $uid_b AND CAST(sessionKey AS UNSIGNED) = conversationId AND content = '$text_payload' AND status = 2 AND COALESCE(readDateTime, '') = '';")"
   if [[ "$text_count" == "1" ]]; then
     echo "cross-node text mysql DELIVERED ack ok"
     break

@@ -32,9 +32,9 @@ fi
 
 : "${MYSQL_HOST:=127.0.0.1}"
 : "${MYSQL_PORT:=3306}"
-: "${WIM_DB:=chatServ}"
-: "${WIM_DB_USER:=zorjen}"
-: "${WIM_DB_PASSWORD:=root}"
+: "${WIMI_DB:=chatServ}"
+: "${WIMI_DB_USER:=zorjen}"
+: "${WIMI_DB_PASSWORD:=root}"
 : "${CHAT_HOST:=127.0.0.1}"
 : "${CHAT_PORT:=8090}"
 : "${GATE_URL:=http://127.0.0.1:18080}"
@@ -50,12 +50,12 @@ group_name="rel_group_${stamp}"
 join_msg="join_group_${stamp}"
 pull_payload="pull_message_${stamp}"
 message_id=$((uid_a * 1000 + 7))
-result_file="$(mktemp /tmp/wim-relationships.XXXXXX.json)"
+result_file="$(mktemp /tmp/wimi-relationships.XXXXXX.json)"
 trap 'rm -f "$result_file"' EXIT
 
 mysql_exec() {
   mysql --protocol=tcp -h"$MYSQL_HOST" -P"$MYSQL_PORT" \
-    -u"$WIM_DB_USER" -p"$WIM_DB_PASSWORD" "$WIM_DB" "$@"
+    -u"$WIMI_DB_USER" -p"$WIMI_DB_PASSWORD" "$WIMI_DB" "$@"
 }
 
 mysql_scalar() {
@@ -109,7 +109,7 @@ python3 - <<'PY'
 import json
 import os
 
-from wim_tcp_client import WimClient, request_chat_auth, require
+from wimi_tcp_client import WimClient, request_chat_auth, require
 
 UID_A = int(os.environ["UID_A"])
 UID_B = int(os.environ["UID_B"])

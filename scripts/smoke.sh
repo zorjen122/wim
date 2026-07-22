@@ -11,30 +11,30 @@ set -euo pipefail
 #   该脚本会使用测试用户 1001/1002，并创建临时上传文件和临时 FIFO。
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/build/wim}"
+BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/build/wimi}"
 
 : "${GATE_URL:=http://127.0.0.1:18080}"
 : "${MYSQL_HOST:=127.0.0.1}"
 : "${MYSQL_PORT:=3306}"
-: "${WIM_DB:=chatServ}"
-: "${WIM_DB_USER:=zorjen}"
-: "${WIM_DB_PASSWORD:=root}"
-: "${WIM_REDIS_HOST:=127.0.0.1}"
-: "${WIM_REDIS_PORT:=6380}"
-: "${WIM_REDIS_PASSWORD:=root}"
+: "${WIMI_DB:=chatServ}"
+: "${WIMI_DB_USER:=zorjen}"
+: "${WIMI_DB_PASSWORD:=root}"
+: "${WIMI_REDIS_HOST:=127.0.0.1}"
+: "${WIMI_REDIS_PORT:=6380}"
+: "${WIMI_REDIS_PASSWORD:=root}"
 
-timeout 3 redis-cli -h "$WIM_REDIS_HOST" -p "$WIM_REDIS_PORT" -a "$WIM_REDIS_PASSWORD" \
+timeout 3 redis-cli -h "$WIMI_REDIS_HOST" -p "$WIMI_REDIS_PORT" -a "$WIMI_REDIS_PASSWORD" \
   DEL im:user:1001 im:user:1002 >/dev/null 2>&1 || true
 
 stamp="$(date +%s)"
 signup_user="smoke_user_$stamp"
 signup_email="smoke_$stamp@example.com"
 text_payload="hello_from_smoke_$stamp"
-upload_file="wim_upload_smoke_$stamp.txt"
+upload_file="wimi_upload_smoke_$stamp.txt"
 upload_src="$ROOT_DIR/server/test/$upload_file"
 upload_dst="$ROOT_DIR/server/file/1001/$upload_file"
-receiver_fifo="/tmp/wim-smoke-receiver-$stamp.fifo"
-receiver_log="/tmp/wim-smoke-receiver-$stamp.log"
+receiver_fifo="/tmp/wimi-smoke-receiver-$stamp.fifo"
+receiver_log="/tmp/wimi-smoke-receiver-$stamp.log"
 receiver_pid=""
 cleanup_files() {
   rm -f "$upload_src" "$upload_dst"
@@ -85,13 +85,13 @@ echo "state route ok: $gateway_host:$gateway_port"
 
 { printf 'textSend\n1002\n%s\n' "$text_payload"; sleep 1; printf 'q\n'; } | \
   (cd "$ROOT_DIR/server/test" && \
-    WIM_CONFIG="$ROOT_DIR/server/conf/test-client.yaml" \
-    timeout 15 "$BUILD_DIR/test/imTest" zorjen 123456 1001 "$gateway_host" "$gateway_port" >/tmp/wim-smoke-chat.log) || true
+    WIMI_CONFIG="$ROOT_DIR/server/conf/test-client.yaml" \
+    timeout 15 "$BUILD_DIR/test/imTest" zorjen 123456 1001 "$gateway_host" "$gateway_port" >/tmp/wimi-smoke-chat.log) || true
 
 for _ in {1..10}; do
   text_count="$(mysql --protocol=tcp -h"$MYSQL_HOST" -P"$MYSQL_PORT" \
-    -u"$WIM_DB_USER" -p"$WIM_DB_PASSWORD" -N -B \
-    -e "SELECT COUNT(*) FROM $WIM_DB.messages WHERE content='$text_payload';" 2>/dev/null)"
+    -u"$WIMI_DB_USER" -p"$WIMI_DB_PASSWORD" -N -B \
+    -e "SELECT COUNT(*) FROM $WIMI_DB.messages WHERE content='$text_payload';" 2>/dev/null)"
   if [[ "$text_count" == "1" ]]; then
     echo "chat text ok"
     break
@@ -106,8 +106,8 @@ fi
 printf 'file smoke %s\n' "$stamp" > "$upload_src"
 { printf 'uploadFile\n%s\n' "$upload_file"; sleep 1; printf 'q\n'; } | \
   (cd "$ROOT_DIR/server/test" && \
-    WIM_CONFIG="$ROOT_DIR/server/conf/test-client.yaml" \
-    timeout 15 "$BUILD_DIR/test/imTest" zorjen 123456 1001 "$gateway_host" "$gateway_port" >/tmp/wim-smoke-file.log) || true
+    WIMI_CONFIG="$ROOT_DIR/server/conf/test-client.yaml" \
+    timeout 15 "$BUILD_DIR/test/imTest" zorjen 123456 1001 "$gateway_host" "$gateway_port" >/tmp/wimi-smoke-file.log) || true
 
 for _ in {1..10}; do
   if [[ -f "$upload_dst" ]] && cmp -s "$upload_src" "$upload_dst"; then
@@ -124,7 +124,7 @@ fi
 mkfifo "$receiver_fifo"
 (
   cd "$ROOT_DIR/server/test"
-  WIM_CONFIG="$ROOT_DIR/server/conf/test-client.yaml" \
+  WIMI_CONFIG="$ROOT_DIR/server/conf/test-client.yaml" \
     "$BUILD_DIR/test/imTest" alice 123456 1002 "$gateway_host" "$gateway_port" \
     < "$receiver_fifo" || true
 ) > "$receiver_log" 2>&1 &
@@ -145,8 +145,8 @@ fi
 online_payload="hello_online_$stamp"
 { printf 'textSend\n1002\n%s\n' "$online_payload"; sleep 1; printf 'q\n'; } | \
   (cd "$ROOT_DIR/server/test" && \
-    WIM_CONFIG="$ROOT_DIR/server/conf/test-client.yaml" \
-    timeout 15 "$BUILD_DIR/test/imTest" zorjen 123456 1001 "$gateway_host" "$gateway_port" >/tmp/wim-smoke-online-sender.log) || true
+    WIMI_CONFIG="$ROOT_DIR/server/conf/test-client.yaml" \
+    timeout 15 "$BUILD_DIR/test/imTest" zorjen 123456 1001 "$gateway_host" "$gateway_port" >/tmp/wimi-smoke-online-sender.log) || true
 
 for _ in {1..10}; do
   if grep -q "$online_payload" "$receiver_log" 2>/dev/null; then
