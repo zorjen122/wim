@@ -10,7 +10,7 @@
 
 #include <string>
 
-namespace wim {
+namespace wimi {
 
 MessageService::MessageService(DeliveryService &deliveryService)
     : deliveryService(deliveryService) {}
@@ -189,7 +189,7 @@ TcpPacket MessageService::Ack(uint32_t msgID, TcpPacket &request) {
     return rsp;
   }
   if (updated <= 0) {
-    LOG_WARN(wim::businessLogger,
+    LOG_WARN(wimi::businessLogger,
              "ACK所有权校验失败或消息不存在, seq: {}, principal: {}", seq, uid);
     rsp.set_error(updated == -1 ? ErrorCodes::MysqlFailed
                                 : ErrorCodes::MessageOwnershipInvalid);
@@ -274,7 +274,7 @@ TcpPacket MessageService::PullSessionMessages(uint32_t msgID,
   auto messageList = db::MysqlDao::GetInstance()->getSessionMessage(
       from, to, lastMsgId, limit);
   if (messageList == nullptr) {
-    LOG_INFO(wim::businessLogger,
+    LOG_INFO(wimi::businessLogger,
              "消息表为空, from: {}, to: {}, lastMsgId: {}, limit: {}", from, to,
              lastMsgId, limit);
 
@@ -308,7 +308,7 @@ TcpPacket MessageService::PullMessages(uint32_t msgID, TcpPacket &request) {
   auto messageList =
       db::MysqlDao::GetInstance()->getUserMessage(uid, lastMsgId, limit);
   if (messageList == nullptr) {
-    LOG_INFO(wim::businessLogger,
+    LOG_INFO(wimi::businessLogger,
              "消息表为空,  uid: {}, lastMsgId: {}, limit: {}", uid, lastMsgId,
              limit);
 
@@ -329,4 +329,4 @@ TcpPacket MessageService::PullMessages(uint32_t msgID, TcpPacket &request) {
   return rsp;
 }
 
-}  // namespace wim
+}  // namespace wimi

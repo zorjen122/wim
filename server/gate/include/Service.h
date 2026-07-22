@@ -9,7 +9,7 @@
 #include "HttpSession.h"
 #include <boost/beast.hpp>
 
-namespace wim {
+namespace wimi {
 
 namespace http = boost::beast::http;
 
@@ -43,4 +43,4 @@ class Service : public Singleton<Service> {
   std::map<std::string, HttpHandler> postHandlers;
   std::map<std::string, HttpHandler> getHandlers;
 };
-};  // namespace wim
+};  // namespace wimi

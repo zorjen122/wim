@@ -11,9 +11,9 @@ transportSecurity:
   environment: development
   mode: insecure
 )");
-  auto developmentConfig = wim::LoadGrpcSecurityConfig(development);
+  auto developmentConfig = wimi::LoadGrpcSecurityConfig(development);
   if (developmentConfig.Mtls() ||
-      !wim::BuildChannelCredentials(developmentConfig)) {
+      !wimi::BuildChannelCredentials(developmentConfig)) {
     std::cerr << "development insecure credentials were rejected\n";
     return 1;
   }
@@ -24,7 +24,7 @@ transportSecurity:
   mode: insecure
 )");
   try {
-    static_cast<void>(wim::LoadGrpcSecurityConfig(production));
+    static_cast<void>(wimi::LoadGrpcSecurityConfig(production));
   } catch (const std::exception &) {
     return 0;
   }

@@ -15,11 +15,11 @@
 #include <QTest>
 #include <QUuid>
 
-namespace wim::client {
+namespace wimi::client {
 namespace {
 
 QString TestConnectionName() {
-  return QStringLiteral("wim-client-test-%1")
+  return QStringLiteral("wimi-client-test-%1")
       .arg(QUuid::createUuid().toString(QUuid::WithoutBraces));
 }
 
@@ -637,7 +637,7 @@ void ClientModelsTest::sqlitePersistsNetworkProjection() {
     QVERIFY(repository.ReplaceContacts({ContactRecord{
         .userId = QStringLiteral("42"),
         .displayName = QStringLiteral("服务端用户"),
-        .statusText = QStringLiteral("WIM 用户"),
+        .statusText = QStringLiteral("WIMI 用户"),
         .avatarColor = QStringLiteral("#315FD6"),
     }}));
     QVERIFY(repository.ReplaceRequests({RequestRecord{
@@ -724,8 +724,8 @@ void ClientModelsTest::tcpFrameCodecRejectsOversizedPayload() {
   QVERIFY(codec.ErrorString().contains(QStringLiteral("10 MiB")));
 }
 
-}  // namespace wim::client
+}  // namespace wimi::client
 
-QTEST_GUILESS_MAIN(wim::client::ClientModelsTest)
+QTEST_GUILESS_MAIN(wimi::client::ClientModelsTest)
 
 #include "ClientModelsTest.moc"

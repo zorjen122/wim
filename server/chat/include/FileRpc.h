@@ -6,7 +6,7 @@
 #include <grpcpp/support/status.h>
 #include <memory>
 
-namespace wim::rpc {
+namespace wimi::rpc {
 
 using file::FileChunk;
 using file::FileService;
@@ -28,4 +28,4 @@ class FileRpc : public Singleton<FileRpc> {
   std::unique_ptr<RpcPool<FileService>> pool = nullptr;
 };
 
-};  // namespace wim::rpc
+};  // namespace wimi::rpc

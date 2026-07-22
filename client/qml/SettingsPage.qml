@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import Wim.Client
+import WimiClient
 
 Rectangle {
     id: root
@@ -329,7 +329,7 @@ Rectangle {
                     anchors.fill: parent
 
                     Label {
-                        text: qsTr("WIM Client 0.1.0")
+                        text: qsTr("WIMI Client 0.1.0")
                         color: Theme.textPrimary
                         font.pixelSize: Typography.titleSmall
                         font.bold: true

@@ -2,7 +2,7 @@
 
 #include <QtGlobal>
 
-namespace wim::client::protocol {
+namespace wimi::client::protocol {
 
 enum ServiceId : quint32 {
   PullFriendListRequest = 1001,
@@ -95,4 +95,4 @@ constexpr bool IsRetryableError(int code) {
          code == DependencyUnavailable;
 }
 
-}  // namespace wim::client::protocol
+}  // namespace wimi::client::protocol

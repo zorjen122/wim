@@ -8,7 +8,7 @@
 #include <string>
 #include <utility>
 
-namespace wim {
+namespace wimi {
 
 enum class RequestSource { Tcp, Rpc, Internal };
 
@@ -30,8 +30,8 @@ class RequestContext {
         deadline(deadline) {}
 
   static RequestContext WithTimeout(std::string requestId,
-                                    std::string operation,
-                                    RequestSource source, int64_t actor,
+                                    std::string operation, RequestSource source,
+                                    int64_t actor,
                                     std::chrono::milliseconds timeout) {
     timeout = std::max(timeout, std::chrono::milliseconds(1));
     return RequestContext(std::move(requestId), std::move(operation), source,
@@ -76,8 +76,7 @@ class RequestContextScope {
  public:
   // 通过线程局部作用域向现有 DAO/RPC 接口传播上下文，避免业务函数各自
   // 创建互不一致的超时；异步切换线程时必须显式复制并重新建立 Scope。
-  explicit RequestContextScope(RequestContext &context)
-      : previous(current) {
+  explicit RequestContextScope(RequestContext &context) : previous(current) {
     current = &context;
   }
 
@@ -111,4 +110,4 @@ class RequestContextScope {
   inline static thread_local RequestContext *current = nullptr;
 };
 
-}  // namespace wim
+}  // namespace wimi

@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-namespace wim::db {
+namespace wimi::db {
 struct User {
   using Ptr = std::shared_ptr<User>;
   User() = default;
@@ -258,4 +258,4 @@ struct GroupApply {
   std::string updateTime;
 };
 
-}  // namespace wim::db
+}  // namespace wimi::db

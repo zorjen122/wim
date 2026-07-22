@@ -4,7 +4,7 @@
 
 #include <vector>
 
-namespace wim {
+namespace wimi {
 
 class DeliveryService;
 
@@ -40,4 +40,4 @@ class MessageService {
   DeliveryService &deliveryService;
 };
 
-}  // namespace wim
+}  // namespace wimi

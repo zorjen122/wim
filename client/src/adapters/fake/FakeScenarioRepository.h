@@ -2,7 +2,7 @@
 
 #include "ports/IClientRepository.h"
 
-namespace wim::client {
+namespace wimi::client {
 
 class FakeScenarioRepository final : public IClientRepository {
  public:
@@ -13,4 +13,4 @@ class FakeScenarioRepository final : public IClientRepository {
   static ClientSnapshot NormalScenario(const QString &scenarioName);
 };
 
-}  // namespace wim::client
+}  // namespace wimi::client

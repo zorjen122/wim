@@ -16,26 +16,26 @@ find_package(gRPC REQUIRED)
 # 添加 src 目录下的所有源文件
 file(GLOB SOURCES src/*.cc)
 
-set(WIM_PUBLIC_PROTO_FILES
+set(WIMI_PUBLIC_PROTO_FILES
     proto/file.proto
     proto/gateway_message.proto
     proto/im.proto
     proto/state.proto
     proto/tcp_message.proto)
 
-set(WIM_PUBLIC_PROTO_SRCS)
-set(WIM_PUBLIC_PROTO_INCLUDE_DIRS)
-foreach(proto_file IN LISTS WIM_PUBLIC_PROTO_FILES)
-  wim_generate_grpc_proto(GENERATED_PROTO
+set(WIMI_PUBLIC_PROTO_SRCS)
+set(WIMI_PUBLIC_PROTO_INCLUDE_DIRS)
+foreach(proto_file IN LISTS WIMI_PUBLIC_PROTO_FILES)
+  wimi_generate_grpc_proto(GENERATED_PROTO
                           "${CMAKE_CURRENT_SOURCE_DIR}/${proto_file}")
-  list(APPEND WIM_PUBLIC_PROTO_SRCS ${GENERATED_PROTO})
-  list(APPEND WIM_PUBLIC_PROTO_INCLUDE_DIRS ${GENERATED_PROTO_INCLUDE_DIR})
+  list(APPEND WIMI_PUBLIC_PROTO_SRCS ${GENERATED_PROTO})
+  list(APPEND WIMI_PUBLIC_PROTO_INCLUDE_DIRS ${GENERATED_PROTO_INCLUDE_DIR})
 endforeach()
-list(REMOVE_DUPLICATES WIM_PUBLIC_PROTO_INCLUDE_DIRS)
+list(REMOVE_DUPLICATES WIMI_PUBLIC_PROTO_INCLUDE_DIRS)
 
-add_library(imProto STATIC ${WIM_PUBLIC_PROTO_SRCS})
+add_library(imProto STATIC ${WIMI_PUBLIC_PROTO_SRCS})
 set_target_properties(imProto PROPERTIES POSITION_INDEPENDENT_CODE ON)
-target_include_directories(imProto PUBLIC ${WIM_PUBLIC_PROTO_INCLUDE_DIRS})
+target_include_directories(imProto PUBLIC ${WIMI_PUBLIC_PROTO_INCLUDE_DIRS})
 target_link_libraries(imProto PUBLIC protobuf::libprotobuf gRPC::grpc++
                                     gRPC::grpc++_reflection)
 
@@ -71,6 +71,6 @@ if(BUILD_TESTING)
 endif()
 
 # 单元测试
-if(WIM_BUILD_UNIT_TESTS)
+if(WIMI_BUILD_UNIT_TESTS)
   add_subdirectory(test)
 endif()

@@ -11,11 +11,11 @@
 
 #include <cstdint>
 
-namespace wim::protocol {
+namespace wimi::protocol {
 class Packet;
 }
 
-namespace wim::client {
+namespace wimi::client {
 
 class ConnectionGatewayClient final : public QObject {
   Q_OBJECT
@@ -68,7 +68,7 @@ class ConnectionGatewayClient final : public QObject {
                        std::int64_t conversationSequence);
 
  signals:
-  void StateChanged(wim::client::ConnectionGatewayClient::State state);
+  void StateChanged(wimi::client::ConnectionGatewayClient::State state);
   void Authenticated();
   void CredentialsExpired();
   void ResponseReceived(const QString &requestId, quint32 serviceId,
@@ -88,7 +88,7 @@ class ConnectionGatewayClient final : public QObject {
     int timeoutMilliseconds{};
   };
 
-  QString QueueRequest(quint32 serviceId, wim::protocol::Packet packet,
+  QString QueueRequest(quint32 serviceId, wimi::protocol::Packet packet,
                        int timeoutMilliseconds = 5000);
   void SendFront(quint32 responseServiceId);
   void CompleteFront(quint32 responseServiceId, const QByteArray &payload);
@@ -97,7 +97,7 @@ class ConnectionGatewayClient final : public QObject {
   void SendReceipt(std::int64_t messageId, int receiptType,
                    std::int64_t conversationId,
                    std::int64_t conversationSequence);
-  void SendPacket(quint32 serviceId, const wim::protocol::Packet &packet);
+  void SendPacket(quint32 serviceId, const wimi::protocol::Packet &packet);
   void HandleFrame(const TcpFrame &frame);
   void HandleLoginResponse(const QByteArray &payload);
   void ScheduleReconnect();
@@ -119,6 +119,6 @@ class ConnectionGatewayClient final : public QObject {
   bool desired_open_{};
 };
 
-}  // namespace wim::client
+}  // namespace wimi::client
 
-Q_DECLARE_METATYPE(wim::client::ConnectionGatewayClient::State)
+Q_DECLARE_METATYPE(wimi::client::ConnectionGatewayClient::State)

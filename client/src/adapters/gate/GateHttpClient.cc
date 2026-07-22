@@ -8,7 +8,7 @@
 
 #include <utility>
 
-namespace wim::client {
+namespace wimi::client {
 
 GateHttpClient::GateHttpClient(QObject *parent) : QObject(parent) {
   qRegisterMetaType<GateSession>();
@@ -142,4 +142,4 @@ QUrl GateHttpClient::Endpoint(const QString &path) const {
   return endpoint;
 }
 
-}  // namespace wim::client
+}  // namespace wimi::client

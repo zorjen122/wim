@@ -13,17 +13,17 @@
 #include <QTcpSocket>
 #include <QTest>
 
-namespace wim::client {
+namespace wimi::client {
 namespace {
 
-wim::protocol::Packet ParsePacket(const QByteArray &payload) {
-  wim::protocol::Packet packet;
+wimi::protocol::Packet ParsePacket(const QByteArray &payload) {
+  wimi::protocol::Packet packet;
   const bool parsed = ParseProtobufPacket(payload, &packet);
   Q_ASSERT(parsed);
   return packet;
 }
 
-QByteArray PacketPayload(const wim::protocol::Packet &packet) {
+QByteArray PacketPayload(const wimi::protocol::Packet &packet) {
   QByteArray payload;
   const bool serialized = SerializeProtobufPacket(packet, &payload);
   Q_ASSERT(serialized);
@@ -61,17 +61,17 @@ void ClientNetworkTest::qtProtobufMatchesCanonicalWireFormat() {
       "726571756573742d31f002c13ef80209820308636c69656e742d31920309082b"
       "1205416c696365");
 
-  wim::protocol::UserInfo friendInfo;
+  wimi::protocol::UserInfo friendInfo;
   friendInfo.setUid(43);
   friendInfo.setName(QStringLiteral("Alice"));
-  wim::protocol::Packet packet;
+  wimi::protocol::Packet packet;
   packet.setUid(42);
   packet.setData(QByteArrayLiteral("hello"));
   packet.setError(0);
   packet.setAuthToken(QStringLiteral("token-42"));
   packet.setMessageId(7001);
   packet.setMessageState(
-      wim::protocol::MessageStateGadget::MessageState::MESSAGE_STATE_ACCEPTED);
+      wimi::protocol::MessageStateGadget::MessageState::MESSAGE_STATE_ACCEPTED);
   packet.setRequestId(QStringLiteral("request-1"));
   packet.setConversationId(8001);
   packet.setConversationSeq(9);
@@ -89,7 +89,7 @@ void ClientNetworkTest::qtProtobufMatchesCanonicalWireFormat() {
   QCOMPARE(parsed.messageId(), 7001);
   QCOMPARE(
       parsed.messageState(),
-      wim::protocol::MessageStateGadget::MessageState::MESSAGE_STATE_ACCEPTED);
+      wimi::protocol::MessageStateGadget::MessageState::MESSAGE_STATE_ACCEPTED);
   QCOMPARE(parsed.requestId(), QStringLiteral("request-1"));
   QCOMPARE(parsed.conversationId(), 8001);
   QCOMPARE(parsed.conversationSeq(), 9);
@@ -100,7 +100,7 @@ void ClientNetworkTest::qtProtobufMatchesCanonicalWireFormat() {
 }
 
 void ClientNetworkTest::optionalPacketTimestampDefaultsToEmpty() {
-  wim::protocol::Packet packet;
+  wimi::protocol::Packet packet;
   QCOMPARE(PacketSendDateTimeOrEmpty(packet), QString{});
 
   packet.setSendDateTime(QStringLiteral("2026-07-17 23:45:00"));
@@ -213,8 +213,8 @@ void ClientNetworkTest::gatewayCoversSupportedRequestAndReceiptContracts() {
   QTcpSocket *serverSocket = nullptr;
   TcpFrameCodec serverCodec;
   QVector<quint32> requestServices;
-  QHash<quint32, wim::protocol::Packet> packets;
-  QVector<wim::protocol::Packet> receipts;
+  QHash<quint32, wimi::protocol::Packet> packets;
+  QVector<wimi::protocol::Packet> receipts;
 
   connect(&server, &QTcpServer::newConnection, this, [&] {
     serverSocket = server.nextPendingConnection();
@@ -225,7 +225,7 @@ void ClientNetworkTest::gatewayCoversSupportedRequestAndReceiptContracts() {
         if (frame.serviceId == protocol::LoginRequest) {
           QCOMPARE(packet.uid(), 42);
           QCOMPARE(packet.authToken(), QStringLiteral("token-42"));
-          wim::protocol::Packet response;
+          wimi::protocol::Packet response;
           response.setError(protocol::Success);
           response.setUid(42);
           serverSocket->write(TcpFrameCodec::Encode(protocol::LoginResponse,
@@ -233,7 +233,7 @@ void ClientNetworkTest::gatewayCoversSupportedRequestAndReceiptContracts() {
           continue;
         }
         if (frame.serviceId == protocol::QuitRequest) {
-          wim::protocol::Packet response;
+          wimi::protocol::Packet response;
           response.setError(protocol::Success);
           serverSocket->write(TcpFrameCodec::Encode(protocol::QuitResponse,
                                                     PacketPayload(response)));
@@ -245,7 +245,7 @@ void ClientNetworkTest::gatewayCoversSupportedRequestAndReceiptContracts() {
         }
         requestServices.push_back(frame.serviceId);
         packets.insert(frame.serviceId, packet);
-        wim::protocol::Packet response;
+        wimi::protocol::Packet response;
         response.setError(protocol::Success);
         if (frame.serviceId == protocol::SendTextRequest ||
             frame.serviceId == protocol::SendGroupTextRequest) {
@@ -253,7 +253,7 @@ void ClientNetworkTest::gatewayCoversSupportedRequestAndReceiptContracts() {
           response.setMessageId(7001);
           response.setConversationId(8001);
           response.setConversationSeq(9);
-          response.setMessageState(wim::protocol::MessageStateGadget::
+          response.setMessageState(wimi::protocol::MessageStateGadget::
                                        MessageState::MESSAGE_STATE_ACCEPTED);
         }
         serverSocket->write(TcpFrameCodec::Encode(
@@ -331,7 +331,7 @@ void ClientNetworkTest::gatewayCoversSupportedRequestAndReceiptContracts() {
     QCOMPARE(packets[service].requestTimeoutMs(), 3000U);
   }
 
-  wim::protocol::Packet push;
+  wimi::protocol::Packet push;
   push.setFrom(43);
   push.setTo(42);
   push.setData(QByteArrayLiteral("incoming"));
@@ -349,15 +349,15 @@ void ClientNetworkTest::gatewayCoversSupportedRequestAndReceiptContracts() {
   QTRY_COMPARE(receipts.size(), 3);
   QCOMPARE(
       receipts[0].receiptType(),
-      wim::protocol::ReceiptTypeGadget::ReceiptType::RECEIPT_TYPE_TRANSPORT);
+      wimi::protocol::ReceiptTypeGadget::ReceiptType::RECEIPT_TYPE_TRANSPORT);
   QVERIFY(!receipts[0].hasConversationId());
   QCOMPARE(
       receipts[1].receiptType(),
-      wim::protocol::ReceiptTypeGadget::ReceiptType::RECEIPT_TYPE_DELIVERED);
+      wimi::protocol::ReceiptTypeGadget::ReceiptType::RECEIPT_TYPE_DELIVERED);
   QCOMPARE(receipts[1].conversationId(), 8001);
   QCOMPARE(receipts[1].conversationSeq(), 10);
   QCOMPARE(receipts[2].receiptType(),
-           wim::protocol::ReceiptTypeGadget::ReceiptType::RECEIPT_TYPE_READ);
+           wimi::protocol::ReceiptTypeGadget::ReceiptType::RECEIPT_TYPE_READ);
 
   gateway.Close();
   QTRY_COMPARE(gateway.CurrentState(),
@@ -368,7 +368,7 @@ void ClientNetworkTest::gatewayReconnectsAndAuthenticatesAgain() {
   QTcpServer server;
   QVERIFY(server.listen(QHostAddress::LocalHost, 0));
   int acceptedConnections = 0;
-  QVector<wim::protocol::Packet> loginPackets;
+  QVector<wimi::protocol::Packet> loginPackets;
 
   connect(&server, &QTcpServer::newConnection, this, [&] {
     auto *socket = server.nextPendingConnection();
@@ -381,7 +381,7 @@ void ClientNetworkTest::gatewayReconnectsAndAuthenticatesAgain() {
                   continue;
                 }
                 loginPackets.push_back(ParsePacket(frame.payload));
-                wim::protocol::Packet response;
+                wimi::protocol::Packet response;
                 response.setError(protocol::Success);
                 socket->write(TcpFrameCodec::Encode(protocol::LoginResponse,
                                                     PacketPayload(response)));
@@ -416,8 +416,8 @@ void ClientNetworkTest::gatewayReconnectsAndAuthenticatesAgain() {
   gateway.Close();
 }
 
-}  // namespace wim::client
+}  // namespace wimi::client
 
-QTEST_GUILESS_MAIN(wim::client::ClientNetworkTest)
+QTEST_GUILESS_MAIN(wimi::client::ClientNetworkTest)
 
 #include "ClientNetworkTest.moc"

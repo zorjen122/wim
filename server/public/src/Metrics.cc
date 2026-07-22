@@ -1,6 +1,6 @@
 #include "Metrics.h"
 
-namespace wim {
+namespace wimi {
 
 Metrics::CounterArray &Metrics::Counters() {
   static CounterArray counters{};
@@ -35,4 +35,4 @@ std::string_view Metrics::Name(Metric metric) {
   return names[static_cast<std::size_t>(metric)];
 }
 
-}  // namespace wim
+}  // namespace wimi

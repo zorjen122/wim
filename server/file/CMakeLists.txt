@@ -39,6 +39,6 @@ target_link_libraries(file PRIVATE imFile)
 
 target_compile_options(file PRIVATE -Wall)
 
-if(WIM_BUILD_UNIT_TESTS)
+if(WIMI_BUILD_UNIT_TESTS)
   add_subdirectory(test)
 endif()

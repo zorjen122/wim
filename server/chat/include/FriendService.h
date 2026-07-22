@@ -2,7 +2,7 @@
 
 #include "TcpMessageCodec.h"
 
-namespace wim {
+namespace wimi {
 
 class DeliveryService;
 
@@ -23,4 +23,4 @@ class FriendService {
   DeliveryService &deliveryService;
 };
 
-}  // namespace wim
+}  // namespace wimi

@@ -16,7 +16,7 @@
 #include <vector>
 
 int main(int argc, char **argv) {
-  const char *configPath = std::getenv("WIM_CONFIG");
+  const char *configPath = std::getenv("WIMI_CONFIG");
   if (!configPath && argc > 1)
     configPath = argv[1];
   if (!Configer::loadConfig(configPath ? configPath
@@ -37,22 +37,22 @@ int main(int argc, char **argv) {
   const std::string instanceId =
       boost::uuids::to_string(boost::uuids::random_generator{}());
 
-  wim::db::MysqlDao::GetInstance();
-  wim::db::RedisDao::GetInstance();
+  wimi::db::MysqlDao::GetInstance();
+  wimi::db::RedisDao::GetInstance();
 
   boost::asio::io_context ioContext;
   boost::asio::thread_pool businessPool(4);
-  wim::connection::SessionRegistry registry(gatewayId, instanceId);
-  wim::connection::MessageLinkManager messageLinks(ioContext, businessPool,
-                                                   gatewayId, instanceId);
+  wimi::connection::SessionRegistry registry(gatewayId, instanceId);
+  wimi::connection::MessageLinkManager messageLinks(ioContext, businessPool,
+                                                    gatewayId, instanceId);
   messageLinks.SetDeliveryHandler(
-      [&registry](const wim::gateway::DeliveryEnvelope &delivery) {
+      [&registry](const wimi::gateway::DeliveryEnvelope &delivery) {
         return registry.Deliver(delivery);
       });
   messageLinks.Start();
 
-  wim::connection::GatewayServer server(ioContext, port, registry, messageLinks,
-                                        businessPool);
+  wimi::connection::GatewayServer server(ioContext, port, registry,
+                                         messageLinks, businessPool);
   boost::asio::co_spawn(ioContext, server.Run(), boost::asio::detached);
 
   boost::asio::signal_set signals(ioContext, SIGINT, SIGTERM);
@@ -69,7 +69,7 @@ int main(int argc, char **argv) {
   workers.reserve(workerCount - 1);
   for (std::size_t i = 1; i < workerCount; ++i)
     workers.emplace_back([&]() { ioContext.run(); });
-  LOG_INFO(wim::businessLogger,
+  LOG_INFO(wimi::businessLogger,
            "Connection Gateway started, id: {}, instance: {}, port: {}",
            gatewayId, instanceId, port);
   ioContext.run();
@@ -79,7 +79,7 @@ int main(int argc, char **argv) {
   messageLinks.Stop();
   businessPool.stop();
   businessPool.join();
-  wim::db::MysqlDao::GetInstance()->Close();
-  wim::db::RedisDao::GetInstance()->Close();
+  wimi::db::MysqlDao::GetInstance()->Close();
+  wimi::db::RedisDao::GetInstance()->Close();
   return EXIT_SUCCESS;
 }

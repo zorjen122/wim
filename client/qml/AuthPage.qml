@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import Wim.Client
+import WimiClient
 
 Rectangle {
     id: root
@@ -118,7 +118,7 @@ Rectangle {
 
                 Label {
                     Layout.fillWidth: true
-                    text: root.mode === "sign-up" ? qsTr("创建 WIM 账号")
+                    text: root.mode === "sign-up" ? qsTr("创建 WIMI 账号")
                           : root.mode === "reset" ? qsTr("恢复密码")
                           : qsTr("重新登录")
                     color: Theme.textPrimary

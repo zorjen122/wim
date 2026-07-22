@@ -14,7 +14,7 @@
 
 int main() {
   try {
-    const char *configPath = std::getenv("WIM_CONFIG");
+    const char *configPath = std::getenv("WIMI_CONFIG");
     auto existConfig =
         Configer::loadConfig(configPath ? configPath : "../conf/gate.yaml");
     if (!existConfig) {
@@ -28,10 +28,10 @@ int main() {
       return 0;
     }
 
-    wim::IocPool::GetInstance();
-    wim::db::MysqlDao::GetInstance();
-    wim::db::RedisDao::GetInstance();
-    wim::rpc::StateClient::GetInstance();
+    wimi::IocPool::GetInstance();
+    wimi::db::MysqlDao::GetInstance();
+    wimi::db::RedisDao::GetInstance();
+    wimi::rpc::StateClient::GetInstance();
 
     unsigned short port = config["gateway"]["port"].as<unsigned short>();
 
@@ -45,7 +45,7 @@ int main() {
           ioc.stop();
         });
 
-    auto gate = std::make_shared<wim::GateServer>(ioc, port);
+    auto gate = std::make_shared<wimi::GateServer>(ioc, port);
     gate->Start();
     std::cout << "Gate Server listen on port: " << port << "\n";
 

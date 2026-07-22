@@ -2,7 +2,7 @@
 
 #include <utility>
 
-namespace wim::client {
+namespace wimi::client {
 
 ContactListModel::ContactListModel(QObject *parent)
     : QAbstractListModel(parent) {}
@@ -69,4 +69,4 @@ bool ContactListModel::ToggleFavorite(int row) {
   return true;
 }
 
-}  // namespace wim::client
+}  // namespace wimi::client

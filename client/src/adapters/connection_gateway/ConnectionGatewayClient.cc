@@ -10,7 +10,7 @@
 #include <algorithm>
 #include <utility>
 
-namespace wim::client {
+namespace wimi::client {
 namespace {
 
 constexpr int kHeartbeatIntervalMilliseconds = 20'000;
@@ -35,7 +35,7 @@ ConnectionGatewayClient::ConnectionGatewayClient(QObject *parent)
   connect(&socket_, &QTcpSocket::connected, this, [this] {
     reconnect_attempt_ = 0;
     SetState(State::Authenticating);
-    wim::protocol::Packet login;
+    wimi::protocol::Packet login;
     login.setUid(session_.uid);
     login.setAuthToken(session_.token);
     login.setInit(session_.profileInitializationRequired);
@@ -79,7 +79,7 @@ ConnectionGatewayClient::ConnectionGatewayClient(QObject *parent)
     if (!IsReady()) {
       return;
     }
-    wim::protocol::Packet ping;
+    wimi::protocol::Packet ping;
     SendPacket(protocol::PingRequest, ping);
   });
   connect(&reconnect_timer_, &QTimer::timeout, this,
@@ -123,7 +123,7 @@ void ConnectionGatewayClient::Close() {
     return;
   }
   SetState(State::Closing);
-  wim::protocol::Packet quit;
+  wimi::protocol::Packet quit;
   SendPacket(protocol::QuitRequest, quit);
   QTimer::singleShot(1000, this, [this] {
     if (state_ == State::Closing) {
@@ -142,7 +142,7 @@ QString ConnectionGatewayClient::PullFriendApplications() {
 
 QString ConnectionGatewayClient::PullConversationMessages(
     std::int64_t conversationId, std::int64_t afterSequence, int limit) {
-  wim::protocol::Packet packet;
+  wimi::protocol::Packet packet;
   packet.setConversationId(conversationId);
   packet.setAfterSeq(std::max<std::int64_t>(0, afterSequence));
   packet.setLimit(std::clamp(limit, 1, 200));
@@ -151,7 +151,7 @@ QString ConnectionGatewayClient::PullConversationMessages(
 
 QString ConnectionGatewayClient::PullAllMessages(std::int64_t lastMessageId,
                                                  int limit) {
-  wim::protocol::Packet packet;
+  wimi::protocol::Packet packet;
   packet.setLastMsgId(std::max<std::int64_t>(0, lastMessageId));
   packet.setLimit(std::clamp(limit, 1, 200));
   return QueueRequest(protocol::PullMessagesRequest, std::move(packet));
@@ -159,7 +159,7 @@ QString ConnectionGatewayClient::PullAllMessages(std::int64_t lastMessageId,
 
 QString ConnectionGatewayClient::SendFriendRequest(std::int64_t recipientUid,
                                                    const QString &message) {
-  wim::protocol::Packet packet;
+  wimi::protocol::Packet packet;
   packet.setTo(recipientUid);
   packet.setRequestMessage(message);
   return QueueRequest(protocol::AddFriendRequest, std::move(packet));
@@ -168,7 +168,7 @@ QString ConnectionGatewayClient::SendFriendRequest(std::int64_t recipientUid,
 QString ConnectionGatewayClient::ReplyFriendRequest(std::int64_t recipientUid,
                                                     bool accept,
                                                     const QString &message) {
-  wim::protocol::Packet packet;
+  wimi::protocol::Packet packet;
   packet.setTo(recipientUid);
   packet.setAccept(accept);
   packet.setReplyMessage(message);
@@ -179,7 +179,7 @@ QString ConnectionGatewayClient::SendText(std::int64_t recipientUid,
                                           const QByteArray &utf8Text,
                                           const QString &clientMessageId,
                                           std::int64_t conversationId) {
-  wim::protocol::Packet packet;
+  wimi::protocol::Packet packet;
   packet.setSeq(NextLegacySequence());
   packet.setTo(recipientUid);
   packet.setData(utf8Text);
@@ -195,7 +195,7 @@ QString ConnectionGatewayClient::UploadFile(std::int64_t clientSequence,
                                             const QString &fileName,
                                             const QString &fileType,
                                             const QByteArray &content) {
-  wim::protocol::Packet packet;
+  wimi::protocol::Packet packet;
   packet.setSeq(clientSequence);
   packet.setFileName(fileName);
   packet.setFileType(fileType);
@@ -204,14 +204,14 @@ QString ConnectionGatewayClient::UploadFile(std::int64_t clientSequence,
 }
 
 QString ConnectionGatewayClient::CreateGroup(const QString &groupName) {
-  wim::protocol::Packet packet;
+  wimi::protocol::Packet packet;
   packet.setGroupName(groupName);
   return QueueRequest(protocol::CreateGroupRequest, std::move(packet));
 }
 
 QString ConnectionGatewayClient::RequestJoinGroup(std::int64_t groupId,
                                                   const QString &message) {
-  wim::protocol::Packet packet;
+  wimi::protocol::Packet packet;
   packet.setGid(groupId);
   packet.setRequestMessage(message);
   return QueueRequest(protocol::JoinGroupRequest, std::move(packet));
@@ -220,7 +220,7 @@ QString ConnectionGatewayClient::RequestJoinGroup(std::int64_t groupId,
 QString ConnectionGatewayClient::ReplyJoinGroup(std::int64_t groupId,
                                                 std::int64_t requestorUid,
                                                 bool accept) {
-  wim::protocol::Packet packet;
+  wimi::protocol::Packet packet;
   packet.setGid(groupId);
   packet.setRequestorUid(requestorUid);
   packet.setAccept(accept);
@@ -231,7 +231,7 @@ QString ConnectionGatewayClient::SendGroupText(std::int64_t groupId,
                                                const QByteArray &utf8Text,
                                                const QString &clientMessageId,
                                                std::int64_t conversationId) {
-  wim::protocol::Packet packet;
+  wimi::protocol::Packet packet;
   packet.setSeq(NextLegacySequence());
   packet.setGid(groupId);
   packet.setData(utf8Text);
@@ -245,7 +245,7 @@ QString ConnectionGatewayClient::SendGroupText(std::int64_t groupId,
 
 void ConnectionGatewayClient::AcknowledgeTransport(std::int64_t messageId) {
   SendReceipt(messageId,
-              static_cast<int>(wim::protocol::ReceiptTypeGadget::ReceiptType::
+              static_cast<int>(wimi::protocol::ReceiptTypeGadget::ReceiptType::
                                    RECEIPT_TYPE_TRANSPORT),
               0, 0);
 }
@@ -254,7 +254,7 @@ void ConnectionGatewayClient::AcknowledgeDelivered(
     std::int64_t messageId, std::int64_t conversationId,
     std::int64_t conversationSequence) {
   SendReceipt(messageId,
-              static_cast<int>(wim::protocol::ReceiptTypeGadget::ReceiptType::
+              static_cast<int>(wimi::protocol::ReceiptTypeGadget::ReceiptType::
                                    RECEIPT_TYPE_DELIVERED),
               conversationId, conversationSequence);
 }
@@ -265,12 +265,12 @@ void ConnectionGatewayClient::AcknowledgeRead(
   SendReceipt(
       messageId,
       static_cast<int>(
-          wim::protocol::ReceiptTypeGadget::ReceiptType::RECEIPT_TYPE_READ),
+          wimi::protocol::ReceiptTypeGadget::ReceiptType::RECEIPT_TYPE_READ),
       conversationId, conversationSequence);
 }
 
 QString ConnectionGatewayClient::QueueRequest(quint32 serviceId,
-                                              wim::protocol::Packet packet,
+                                              wimi::protocol::Packet packet,
                                               int timeoutMilliseconds) {
   const QString requestId = NewRequestId();
   if (!IsReady()) {
@@ -380,10 +380,10 @@ void ConnectionGatewayClient::SendReceipt(std::int64_t messageId,
   if (!IsReady() || messageId <= 0) {
     return;
   }
-  wim::protocol::Packet receipt;
+  wimi::protocol::Packet receipt;
   receipt.setSeq(messageId);
   receipt.setReceiptType(
-      static_cast<wim::protocol::ReceiptTypeGadget::ReceiptType>(receiptType));
+      static_cast<wimi::protocol::ReceiptTypeGadget::ReceiptType>(receiptType));
   if (conversationId > 0 && conversationSequence > 0) {
     receipt.setConversationId(conversationId);
     receipt.setConversationSeq(conversationSequence);
@@ -392,7 +392,7 @@ void ConnectionGatewayClient::SendReceipt(std::int64_t messageId,
 }
 
 void ConnectionGatewayClient::SendPacket(quint32 serviceId,
-                                         const wim::protocol::Packet &packet) {
+                                         const wimi::protocol::Packet &packet) {
   QByteArray payload;
   if (!SerializeProtobufPacket(packet, &payload)) {
     emit ProtocolError(tr("无法序列化 service=%1").arg(serviceId));
@@ -415,7 +415,7 @@ void ConnectionGatewayClient::HandleFrame(const TcpFrame &frame) {
     return;
   }
 
-  wim::protocol::Packet packet;
+  wimi::protocol::Packet packet;
   if (!ParseProtobufPacket(frame.payload, &packet)) {
     emit ProtocolError(
         tr("无法解析 service=%1 的 Protobuf Packet").arg(frame.serviceId));
@@ -430,7 +430,7 @@ void ConnectionGatewayClient::HandleFrame(const TcpFrame &frame) {
 }
 
 void ConnectionGatewayClient::HandleLoginResponse(const QByteArray &payload) {
-  wim::protocol::Packet response;
+  wimi::protocol::Packet response;
   if (!ParseProtobufPacket(payload, &response)) {
     emit ProtocolError(tr("无法解析 Gateway 登录响应"));
     desired_open_ = false;
@@ -497,4 +497,4 @@ std::int64_t ConnectionGatewayClient::NextLegacySequence() {
   return next_legacy_sequence_++;
 }
 
-}  // namespace wim::client
+}  // namespace wimi::client

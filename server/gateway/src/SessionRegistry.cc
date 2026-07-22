@@ -6,7 +6,7 @@
 
 #include <utility>
 
-namespace wim::connection {
+namespace wimi::connection {
 
 SessionRegistry::SessionRegistry(std::string gatewayId, std::string instanceId,
                                  long leaseTtlSeconds)
@@ -72,8 +72,17 @@ gateway::DeliveryStatus SessionRegistry::Deliver(
     session = found->second.session.lock();
     lease = found->second.lease;
   }
+
   if (!session)
     return gateway::DELIVERY_STATUS_OFFLINE;
+
+  /*
+    Message Core 查询在线 lease 后，把它当时看到的连接身份写入
+    DeliveryEnvelope。Gateway 在真正写 socket 前，要求本地当前 session 的
+    connectionId 和 generation 都完全一致；不一致就返回 STALE_ROUTE，不投递。
+    未来可以考虑投递，不然导致了一个用户的消息（如通知）无法及时收到，只因为它的连接身份变了。
+    目前一般来说，对于可持久化消息是不会丢的，它存放在 Mysql 存储表中。
+  */
   if (lease.connectionId != delivery.expected_connection_id() ||
       lease.generation != delivery.expected_connection_generation())
     return gateway::DELIVERY_STATUS_STALE_ROUTE;
@@ -98,4 +107,4 @@ const std::string &SessionRegistry::InstanceId() const {
   return instanceId;
 }
 
-}  // namespace wim::connection
+}  // namespace wimi::connection

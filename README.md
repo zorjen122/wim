@@ -1,8 +1,8 @@
-# wim
+# wimi
 
 **Language:** English | [中文](README.zh-CN.md)
 
-wim is a C++20 instant messaging system with Auth/API Gate, Connection Gateway,
+wimi is a C++20 instant messaging system with Auth/API Gate, Connection Gateway,
 State, Message, and File nodes. The repository includes scripts and
 configuration conventions for bringing the full flow up on a development
 machine.
@@ -67,10 +67,10 @@ For SMTP delivery, disable `exposeCodeInResponse`, enable the email section, and
 supply secrets through environment variables:
 
 ```bash
-export WIM_VERIFY_EMAIL_USER="your-email@example.com"
-export WIM_VERIFY_EMAIL_PASS="your-email-app-password"
-export WIM_VERIFY_SEND_EMAIL=1
-export WIM_VERIFY_EXPOSE_CODE=0
+export WIMI_VERIFY_EMAIL_USER="your-email@example.com"
+export WIMI_VERIFY_EMAIL_PASS="your-email-app-password"
+export WIMI_VERIFY_SEND_EMAIL=1
+export WIMI_VERIFY_EXPOSE_CODE=0
 ```
 
 ## Build
@@ -79,7 +79,7 @@ export WIM_VERIFY_EXPOSE_CODE=0
 ./scripts/build.sh
 ```
 
-The build output is written to `build/wim`, and generated protobuf/gRPC C++
+The build output is written to `build/wimi`, and generated protobuf/gRPC C++
 sources are produced inside the CMake build tree.
 
 ## Initialize Local Data
@@ -103,9 +103,9 @@ Start the default local Gateway/Message stack:
 Start a `G=2, N=2` local topology:
 
 ```bash
-WIM_STATE_CONFIG="$PWD/server/conf/state-multi.yaml" \
-WIM_CHAT_CONFIGS="$PWD/server/conf/chat-hunan-im.yaml $PWD/server/conf/chat-beijing-im.yaml" \
-WIM_GATEWAY_CONFIGS="$PWD/server/conf/gateway-hunan.yaml $PWD/server/conf/gateway-beijing.yaml" \
+WIMI_STATE_CONFIG="$PWD/server/conf/state-multi.yaml" \
+WIMI_CHAT_CONFIGS="$PWD/server/conf/chat-hunan-im.yaml $PWD/server/conf/chat-beijing-im.yaml" \
+WIMI_GATEWAY_CONFIGS="$PWD/server/conf/gateway-hunan.yaml $PWD/server/conf/gateway-beijing.yaml" \
 ./scripts/run_local_services.sh
 ```
 

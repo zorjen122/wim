@@ -13,7 +13,7 @@
 
 #include "RequestContext.h"
 
-namespace wim {
+namespace wimi {
 
 struct ThreadPoolOptions {
   std::size_t maxQueueSize{100000};
@@ -74,4 +74,4 @@ class ThreadPool {
   std::atomic<uint64_t> expired{0};
 };
 
-}  // namespace wim
+}  // namespace wimi

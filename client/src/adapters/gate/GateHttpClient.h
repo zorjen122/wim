@@ -7,7 +7,7 @@
 
 #include <cstdint>
 
-namespace wim::client {
+namespace wimi::client {
 
 struct GateSession {
   std::int64_t uid{};
@@ -37,7 +37,7 @@ class GateHttpClient final : public QObject {
                       const QString &verifyCode, const QString &newPassword);
 
  signals:
-  void SignInSucceeded(const wim::client::GateSession &session);
+  void SignInSucceeded(const wimi::client::GateSession &session);
   void OperationSucceeded(const QString &operation,
                           const QJsonObject &response);
   void OperationFailed(const QString &operation, int errorCode,
@@ -52,6 +52,6 @@ class GateHttpClient final : public QObject {
   QUrl base_url_;
 };
 
-}  // namespace wim::client
+}  // namespace wimi::client
 
-Q_DECLARE_METATYPE(wim::client::GateSession)
+Q_DECLARE_METATYPE(wimi::client::GateSession)

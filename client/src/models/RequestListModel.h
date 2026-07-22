@@ -4,7 +4,7 @@
 
 #include <QAbstractListModel>
 
-namespace wim::client {
+namespace wimi::client {
 
 class RequestListModel final : public QAbstractListModel {
   Q_OBJECT
@@ -41,4 +41,4 @@ class RequestListModel final : public QAbstractListModel {
   QVector<RequestRecord> records_;
 };
 
-}  // namespace wim::client
+}  // namespace wimi::client

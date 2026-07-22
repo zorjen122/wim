@@ -1,6 +1,6 @@
-# WIM Client
+# WIMI Client
 
-WIM 的跨平台用户客户端，使用 Qt 6、QML 和 C++20。当前阶段以 Linux Desktop
+WIMI 的跨平台用户客户端，使用 Qt 6、QML 和 C++20。当前阶段以 Linux Desktop
 为首要平台，支持确定性的 Fake Scenario、本地 SQLite，以及 Auth Gate +
 Connection Gateway 真实网络模式。网络代码已按当前服务端源码契约实现；真实服务端
 联调已通过可选的 live network test 覆盖核心单聊链路。
@@ -62,9 +62,9 @@ ctest --test-dir build/client-clang --output-on-failure
 ## 运行与场景
 
 ```bash
-./build/client-clang/wim-client --scenario=normal
-./build/client-clang/wim-client --scenario=offline-cached --theme=dark
-./build/client-clang/wim-client --scenario=long-content --width=390 --height=844
+./build/client-clang/wimi-client --scenario=normal
+./build/client-clang/wimi-client --scenario=offline-cached --theme=dark
+./build/client-clang/wimi-client --scenario=long-content --width=390 --height=844
 ```
 
 可用场景包括 `normal`、`empty-account`、`offline-cached`、
@@ -78,9 +78,9 @@ ctest --test-dir build/client-clang --output-on-failure
 使用本地 SQLite：
 
 ```bash
-./build/client-clang/wim-client --repository=sqlite --account=demo
-./build/client-clang/wim-client --repository=sqlite \
-  --database=/tmp/wim-client-demo.sqlite
+./build/client-clang/wimi-client --repository=sqlite --account=demo
+./build/client-clang/wimi-client --repository=sqlite \
+  --database=/tmp/wimi-client-demo.sqlite
 ```
 
 未指定 `--database` 时，数据库写入 Qt 的应用本地数据目录，并按 `--account`
@@ -92,7 +92,7 @@ ctest --test-dir build/client-clang --output-on-failure
 传入 Auth Gate 基础地址即可启用真实模式：
 
 ```bash
-./build/client-clang/wim-client \
+./build/client-clang/wimi-client \
   --gate-url=http://127.0.0.1:18080 \
   --account=my-account
 ```
@@ -122,7 +122,7 @@ C++ 类型。
 ## 静态检查
 
 ```bash
-cmake --build build/client-clang --target wim-client_qmllint -j2
+cmake --build build/client-clang --target wimi-client_qmllint -j2
 ```
 
 无显示服务器时，UI 测试由 CTest 自动设置 `QT_QPA_PLATFORM=offscreen` 和软件
@@ -138,14 +138,14 @@ cmake -S client -B build/client-clang \
   -DCMAKE_CXX_COMPILER=clang++ \
   -DCMAKE_BUILD_TYPE=Debug \
   -DBUILD_TESTING=ON \
-  -DWIM_ENABLE_LIVE_TESTS=ON
-cmake --build build/client-clang --target wim-client-live-network-tests -j2
+  -DWIMI_ENABLE_LIVE_TESTS=ON
+cmake --build build/client-clang --target wimi-client-live-network-tests -j2
 
-WIM_CLIENT_LIVE_GATE_URL=http://127.0.0.1:18080 \
-WIM_CLIENT_LIVE_USER_A=zorjen \
-WIM_CLIENT_LIVE_PASSWORD_A=123456 \
-WIM_CLIENT_LIVE_USER_B=alice \
-WIM_CLIENT_LIVE_PASSWORD_B=123456 \
+WIMI_CLIENT_LIVE_GATE_URL=http://127.0.0.1:18080 \
+WIMI_CLIENT_LIVE_USER_A=zorjen \
+WIMI_CLIENT_LIVE_PASSWORD_A=123456 \
+WIMI_CLIENT_LIVE_USER_B=alice \
+WIMI_CLIENT_LIVE_PASSWORD_B=123456 \
 ctest --test-dir build/client-clang -R '^client-live-network$' \
   --output-on-failure
 ```
@@ -163,11 +163,11 @@ Linux 构建使用 Qt DBus 调用 `org.freedesktop.Notifications`，不依赖特
 验证安装布局时可使用临时前缀：
 
 ```bash
-cmake --install build/client-clang --prefix /tmp/wim-client-install
+cmake --install build/client-clang --prefix /tmp/wimi-client-install
 ```
 
-这会安装 `bin/wim-client`、`share/applications/wim-client.desktop` 和
-`share/icons/hicolor/scalable/apps/wim-client.svg`。Secret Service 暂不接入，等待
+这会安装 `bin/wimi-client`、`share/applications/wimi-client.desktop` 和
+`share/icons/hicolor/scalable/apps/wimi-client.svg`。Secret Service 暂不接入，等待
 服务端正式 token/refresh 契约确定后再设计密钥生命周期。
 
 ## Android 状态
@@ -175,7 +175,7 @@ cmake --install build/client-clang --prefix /tmp/wim-client-install
 工程使用 Qt 的跨平台 executable/QML module 入口。客户端协议已经迁移到
 QtProtobuf，不需要为 Android 单独交叉编译 Google `libprotobuf`。当前已使用 Qt
 6.10.2、NDK r27c、SDK 36 构建并验证 `arm64-v8a` Debug APK：包名为
-`org.wim.client`，最低 API 28、目标 API 36，QtProtobuf、SQLite 与所需 QML 插件均
+`org.wimi.client`，最低 API 28、目标 API 36，QtProtobuf、SQLite 与所需 QML 插件均
 已随包部署，APK v2 调试签名校验通过。
 
 产物路径：

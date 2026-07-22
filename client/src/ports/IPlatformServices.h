@@ -4,7 +4,7 @@
 
 #include <memory>
 
-namespace wim::client {
+namespace wimi::client {
 
 class IPlatformServices {
  public:
@@ -18,4 +18,4 @@ class IPlatformServices {
 
 std::unique_ptr<IPlatformServices> CreatePlatformServices();
 
-}  // namespace wim::client
+}  // namespace wimi::client

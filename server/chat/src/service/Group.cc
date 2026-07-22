@@ -8,7 +8,7 @@
 #include "Redis.h"
 #include <cstdint>
 #include <spdlog/spdlog.h>
-namespace wim {
+namespace wimi {
 
 GroupService::GroupService(DeliveryService &deliveryService)
     : deliveryService(deliveryService) {}
@@ -239,4 +239,4 @@ TcpPacket GroupService::Quit(unsigned int msgID, TcpPacket &request) {
   return rsp;
 }
 
-};  // namespace wim
+};  // namespace wimi

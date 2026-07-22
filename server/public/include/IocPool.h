@@ -7,7 +7,7 @@
 #include <memory>
 #include <vector>
 
-namespace wim {
+namespace wimi {
 class IocPool : public Singleton<IocPool> {
   friend Singleton<IocPool>;
 
@@ -27,4 +27,4 @@ class IocPool : public Singleton<IocPool> {
   std::vector<WorkPtr> worker;
   std::unique_ptr<ThreadPool> threadPool;
 };
-};  // namespace wim
+};  // namespace wimi

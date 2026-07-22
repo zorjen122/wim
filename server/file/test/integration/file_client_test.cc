@@ -5,7 +5,7 @@
 #include <grpcpp/grpcpp.h>
 #include <gtest/gtest.h>
 #include <thread>
-namespace wim::rpc::test {
+namespace wimi::rpc::test {
 
 class FileClientTest : public ::testing::Test {
  protected:
@@ -84,4 +84,4 @@ TEST_F(FileClientTest, UploadLargeFileInChunks) {
   EXPECT_EQ(file.tellg(), testData.size() + 1);
 }
 
-}  // namespace wim::rpc::test
+}  // namespace wimi::rpc::test

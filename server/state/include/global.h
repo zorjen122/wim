@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-namespace wim {
+namespace wimi {
 
 struct ServiceNodeInfo {
   std::string id;
@@ -52,4 +52,4 @@ class ImNode {
   std::string status;
   std::vector<long> connections;
 };
-};  // namespace wim
+};  // namespace wimi

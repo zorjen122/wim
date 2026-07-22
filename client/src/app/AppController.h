@@ -16,7 +16,7 @@
 #include <cstdint>
 #include <memory>
 
-namespace wim::client {
+namespace wimi::client {
 
 class AppController : public QObject {
   Q_OBJECT
@@ -225,4 +225,4 @@ class AppController : public QObject {
   QString notification_test_status_{QStringLiteral("idle")};
 };
 
-}  // namespace wim::client
+}  // namespace wimi::client

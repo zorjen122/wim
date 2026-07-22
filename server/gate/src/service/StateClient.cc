@@ -10,7 +10,7 @@
 #include <algorithm>
 #include <chrono>
 
-namespace wim::rpc {
+namespace wimi::rpc {
 namespace {
 
 void ApplyDeadline(grpc::ClientContext &context) {
@@ -134,4 +134,4 @@ std::string StateClient::TestNetworkPing() {
   }
 }
 
-};  // namespace wim::rpc
+};  // namespace wimi::rpc

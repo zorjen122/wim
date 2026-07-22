@@ -16,7 +16,7 @@
 
 #include <algorithm>
 
-namespace wim::client {
+namespace wimi::client {
 namespace {
 
 QString DirectConversationId(std::int64_t peerUid) {
@@ -765,7 +765,7 @@ void AppController::saveGateUrl(const QString &gateUrl) {
 void AppController::sendTestDesktopNotification() {
   const QString nextStatus =
       platform_services_->ShowDesktopNotification(
-          tr("WIM 桌面通知"), tr("Linux 平台通知端口工作正常。"))
+          tr("WIMI 桌面通知"), tr("Linux 平台通知端口工作正常。"))
           ? QStringLiteral("sent")
           : QStringLiteral("unavailable");
   if (notification_test_status_ == nextStatus) {
@@ -860,7 +860,7 @@ void AppController::ConfigureNetwork(const QString &gateUrl) {
 void AppController::HandleGatewayResponse(const QString &requestId,
                                           quint32 serviceId,
                                           const QByteArray &payload) {
-  wim::protocol::Packet response;
+  wimi::protocol::Packet response;
   if (!ParseProtobufPacket(payload, &response)) {
     SetServiceActionStatus(tr("服务端响应无法解析"));
     return;
@@ -962,7 +962,7 @@ void AppController::HandleGatewayResponse(const QString &requestId,
           .userId = uid,
           .displayName = friendInfo.name().isEmpty() ? tr("用户 %1").arg(uid)
                                                      : friendInfo.name(),
-          .statusText = tr("WIM 用户 · %1").arg(uid),
+          .statusText = tr("WIMI 用户 · %1").arg(uid),
           .avatarColor = colors[friendInfo.uid() % colors.size()],
           .online = false,
           .favorite = favorite,
@@ -1094,7 +1094,7 @@ void AppController::HandleGatewayResponse(const QString &requestId,
 
 void AppController::HandleGatewayPush(quint32 serviceId,
                                       const QByteArray &payload) {
-  wim::protocol::Packet packet;
+  wimi::protocol::Packet packet;
   if (!ParseProtobufPacket(payload, &packet)) {
     SetServiceActionStatus(tr("收到无法解析的推送"));
     return;
@@ -1544,4 +1544,4 @@ QString AppController::ArgumentValue(const QString &name,
   return fallback;
 }
 
-}  // namespace wim::client
+}  // namespace wimi::client

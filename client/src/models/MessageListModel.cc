@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <utility>
 
-namespace wim::client {
+namespace wimi::client {
 namespace {
 
 QDate MessageDate(const QString &timestamp) {
@@ -218,4 +218,4 @@ bool MessageListModel::UpdateDeliveryState(std::int64_t clientMessageId,
   return false;
 }
 
-}  // namespace wim::client
+}  // namespace wimi::client

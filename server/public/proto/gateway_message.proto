@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package wim.gateway;
+package wimi.gateway;
 
 // Gateway 建流后的首帧，用于声明节点身份和本次进程实例。
 message RegisterGateway {

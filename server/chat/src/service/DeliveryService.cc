@@ -6,7 +6,7 @@
 
 #include <utility>
 
-namespace wim {
+namespace wimi {
 
 void DeliveryService::SetGatewayStreamService(
     rpc::GatewayStreamService *service) {
@@ -40,4 +40,4 @@ void DeliveryService::Acknowledge(int64_t uid, int64_t seq) const {
   (void)seq;
 }
 
-}  // namespace wim
+}  // namespace wimi

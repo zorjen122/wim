@@ -45,13 +45,14 @@ class RpcPool {
   }
 
   std::unique_ptr<typename RPC::Stub> getConnection() {
-    return getConnectionUntil(wim::RequestContextScope::CurrentDeadlineOr(
+    return getConnectionUntil(wimi::RequestContextScope::CurrentDeadlineOr(
         std::chrono::milliseconds(1000)));
   }
 
   std::unique_ptr<typename RPC::Stub> getConnectionUntil(
-      wim::RequestContext::Deadline deadline) {
-    // 这里只约束 stub 池等待；实际 RPC 还必须把同一 deadline 写入 ClientContext。
+      wimi::RequestContext::Deadline deadline) {
+    // 这里只约束 stub 池等待；实际 RPC 还必须把同一 deadline 写入
+    // ClientContext。
     std::unique_lock<std::mutex> lock(queueMutex);
     bool ready = cond.wait_until(lock, deadline, [this] {
       if (isStop) {
@@ -60,7 +61,7 @@ class RpcPool {
       return !channelQueue.empty();
     });
     if (!ready) {
-      wim::Metrics::Increment(wim::Metric::RpcAcquireTimeout);
+      wimi::Metrics::Increment(wimi::Metric::RpcAcquireTimeout);
       spdlog::warn("RPC连接池获取超时, available: {}, capacity: {}",
                    channelQueue.size(), poolSize);
       return nullptr;

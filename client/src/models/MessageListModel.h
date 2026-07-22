@@ -4,7 +4,7 @@
 
 #include <QAbstractListModel>
 
-namespace wim::client {
+namespace wimi::client {
 
 class MessageListModel final : public QAbstractListModel {
   Q_OBJECT
@@ -42,4 +42,4 @@ class MessageListModel final : public QAbstractListModel {
   int unread_separator_index_{-1};
 };
 
-}  // namespace wim::client
+}  // namespace wimi::client

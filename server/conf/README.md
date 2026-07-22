@@ -18,8 +18,8 @@ Naming follows the owning node or role:
 - `public-test.yaml`: public DAO unit-test config.
 
 Runtime scripts default to this directory. Override paths with environment
-variables such as `WIM_STATE_CONFIG`, `WIM_GATE_CONFIG`, `WIM_CHAT_CONFIGS`, or
-`WIM_GATEWAY_CONFIGS` when a test needs a custom topology.
+variables such as `WIMI_STATE_CONFIG`, `WIMI_GATE_CONFIG`, `WIMI_CHAT_CONFIGS`, or
+`WIMI_GATEWAY_CONFIGS` when a test needs a custom topology.
 
 Development may use `transportSecurity.mode: insecure`. A config with
 `environment: production` is rejected unless `mode: mtls`; the Gateway
@@ -27,6 +27,6 @@ certificate peer identity must match its registered `gateway_id`.
 
 验证码由 Gate 进程直接处理。本地 `gate.yaml` 关闭邮件发送并通过响应返回验证码；
 真实环境应设置 `verification.exposeCodeInResponse: false`、启用 SMTP，并用
-`WIM_VERIFY_EMAIL_USER`、`WIM_VERIFY_EMAIL_PASS` 和可选的
-`WIM_VERIFY_SMTP_URL` 注入邮件凭据。`WIM_VERIFY_SEND_EMAIL` 与
-`WIM_VERIFY_EXPOSE_CODE` 可覆盖对应布尔配置。
+`WIMI_VERIFY_EMAIL_USER`、`WIMI_VERIFY_EMAIL_PASS` 和可选的
+`WIMI_VERIFY_SMTP_URL` 注入邮件凭据。`WIMI_VERIFY_SEND_EMAIL` 与
+`WIMI_VERIFY_EXPOSE_CODE` 可覆盖对应布尔配置。

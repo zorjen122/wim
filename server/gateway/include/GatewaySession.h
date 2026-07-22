@@ -11,7 +11,7 @@
 #include <string>
 #include <unordered_map>
 
-namespace wim::connection {
+namespace wimi::connection {
 
 class MessageLinkManager;
 class SessionRegistry;
@@ -73,4 +73,4 @@ class GatewaySession : public std::enable_shared_from_this<GatewaySession> {
   unsigned int commandsInRateWindow{0};
 };
 
-}  // namespace wim::connection
+}  // namespace wimi::connection

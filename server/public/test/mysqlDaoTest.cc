@@ -4,7 +4,7 @@
 #include <gtest/gtest.h>
 #include <spdlog/spdlog.h>
 
-namespace wim::db {
+namespace wimi::db {
 
 class MysqlDaoTest : public ::testing::Test {
  protected:
@@ -154,12 +154,12 @@ TEST_F(MysqlDaoTest, TestMessageOperations) {
   EXPECT_EQ(updateResult, 0) << "Message update failed";
 }
 
-}  // namespace wim::db
+}  // namespace wimi::db
 
 int main(int argc, char **argv) {
   // ::testing::InitGoogleTest(&argc, argv);
   Configer::loadConfig("../../conf/public-test.yaml");
-  using namespace wim;
+  using namespace wimi;
   auto p = db::MysqlDao::GetInstance();
   db::GroupApply::Ptr apply(
       new db::GroupApply(1, 2, 3, 4, 5, "x", "2020-01-01 00:00:00"));

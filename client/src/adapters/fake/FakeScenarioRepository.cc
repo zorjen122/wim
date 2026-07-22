@@ -1,6 +1,6 @@
 #include "adapters/fake/FakeScenarioRepository.h"
 
-namespace wim::client {
+namespace wimi::client {
 namespace {
 
 MessageRecord Message(std::int64_t clientId, std::int64_t messageId,
@@ -99,7 +99,7 @@ ClientSnapshot FakeScenarioRepository::LoadScenario(
     snapshot.requests.push_back(RequestRecord{
         .requestId = QStringLiteral("group-request-1"),
         .displayName = QStringLiteral("顾远"),
-        .message = QStringLiteral("申请加入 WIM 设计组"),
+        .message = QStringLiteral("申请加入 WIMI 设计组"),
         .avatarColor = QStringLiteral("#315FD6"),
         .kind = QStringLiteral("group"),
         .status = QStringLiteral("pending"),
@@ -156,7 +156,7 @@ ClientSnapshot FakeScenarioRepository::NormalScenario(
                .muted = false,
                .online = true},
               {.conversationId = QStringLiteral("group:4001"),
-               .title = QStringLiteral("WIM 设计组"),
+               .title = QStringLiteral("WIMI 设计组"),
                .preview = QStringLiteral("周宁：深色主题的对比度已调整"),
                .timestamp = QStringLiteral("09:18"),
                .avatarColor = QStringLiteral("#7656A8"),
@@ -221,7 +221,7 @@ ClientSnapshot FakeScenarioRepository::NormalScenario(
   snapshot.requests = {
       {.requestId = QStringLiteral("request-1"),
        .displayName = QStringLiteral("陆清"),
-       .message = QStringLiteral("你好，我在开源社区看到了 WIM。"),
+       .message = QStringLiteral("你好，我在开源社区看到了 WIMI。"),
        .avatarColor = QStringLiteral("#367A91"),
        .kind = QStringLiteral("friend"),
        .status = QStringLiteral("pending")},
@@ -233,7 +233,7 @@ ClientSnapshot FakeScenarioRepository::NormalScenario(
        .status = QStringLiteral("accepted")},
       {.requestId = QStringLiteral("request-3"),
        .displayName = QStringLiteral("唐可"),
-       .message = QStringLiteral("申请加入 WIM 设计组"),
+       .message = QStringLiteral("申请加入 WIMI 设计组"),
        .avatarColor = QStringLiteral("#B15474"),
        .kind = QStringLiteral("group"),
        .status = QStringLiteral("declined")},
@@ -294,4 +294,4 @@ ClientSnapshot FakeScenarioRepository::NormalScenario(
   return snapshot;
 }
 
-}  // namespace wim::client
+}  // namespace wimi::client

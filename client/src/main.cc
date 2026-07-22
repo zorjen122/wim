@@ -28,20 +28,20 @@ int main(int argc, char *argv[]) {
   QQuickStyle::setStyle(QStringLiteral("Basic"));
 
   QGuiApplication application(argc, argv);
-  QCoreApplication::setApplicationName(QStringLiteral("WIM"));
+  QCoreApplication::setApplicationName(QStringLiteral("WIMI"));
   QCoreApplication::setApplicationVersion(QStringLiteral("0.1.0"));
-  QCoreApplication::setOrganizationName(QStringLiteral("WIM"));
+  QCoreApplication::setOrganizationName(QStringLiteral("WIMI"));
 #if defined(Q_OS_LINUX) && !defined(Q_OS_ANDROID)
-  QGuiApplication::setDesktopFileName(QStringLiteral("wim-client"));
+  QGuiApplication::setDesktopFileName(QStringLiteral("wimi-client"));
 #endif
   QGuiApplication::setWindowIcon(
-      QIcon(QStringLiteral(":/icons/wim-client.svg")));
+      QIcon(QStringLiteral(":/icons/wimi-client.svg")));
 
   QQmlApplicationEngine engine;
   QObject::connect(
       &engine, &QQmlApplicationEngine::objectCreationFailed, &application,
       [] { QCoreApplication::exit(EXIT_FAILURE); }, Qt::QueuedConnection);
-  engine.loadFromModule(QStringLiteral("Wim.Client"), QStringLiteral("Main"));
+  engine.loadFromModule(QStringLiteral("WimiClient"), QStringLiteral("Main"));
 
   const QString screenshotPath =
       ArgumentValue(application.arguments(), QStringLiteral("screenshot"));

@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import Wim.Client
+import WimiClient
 
 Item {
     id: root

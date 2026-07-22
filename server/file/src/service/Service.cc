@@ -8,7 +8,7 @@
 #include <string>
 namespace fs = std::filesystem;
 
-namespace wim::rpc {
+namespace wimi::rpc {
 
 FileWorker::FileWorker() : stopEnable(false) {
   workThread = std::thread([this]() {
@@ -171,4 +171,4 @@ bool FileServer::stopped() const {
   return stopEnable.load();
 }
 
-};  // namespace wim::rpc
+};  // namespace wimi::rpc

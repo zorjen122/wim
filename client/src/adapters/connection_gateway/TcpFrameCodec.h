@@ -4,7 +4,7 @@
 #include <QString>
 #include <QVector>
 
-namespace wim::client {
+namespace wimi::client {
 
 struct TcpFrame {
   quint32 serviceId{};
@@ -28,4 +28,4 @@ class TcpFrameCodec final {
   QString error_;
 };
 
-}  // namespace wim::client
+}  // namespace wimi::client

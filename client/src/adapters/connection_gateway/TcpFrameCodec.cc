@@ -3,7 +3,7 @@
 #include <QDataStream>
 #include <QIODevice>
 
-namespace wim::client {
+namespace wimi::client {
 
 QByteArray TcpFrameCodec::Encode(quint32 serviceId, const QByteArray &payload) {
   QByteArray frame;
@@ -66,4 +66,4 @@ void TcpFrameCodec::Reset() {
   error_.clear();
 }
 
-}  // namespace wim::client
+}  // namespace wimi::client

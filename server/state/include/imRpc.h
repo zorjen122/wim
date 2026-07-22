@@ -8,7 +8,7 @@
 using im::ActiveRequest;
 using im::ActiveResponse;
 using im::ImService;
-namespace wim::rpc {
+namespace wimi::rpc {
 class ImRpc {
  public:
   ImRpc(ImNode::ptr node, size_t poolSize);
@@ -18,4 +18,4 @@ class ImRpc {
  private:
   std::unique_ptr<RpcPool<ImService>> pool = nullptr;
 };
-};  // namespace wim::rpc
+};  // namespace wimi::rpc

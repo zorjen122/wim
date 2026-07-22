@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <string>
 
-namespace wim {
+namespace wimi {
 
 class DeliveryService;
 
@@ -28,4 +28,4 @@ class GroupService {
   DeliveryService &deliveryService;
 };
 
-}  // namespace wim
+}  // namespace wimi

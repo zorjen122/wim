@@ -2,7 +2,7 @@
 #include "Logger.h"
 #include "spdlog/spdlog.h"
 
-namespace wim {
+namespace wimi {
 IocPool::IocPool(std::size_t size)
     : iocGroup(size),
       worker(size),
@@ -15,10 +15,10 @@ IocPool::IocPool(std::size_t size)
   }
 
   if (iocGroup.size() >= 1)
-    LOG_INFO(wim::netLogger, "IocPool created with {} threads",
+    LOG_INFO(wimi::netLogger, "IocPool created with {} threads",
              iocGroup.size());
   else
-    LOG_WARN(wim::netLogger, "IocPool created is failed, size {} ",
+    LOG_WARN(wimi::netLogger, "IocPool created is failed, size {} ",
              iocGroup.size());
 }
 
@@ -46,4 +46,4 @@ void IocPool::Stop() {
     threadPool->Stop();
   }
 }
-};  // namespace wim
+};  // namespace wimi

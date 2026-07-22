@@ -1,4 +1,4 @@
-# wim Local Build Requirements
+# wimi Local Build Requirements
 
 ## System Packages
 
@@ -83,9 +83,9 @@ disable that flag and enable SMTP delivery.
 To run two chat nodes for cross-node forwarding:
 
 ```bash
-WIM_STATE_CONFIG="$PWD/server/conf/state-multi.yaml" \
-WIM_CHAT_CONFIGS="$PWD/server/conf/chat-hunan-im.yaml $PWD/server/conf/chat-beijing-im.yaml" \
-WIM_GATEWAY_CONFIGS="$PWD/server/conf/gateway-hunan.yaml $PWD/server/conf/gateway-beijing.yaml" \
+WIMI_STATE_CONFIG="$PWD/server/conf/state-multi.yaml" \
+WIMI_CHAT_CONFIGS="$PWD/server/conf/chat-hunan-im.yaml $PWD/server/conf/chat-beijing-im.yaml" \
+WIMI_GATEWAY_CONFIGS="$PWD/server/conf/gateway-hunan.yaml $PWD/server/conf/gateway-beijing.yaml" \
 ./scripts/run_local_services.sh
 ```
 

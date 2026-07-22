@@ -1,4 +1,4 @@
--- WIM 客户端 SQLite 表结构初始化脚本。
+-- WIMI 客户端 SQLite 表结构初始化脚本。
 -- 本文件需要与 SqliteClientRepository::kCurrentSchemaVersion 保持一致。
 
 PRAGMA foreign_keys = ON;

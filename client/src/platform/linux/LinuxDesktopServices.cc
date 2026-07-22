@@ -5,7 +5,7 @@
 #include <QDBusPendingCall>
 #include <QVariantMap>
 
-namespace wim::client {
+namespace wimi::client {
 namespace {
 
 constexpr auto kNotificationService = "org.freedesktop.Notifications";
@@ -40,14 +40,14 @@ bool LinuxDesktopServices::ShowDesktopNotification(const QString &title,
   }
 
   QVariantMap hints;
-  hints.insert(QStringLiteral("desktop-entry"), QStringLiteral("wim-client"));
+  hints.insert(QStringLiteral("desktop-entry"), QStringLiteral("wimi-client"));
   const QList<QVariant> arguments = {
-      QStringLiteral("WIM"), 0U,    QString{}, title, body,
-      QStringList{},         hints, 5000,
+      QStringLiteral("WIMI"), 0U,    QString{}, title, body,
+      QStringList{},          hints, 5000,
   };
   const QDBusPendingCall call = notifications.asyncCallWithArgumentList(
       QStringLiteral("Notify"), arguments);
   return !call.isError();
 }
 
-}  // namespace wim::client
+}  // namespace wimi::client

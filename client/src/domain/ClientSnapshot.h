@@ -7,7 +7,7 @@
 #include <cstdint>
 #include <optional>
 
-namespace wim::client {
+namespace wimi::client {
 
 enum class MessageDeliveryState {
   PendingLocal,
@@ -75,4 +75,4 @@ struct ClientSnapshot {
 QString DeliveryStateName(MessageDeliveryState state);
 bool CanTransition(MessageDeliveryState from, MessageDeliveryState to);
 
-}  // namespace wim::client
+}  // namespace wimi::client

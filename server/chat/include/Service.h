@@ -14,7 +14,7 @@
 #include "TcpMessageCodec.h"
 #include "ThreadPool.h"
 
-namespace wim {
+namespace wimi {
 
 namespace rpc {
 class GatewayStreamService;
@@ -58,4 +58,4 @@ class Service : public Singleton<Service> {
   std::chrono::milliseconds queueAcquireTimeout{2};
   std::map<uint32_t, HandlerEntry> serviceGroup;
 };
-};  // namespace wim
+};  // namespace wimi

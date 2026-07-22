@@ -4,7 +4,7 @@
 #include "platform/linux/LinuxDesktopServices.h"
 #endif
 
-namespace wim::client {
+namespace wimi::client {
 namespace {
 
 class UnsupportedPlatformServices final : public IPlatformServices {
@@ -32,4 +32,4 @@ std::unique_ptr<IPlatformServices> CreatePlatformServices() {
 #endif
 }
 
-}  // namespace wim::client
+}  // namespace wimi::client

@@ -6,7 +6,7 @@
 
 #include <atomic>
 
-namespace wim::rpc {
+namespace wimi::rpc {
 using state::ConnectUser;
 using state::ConnectUserRsp;
 using state::MessageTopology;
@@ -45,4 +45,4 @@ class StateServiceImpl final : public StateService::Service {
   std::atomic<std::size_t> gatewayRouteCount{0};
   std::uint64_t topologyVersion{1};
 };
-};  // namespace wim::rpc
+};  // namespace wimi::rpc

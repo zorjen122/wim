@@ -4,7 +4,7 @@
 
 #include <QSqlDatabase>
 
-namespace wim::client {
+namespace wimi::client {
 
 class SqliteClientRepository final : public IClientRepository {
  public:
@@ -61,4 +61,4 @@ class SqliteClientRepository final : public IClientRepository {
   bool seed_demo_data_{true};
 };
 
-}  // namespace wim::client
+}  // namespace wimi::client

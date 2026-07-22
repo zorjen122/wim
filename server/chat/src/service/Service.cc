@@ -11,11 +11,11 @@
 #include <thread>
 #include <utility>
 
-namespace wim {
+namespace wimi {
 namespace {
 
 std::size_t ResolveServiceWorkerCount() {
-  if (const char *value = std::getenv("WIM_CHAT_SERVICE_WORKERS")) {
+  if (const char *value = std::getenv("WIMI_CHAT_SERVICE_WORKERS")) {
     int configured = std::atoi(value);
     if (configured > 0) {
       return static_cast<std::size_t>(configured);
@@ -48,9 +48,9 @@ Service::Service()
       messageService(deliveryService) {
   Init();
   requestTimeout =
-      ResolvePositiveMilliseconds("WIM_CHAT_REQUEST_TIMEOUT_MS", 3000);
+      ResolvePositiveMilliseconds("WIMI_CHAT_REQUEST_TIMEOUT_MS", 3000);
   queueAcquireTimeout =
-      ResolvePositiveMilliseconds("WIM_CHAT_QUEUE_ACQUIRE_MS", 2);
+      ResolvePositiveMilliseconds("WIMI_CHAT_QUEUE_ACQUIRE_MS", 2);
   threadPool =
       std::make_unique<ThreadPool>("chat-biz", ResolveServiceWorkerCount());
 }
@@ -188,4 +188,4 @@ TcpPacket Service::ExecuteGatewayCommand(uint32_t msgID, int64_t actorUid,
   return handle->second.handle(msgID, request);
 }
 
-}  // namespace wim
+}  // namespace wimi

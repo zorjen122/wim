@@ -2,7 +2,7 @@
 
 #include <boost/asio.hpp>
 
-namespace wim::connection {
+namespace wimi::connection {
 
 class MessageLinkManager;
 class SessionRegistry;
@@ -23,4 +23,4 @@ class GatewayServer {
   boost::asio::thread_pool &businessPool;
 };
 
-}  // namespace wim::connection
+}  // namespace wimi::connection

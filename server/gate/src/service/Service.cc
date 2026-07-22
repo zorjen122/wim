@@ -14,7 +14,7 @@
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>
 
-namespace wim {
+namespace wimi {
 namespace {
 // Gate 生成短期随机凭证，仅用于把已认证 uid 安全交接给 Chat。
 std::string GenerateChatAuthToken() {
@@ -233,7 +233,7 @@ bool Service::signIn(HttpSession::ResponsePtr response,
   auto password = requestData["password"].asString();
   businessLogger->info("[signIn]: start, username: {}", username);
 
-  auto user = wim::db::MysqlDao::GetInstance()->getUser(username);
+  auto user = wimi::db::MysqlDao::GetInstance()->getUser(username);
   if (user == nullptr) {
     businessLogger->debug("user is not existd!");
     rspInfo["error"] = -1;
@@ -384,4 +384,4 @@ bool Service::forgetPassword(HttpSession::ResponsePtr response,
 
   return true;
 }
-};  // namespace wim
+};  // namespace wimi

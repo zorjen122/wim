@@ -23,7 +23,7 @@
 #include <random>
 #include <utility>
 
-namespace wim::connection {
+namespace wimi::connection {
 namespace asio = boost::asio;
 namespace {
 
@@ -847,4 +847,4 @@ std::shared_ptr<MessageLink> MessageLinkManager::SelectLink(
                            });
 }
 
-}  // namespace wim::connection
+}  // namespace wimi::connection

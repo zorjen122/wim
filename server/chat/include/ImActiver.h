@@ -17,7 +17,7 @@
 #include <csignal>
 #include <cstddef>
 #include <thread>
-namespace wim {
+namespace wimi {
 class ImServiceRunner : public Singleton<ImServiceRunner> {
  private:
   void ClearUp() {
@@ -28,18 +28,18 @@ class ImServiceRunner : public Singleton<ImServiceRunner> {
       rpcServer->Shutdown();
     if (rpcRunThread.joinable()) {
       rpcRunThread.join();
-      LOG_INFO(wim::businessLogger, "IM RPC服务线程退出成功");
+      LOG_INFO(wimi::businessLogger, "IM RPC服务线程退出成功");
     }
 
     size_t refCount;
     refCount = db::MysqlDao::GetInstance().use_count() - 1;
     db::MysqlDao::GetInstance()->Close();
     if (refCount > 1)
-      LOG_ERROR(wim::dbLogger, "MysqlDao资源池状态异常, 引用计数", refCount);
+      LOG_ERROR(wimi::dbLogger, "MysqlDao资源池状态异常, 引用计数", refCount);
 
     refCount = db::RedisDao::GetInstance().use_count() - 1;
     if (refCount > 1)
-      LOG_ERROR(wim::dbLogger, "RedisDao资源池状态异常, 引用计数", refCount);
+      LOG_ERROR(wimi::dbLogger, "RedisDao资源池状态异常, 引用计数", refCount);
     db::RedisDao::GetInstance()->Close();
   }
 
@@ -50,11 +50,11 @@ class ImServiceRunner : public Singleton<ImServiceRunner> {
       std::string host = config["self"]["host"].as<std::string>();
       std::string rpcPort = config["self"]["rpcPort"].as<std::string>();
       std::string address = host + ":" + rpcPort;
-      LOG_INFO(wim::netLogger, "Message网络服务器配置: host: {}, rpcPort: {}",
+      LOG_INFO(wimi::netLogger, "Message网络服务器配置: host: {}, rpcPort: {}",
                host, rpcPort);
 
-      wim::db::MysqlDao::GetInstance();
-      wim::db::RedisDao::GetInstance();
+      wimi::db::MysqlDao::GetInstance();
+      wimi::db::RedisDao::GetInstance();
 
       // grpc服务
       auto transportSecurity = LoadGrpcSecurityConfig(config);
@@ -67,7 +67,7 @@ class ImServiceRunner : public Singleton<ImServiceRunner> {
                                BuildServerCredentials(transportSecurity));
       builder.RegisterService(&gatewayStreamService);
       rpcServer = builder.BuildAndStart();
-      LOG_INFO(wim::businessLogger, "IM RPC服务启动成功, 监听端口: {}",
+      LOG_INFO(wimi::businessLogger, "IM RPC服务启动成功, 监听端口: {}",
                rpcPort);
 
       rpcRunThread = std::thread([&]() { rpcServer->Wait(); });
@@ -107,4 +107,4 @@ class ImServiceRunner : public Singleton<ImServiceRunner> {
   std::thread rpcRunThread;
   std::atomic<bool> cleaned{false};
 };
-};  // namespace wim
+};  // namespace wimi

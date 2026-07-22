@@ -8,10 +8,10 @@
 #include <QTest>
 #include <QUrl>
 
-namespace wim::client {
+namespace wimi::client {
 namespace {
 
-bool ParsePacket(const QByteArray &payload, wim::protocol::Packet *packet) {
+bool ParsePacket(const QByteArray &payload, wimi::protocol::Packet *packet) {
   return ParseProtobufPacket(payload, packet);
 }
 
@@ -29,14 +29,14 @@ class ClientLiveNetworkTest final : public QObject {
 };
 
 void ClientLiveNetworkTest::authSendAndSyncAcrossRealGateways() {
-  const QString gateUrl = RequiredEnvironment("WIM_CLIENT_LIVE_GATE_URL");
-  const QString userA = RequiredEnvironment("WIM_CLIENT_LIVE_USER_A");
-  const QString passwordA = RequiredEnvironment("WIM_CLIENT_LIVE_PASSWORD_A");
-  const QString userB = RequiredEnvironment("WIM_CLIENT_LIVE_USER_B");
-  const QString passwordB = RequiredEnvironment("WIM_CLIENT_LIVE_PASSWORD_B");
+  const QString gateUrl = RequiredEnvironment("WIMI_CLIENT_LIVE_GATE_URL");
+  const QString userA = RequiredEnvironment("WIMI_CLIENT_LIVE_USER_A");
+  const QString passwordA = RequiredEnvironment("WIMI_CLIENT_LIVE_PASSWORD_A");
+  const QString userB = RequiredEnvironment("WIMI_CLIENT_LIVE_USER_B");
+  const QString passwordB = RequiredEnvironment("WIMI_CLIENT_LIVE_PASSWORD_B");
   if (gateUrl.isEmpty() || userA.isEmpty() || passwordA.isEmpty() ||
       userB.isEmpty() || passwordB.isEmpty()) {
-    QSKIP("Set WIM_CLIENT_LIVE_GATE_URL and both live user/password pairs");
+    QSKIP("Set WIMI_CLIENT_LIVE_GATE_URL and both live user/password pairs");
   }
 
   GateHttpClient gateA;
@@ -98,7 +98,7 @@ void ClientLiveNetworkTest::authSendAndSyncAcrossRealGateways() {
   QCOMPARE(friendsResponse.at(0).toString(), friendsRequest);
   QCOMPARE(friendsResponse.at(1).toUInt(),
            quint32(protocol::PullFriendListResponse));
-  wim::protocol::Packet friends;
+  wimi::protocol::Packet friends;
   QVERIFY(ParsePacket(friendsResponse.at(2).toByteArray(), &friends));
   QCOMPARE(friends.hasError() ? static_cast<int>(friends.error()) : 0,
            protocol::Success);
@@ -120,7 +120,7 @@ void ClientLiveNetworkTest::authSendAndSyncAcrossRealGateways() {
   const QList<QVariant> sendResponse = responsesA.takeFirst();
   QCOMPARE(sendResponse.at(0).toString(), sendRequest);
   QCOMPARE(sendResponse.at(1).toUInt(), quint32(protocol::SendTextResponse));
-  wim::protocol::Packet accepted;
+  wimi::protocol::Packet accepted;
   QVERIFY(ParsePacket(sendResponse.at(2).toByteArray(), &accepted));
   QCOMPARE(accepted.hasError() ? static_cast<int>(accepted.error()) : 0,
            protocol::Success);
@@ -129,13 +129,13 @@ void ClientLiveNetworkTest::authSendAndSyncAcrossRealGateways() {
   QVERIFY(accepted.conversationSeq() > 0);
   QCOMPARE(
       accepted.messageState(),
-      wim::protocol::MessageStateGadget::MessageState::MESSAGE_STATE_ACCEPTED);
+      wimi::protocol::MessageStateGadget::MessageState::MESSAGE_STATE_ACCEPTED);
   QCOMPARE(accepted.clientMessageId(), clientMessageId);
 
   QTRY_VERIFY_WITH_TIMEOUT(!pushesB.isEmpty(), 10'000);
   const QList<QVariant> pushArguments = pushesB.takeFirst();
   QCOMPARE(pushArguments.at(0).toUInt(), quint32(protocol::SendTextRequest));
-  wim::protocol::Packet pushed;
+  wimi::protocol::Packet pushed;
   QVERIFY(ParsePacket(pushArguments.at(1).toByteArray(), &pushed));
   QCOMPARE(pushed.messageId(), accepted.messageId());
   QCOMPARE(pushed.conversationId(), accepted.conversationId());
@@ -159,7 +159,7 @@ void ClientLiveNetworkTest::authSendAndSyncAcrossRealGateways() {
   QCOMPARE(syncResponse.at(0).toString(), syncRequest);
   QCOMPARE(syncResponse.at(1).toUInt(),
            quint32(protocol::PullSessionMessagesResponse));
-  wim::protocol::Packet synchronized;
+  wimi::protocol::Packet synchronized;
   QVERIFY(ParsePacket(syncResponse.at(2).toByteArray(), &synchronized));
   QCOMPARE(synchronized.hasError() ? static_cast<int>(synchronized.error()) : 0,
            protocol::Success);
@@ -188,8 +188,8 @@ void ClientLiveNetworkTest::authSendAndSyncAcrossRealGateways() {
                             3'000);
 }
 
-}  // namespace wim::client
+}  // namespace wimi::client
 
-QTEST_GUILESS_MAIN(wim::client::ClientLiveNetworkTest)
+QTEST_GUILESS_MAIN(wimi::client::ClientLiveNetworkTest)
 
 #include "ClientLiveNetworkTest.moc"

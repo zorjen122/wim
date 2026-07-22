@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(wim-client VERSION 0.1.0 LANGUAGES CXX)
+project(wimi-client VERSION 0.1.0 LANGUAGES CXX)
 
-option(WIM_ENABLE_LIVE_TESTS
-    "Build opt-in tests that connect to a running local WIM stack" OFF)
+option(WIMI_ENABLE_LIVE_TESTS
+    "Build opt-in tests that connect to a running local WIMI stack" OFF)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -13,41 +13,41 @@ find_package(Qt6 6.10 REQUIRED COMPONENTS Network Protobuf Quick QuickControls2 
 
 qt_standard_project_setup(REQUIRES 6.8)
 
-add_library(wim-client-protocol STATIC)
-set_target_properties(wim-client-protocol PROPERTIES
+add_library(wimi-client-protocol STATIC)
+set_target_properties(wimi-client-protocol PROPERTIES
     POSITION_INDEPENDENT_CODE ON
 )
-qt_add_protobuf(wim-client-protocol
+qt_add_protobuf(wimi-client-protocol
     PROTO_FILES
         ${CMAKE_CURRENT_SOURCE_DIR}/../server/public/proto/tcp_message.proto
     OUTPUT_DIRECTORY
         ${CMAKE_CURRENT_BINARY_DIR}/generated
 )
-target_sources(wim-client-protocol PRIVATE
+target_sources(wimi-client-protocol PRIVATE
     src/adapters/connection_gateway/ProtobufPacketCodec.cc
     src/adapters/connection_gateway/ProtobufPacketCodec.h
 )
-target_include_directories(wim-client-protocol PUBLIC
+target_include_directories(wimi-client-protocol PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_BINARY_DIR}/generated
 )
-target_link_libraries(wim-client-protocol PUBLIC Qt6::Protobuf)
+target_link_libraries(wimi-client-protocol PUBLIC Qt6::Protobuf)
 
-set(WIM_LINUX_DESKTOP FALSE)
+set(WIMI_LINUX_DESKTOP FALSE)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT ANDROID)
     find_package(Qt6 6.10 REQUIRED COMPONENTS DBus)
-    set(WIM_LINUX_DESKTOP TRUE)
+    set(WIMI_LINUX_DESKTOP TRUE)
 endif()
 
-qt_add_executable(wim-client
+qt_add_executable(wimi-client
     src/main.cc
 )
 
-qt_add_resources(wim-client wim-client-icons
+qt_add_resources(wimi-client wimi-client-icons
     PREFIX "/icons"
     BASE resources/icons
     FILES
-        resources/icons/wim-client.svg
+        resources/icons/wimi-client.svg
         resources/icons/ui/back.svg
         resources/icons/ui/chats.svg
         resources/icons/ui/compose.svg
@@ -62,28 +62,28 @@ qt_add_resources(wim-client wim-client-icons
         resources/icons/ui/settings.svg
 )
 
-set(WIM_QML_SINGLETONS
+set(WIMI_QML_SINGLETONS
     qml/Theme.qml
     qml/Tokens.qml
     qml/Typography.qml
     qml/Icons.qml
 )
 
-set_source_files_properties(${WIM_QML_SINGLETONS}
+set_source_files_properties(${WIMI_QML_SINGLETONS}
     PROPERTIES QT_QML_SINGLETON_TYPE TRUE
 )
 
-set(WIM_QML_MODULE_OPTIONS)
+set(WIMI_QML_MODULE_OPTIONS)
 if(NOT ANDROID AND NOT IOS)
-    list(APPEND WIM_QML_MODULE_OPTIONS NO_IMPORT_SCAN)
+    list(APPEND WIMI_QML_MODULE_OPTIONS NO_IMPORT_SCAN)
 endif()
 
-qt_add_qml_module(wim-client
-    URI Wim.Client
+qt_add_qml_module(wimi-client
+    URI WimiClient
     VERSION 1.0
-    ${WIM_QML_MODULE_OPTIONS}
+    ${WIMI_QML_MODULE_OPTIONS}
     QML_FILES
-        ${WIM_QML_SINGLETONS}
+        ${WIMI_QML_SINGLETONS}
         qml/Main.qml
         qml/AdaptiveShell.qml
         qml/AppNavigationRail.qml
@@ -131,23 +131,23 @@ qt_add_qml_module(wim-client
         src/adapters/gate/GateHttpClient.h
 )
 
-target_include_directories(wim-client PRIVATE
+target_include_directories(wimi-client PRIVATE
     src
     src/app
 )
 
-target_link_libraries(wim-client PRIVATE
+target_link_libraries(wimi-client PRIVATE
     Qt6::Quick
     Qt6::QuickControls2
     Qt6::Network
     Qt6::Sql
-    wim-client-protocol
+    wimi-client-protocol
 )
 
 if(ANDROID)
-    set_target_properties(wim-client PROPERTIES
-        QT_ANDROID_APP_NAME "WIM"
-        QT_ANDROID_PACKAGE_NAME "org.wim.client"
+    set_target_properties(wimi-client PROPERTIES
+        QT_ANDROID_APP_NAME "WIMI"
+        QT_ANDROID_PACKAGE_NAME "org.wimi.client"
         QT_ANDROID_PACKAGE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/packaging/android"
         QT_ANDROID_VERSION_CODE 1
         QT_ANDROID_VERSION_NAME "${PROJECT_VERSION}"
@@ -155,21 +155,21 @@ if(ANDROID)
 endif()
 
 include(GNUInstallDirs)
-if(WIM_LINUX_DESKTOP)
-    target_sources(wim-client PRIVATE
+if(WIMI_LINUX_DESKTOP)
+    target_sources(wimi-client PRIVATE
         src/platform/linux/LinuxDesktopServices.cc
         src/platform/linux/LinuxDesktopServices.h
     )
-    target_link_libraries(wim-client PRIVATE Qt6::DBus)
-    install(FILES packaging/linux/wim-client.desktop
+    target_link_libraries(wimi-client PRIVATE Qt6::DBus)
+    install(FILES packaging/linux/wimi-client.desktop
         DESTINATION ${CMAKE_INSTALL_DATADIR}/applications
     )
-    install(FILES resources/icons/wim-client.svg
+    install(FILES resources/icons/wimi-client.svg
         DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps
     )
 endif()
 
-install(TARGETS wim-client
+install(TARGETS wimi-client
     BUNDLE DESTINATION .
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
@@ -179,7 +179,7 @@ include(CTest)
 if(BUILD_TESTING)
     find_package(Qt6 6.10 REQUIRED COMPONENTS Test)
 
-    add_executable(wim-client-model-tests
+    add_executable(wimi-client-model-tests
         tests/unit/ClientModelsTest.cc
         src/app/AppController.cc
         src/app/AppController.h
@@ -207,26 +207,26 @@ if(BUILD_TESTING)
         src/adapters/gate/GateHttpClient.cc
         src/adapters/gate/GateHttpClient.h
     )
-    target_include_directories(wim-client-model-tests PRIVATE
+    target_include_directories(wimi-client-model-tests PRIVATE
         src
     )
-    target_link_libraries(wim-client-model-tests PRIVATE
+    target_link_libraries(wimi-client-model-tests PRIVATE
         Qt6::Qml
         Qt6::Network
         Qt6::Sql
         Qt6::Test
-        wim-client-protocol
+        wimi-client-protocol
     )
-    if(WIM_LINUX_DESKTOP)
-        target_sources(wim-client-model-tests PRIVATE
+    if(WIMI_LINUX_DESKTOP)
+        target_sources(wimi-client-model-tests PRIVATE
             src/platform/linux/LinuxDesktopServices.cc
             src/platform/linux/LinuxDesktopServices.h
         )
-        target_link_libraries(wim-client-model-tests PRIVATE Qt6::DBus)
+        target_link_libraries(wimi-client-model-tests PRIVATE Qt6::DBus)
     endif()
-    add_test(NAME client-models COMMAND wim-client-model-tests)
+    add_test(NAME client-models COMMAND wimi-client-model-tests)
 
-    add_executable(wim-client-network-tests
+    add_executable(wimi-client-network-tests
         tests/unit/ClientNetworkTest.cc
         src/adapters/connection_gateway/ClientProtocol.h
         src/adapters/connection_gateway/ConnectionGatewayClient.cc
@@ -236,16 +236,16 @@ if(BUILD_TESTING)
         src/adapters/gate/GateHttpClient.cc
         src/adapters/gate/GateHttpClient.h
     )
-    target_include_directories(wim-client-network-tests PRIVATE src)
-    target_link_libraries(wim-client-network-tests PRIVATE
+    target_include_directories(wimi-client-network-tests PRIVATE src)
+    target_link_libraries(wimi-client-network-tests PRIVATE
         Qt6::Network
         Qt6::Test
-        wim-client-protocol
+        wimi-client-protocol
     )
-    add_test(NAME client-network COMMAND wim-client-network-tests)
+    add_test(NAME client-network COMMAND wimi-client-network-tests)
 
-    if(WIM_ENABLE_LIVE_TESTS)
-        add_executable(wim-client-live-network-tests
+    if(WIMI_ENABLE_LIVE_TESTS)
+        add_executable(wimi-client-live-network-tests
             tests/integration/ClientLiveNetworkTest.cc
             src/adapters/connection_gateway/ClientProtocol.h
             src/adapters/connection_gateway/ConnectionGatewayClient.cc
@@ -255,14 +255,14 @@ if(BUILD_TESTING)
             src/adapters/gate/GateHttpClient.cc
             src/adapters/gate/GateHttpClient.h
         )
-        target_include_directories(wim-client-live-network-tests PRIVATE src)
-        target_link_libraries(wim-client-live-network-tests PRIVATE
+        target_include_directories(wimi-client-live-network-tests PRIVATE src)
+        target_link_libraries(wimi-client-live-network-tests PRIVATE
             Qt6::Network
             Qt6::Test
-            wim-client-protocol
+            wimi-client-protocol
         )
         add_test(NAME client-live-network
-            COMMAND wim-client-live-network-tests)
+            COMMAND wimi-client-live-network-tests)
         set_tests_properties(client-live-network PROPERTIES
             LABELS integration
             TIMEOUT 30
@@ -283,7 +283,7 @@ if(BUILD_TESTING)
 
         add_test(
             NAME ui-smoke-${test_name}
-            COMMAND wim-client
+            COMMAND wimi-client
                 --smoke-test
                 --scenario=normal
                 --width=${test_width}
@@ -332,7 +332,7 @@ if(BUILD_TESTING)
 
         add_test(
             NAME ui-smoke-${test_name}
-            COMMAND wim-client
+            COMMAND wimi-client
                 --smoke-test
                 --scenario=${test_scenario}
                 --section=${test_section}
@@ -350,7 +350,7 @@ if(BUILD_TESTING)
 
     add_test(
         NAME ui-smoke-sqlite-restore
-        COMMAND wim-client
+        COMMAND wimi-client
             --smoke-test
             --repository=sqlite
             --database=:memory:
@@ -366,7 +366,7 @@ if(BUILD_TESTING)
 
     add_test(
         NAME ui-smoke-network-auth
-        COMMAND wim-client
+        COMMAND wimi-client
             --smoke-test
             --gate-url=http://127.0.0.1:1
             --database=:memory:

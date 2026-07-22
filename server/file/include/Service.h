@@ -10,7 +10,7 @@
 #include <thread>
 #include <vector>
 
-namespace wim::rpc {
+namespace wimi::rpc {
 
 using file::FileChunk;
 using file::FileService;
@@ -104,4 +104,4 @@ class FileServer final {
   size_t workerSize;
 };
 
-};  // namespace wim::rpc
+};  // namespace wimi::rpc

@@ -5,7 +5,7 @@
 #include "Const.h"
 #include "tcp_message.pb.h"
 
-namespace wim {
+namespace wimi {
 
 using TcpPacket = protocol::Packet;
 
@@ -38,4 +38,4 @@ inline std::string TcpPacketDebugString(const TcpPacket &packet) {
   return packet.ShortDebugString();
 }
 
-}  // namespace wim
+}  // namespace wimi

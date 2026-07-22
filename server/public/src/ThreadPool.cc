@@ -18,7 +18,7 @@
 #include <windows.h>
 #endif
 
-namespace wim {
+namespace wimi {
 namespace {
 
 void SetCurrentThreadName(const std::string &poolName, std::size_t index) {
@@ -188,4 +188,4 @@ bool ThreadPool::PopTask(TaskEntry &task) {
   return true;
 }
 
-}  // namespace wim
+}  // namespace wimi

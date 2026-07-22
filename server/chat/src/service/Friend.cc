@@ -9,7 +9,7 @@
 
 #include <spdlog/spdlog.h>
 #include <string>
-namespace wim {
+namespace wimi {
 
 FriendService::FriendService(DeliveryService &deliveryService)
     : deliveryService(deliveryService) {}
@@ -177,7 +177,7 @@ TcpPacket FriendService::PullFriendList(uint32_t msgID, TcpPacket &request) {
       db::MysqlDao::GetInstance()->getFriendList(uid);
 
   if (friendList == nullptr) {
-    LOG_INFO(wim::businessLogger, "好友表为空, uid-{}", uid);
+    LOG_INFO(wimi::businessLogger, "好友表为空, uid-{}", uid);
     rsp.set_error(ErrorCodes::Success);
     return rsp;
   }
@@ -199,4 +199,4 @@ TcpPacket FriendService::PullFriendList(uint32_t msgID, TcpPacket &request) {
   rsp.set_error(ErrorCodes::Success);
   return rsp;
 }
-};  // namespace wim
+};  // namespace wimi

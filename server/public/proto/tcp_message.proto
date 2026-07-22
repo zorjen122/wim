@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package wim.protocol;
+package wimi.protocol;
 
 // 对外消息生命周期；状态只能从 ACCEPTED 向 READ 单调推进。
 enum MessageState {

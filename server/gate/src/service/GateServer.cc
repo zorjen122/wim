@@ -5,7 +5,7 @@
 #include "Logger.h"
 #include <spdlog/spdlog.h>
 
-namespace wim {
+namespace wimi {
 
 GateServer::GateServer(net::io_context &ioc, unsigned short &port)
     : gateContext(ioc), acceptor(ioc, tcp::endpoint(tcp::v4(), port)) {}
@@ -33,4 +33,4 @@ void GateServer::Start() {
         }
       });
 }
-};  // namespace wim
+};  // namespace wimi

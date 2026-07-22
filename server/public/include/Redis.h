@@ -21,7 +21,7 @@
 #include <spdlog/spdlog.h>
 #include <thread>
 
-namespace wim::db {
+namespace wimi::db {
 
 struct SessionLease {
   std::string gatewayId;
@@ -47,7 +47,7 @@ class RedisPool {
         auto session = CreateConnection();
         connections.push(std::move(session));
       } catch (sw::redis::Error &e) {
-        LOG_DEBUG(wim::dbLogger,
+        LOG_DEBUG(wimi::dbLogger,
                   "redis connection is error: {}, continue this connection",
                   e.what());
         continue;
@@ -111,7 +111,7 @@ class RedisPool {
     });
     if (!ready) {
       Metrics::Increment(Metric::RedisAcquireTimeout);
-      LOG_WARN(wim::dbLogger, "Redis连接池获取超时, available: {}",
+      LOG_WARN(wimi::dbLogger, "Redis连接池获取超时, available: {}",
                connections.size());
       return nullptr;
     }
@@ -177,8 +177,8 @@ class RedisPool {
 
         connections.push(std::move(con));
       } catch (sw::redis::Error &e) {
-        LOG_DEBUG(wim::dbLogger, "redis connection is error: {}, reconnect....",
-                  e.what());
+        LOG_DEBUG(wimi::dbLogger,
+                  "redis connection is error: {}, reconnect....", e.what());
         con.reset();
         try {
           auto session = CreateConnection();
@@ -552,7 +552,7 @@ return 1
   std::string getOnlineUserInfo(long uid) {
     auto redis = redisPool->GetConnection();
     if (!redis) {
-      LOG_DEBUG(wim::dbLogger, "redis connection is null");
+      LOG_DEBUG(wimi::dbLogger, "redis connection is null");
     }
     Defer defer(
         [this, &redis]() { redisPool->ReturnConnection(std::move(redis)); });
@@ -571,7 +571,7 @@ return 1
     Json::Reader reader;
     Json::Value jsonData;
     if (!reader.parse(source, jsonData)) {
-      LOG_DEBUG(wim::dbLogger, "parse online user info json data error");
+      LOG_DEBUG(wimi::dbLogger, "parse online user info json data error");
       return {};
     }
     return jsonData;
@@ -613,4 +613,4 @@ return 1
   static const int64_t epoch = 1672531200000;  // 2023-01-01 00:00:00
 };
 
-};  // namespace wim::db
+};  // namespace wimi::db

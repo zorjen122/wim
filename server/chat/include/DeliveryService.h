@@ -4,7 +4,7 @@
 #include <atomic>
 #include <string>
 
-namespace wim {
+namespace wimi {
 
 namespace rpc {
 class GatewayStreamService;
@@ -23,4 +23,4 @@ class DeliveryService {
   std::atomic<rpc::GatewayStreamService *> gatewayStreamService{nullptr};
 };
 
-}  // namespace wim
+}  // namespace wimi

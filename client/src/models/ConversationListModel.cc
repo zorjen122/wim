@@ -2,7 +2,7 @@
 
 #include <utility>
 
-namespace wim::client {
+namespace wimi::client {
 
 ConversationListModel::ConversationListModel(QObject *parent)
     : QAbstractListModel(parent) {}
@@ -169,4 +169,4 @@ bool ConversationListModel::MarkRead(int row) {
   return true;
 }
 
-}  // namespace wim::client
+}  // namespace wimi::client

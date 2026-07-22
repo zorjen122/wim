@@ -1,6 +1,6 @@
 import QtQuick
 import QtQuick.Controls
-import Wim.Client
+import WimiClient
 
 Rectangle {
     id: root

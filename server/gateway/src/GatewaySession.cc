@@ -21,7 +21,7 @@
 #include <exception>
 #include <utility>
 
-namespace wim::connection {
+namespace wimi::connection {
 namespace asio = boost::asio;
 namespace {
 
@@ -556,4 +556,4 @@ std::string GatewaySession::NextRequestId() {
              requestSequence.fetch_add(1, std::memory_order_relaxed) + 1);
 }
 
-}  // namespace wim::connection
+}  // namespace wimi::connection

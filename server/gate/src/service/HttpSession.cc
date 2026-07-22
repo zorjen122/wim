@@ -6,7 +6,7 @@
 #include <spdlog/spdlog.h>
 #include <string>
 
-namespace wim {
+namespace wimi {
 
 namespace util {
 unsigned char ToHex(unsigned char x) {
@@ -173,4 +173,4 @@ void HttpSession::WriteResponse() {
                     });
 }
 
-};  // namespace wim
+};  // namespace wimi

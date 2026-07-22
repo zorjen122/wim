@@ -13,7 +13,7 @@
 #include <memory>
 #include <utility>
 
-namespace wim::rpc {
+namespace wimi::rpc {
 namespace {
 
 constexpr std::size_t kMaxStreamQueue = 4096;
@@ -439,4 +439,4 @@ bool GatewayStreamService::Draining() const {
   return draining.load(std::memory_order_acquire);
 }
 
-}  // namespace wim::rpc
+}  // namespace wimi::rpc

@@ -4,7 +4,7 @@
 
 #include <spdlog/sinks/rotating_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
-namespace wim {
+namespace wimi {
 
 // 日志级别
 #define LOG_DEBUG(logger, ...)                                        \
@@ -75,4 +75,4 @@ inline std::string getLogLevelStr() {
   return ret;
 }
 
-};  // namespace wim
+};  // namespace wimi

@@ -10,7 +10,7 @@
 #include <cstdint>
 #include <string>
 
-namespace wim::rpc {
+namespace wimi::rpc {
 namespace {
 
 std::vector<ServiceNodeInfo> LoadNodes(const YAML::Node &server,
@@ -211,4 +211,4 @@ grpc::Status StateServiceImpl::TestNetworkPing(grpc::ServerContext *context,
   response->set_msg("Pong!");
   return grpc::Status::OK;
 }
-};  // namespace wim::rpc
+};  // namespace wimi::rpc

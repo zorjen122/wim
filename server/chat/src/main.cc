@@ -27,21 +27,21 @@ int main(int argc, char *argv[]) {
   if (argc == 4) {
     auto level = std::string(argv[3]);
     if (level == "--debug") {
-      wim::setLoggerLevel(spdlog::level::debug);
+      wimi::setLoggerLevel(spdlog::level::debug);
     } else if (level == "--info") {
-      wim::setLoggerLevel(spdlog::level::info);
+      wimi::setLoggerLevel(spdlog::level::info);
     } else if (level == "--trace") {
-      wim::setLoggerLevel(spdlog::level::trace);
+      wimi::setLoggerLevel(spdlog::level::trace);
     } else {
       std::cout << "Invalid log level: " << level
                 << ". Valid options: --debug, --info, --trace\n";
     }
   }
   if (argc >= 3 && std::string(argv[2]) == "--normal") {
-    LOG_INFO(wim::businessLogger,
+    LOG_INFO(wimi::businessLogger,
              "ImServiceRunner 启动, 模式: normal, 日志等级: {}",
-             wim::getLogLevelStr());
-    wim::ImServiceRunner::GetInstance()->Activate();
+             wimi::getLogLevelStr());
+    wimi::ImServiceRunner::GetInstance()->Activate();
   }
 
   return 0;

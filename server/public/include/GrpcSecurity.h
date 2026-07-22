@@ -10,7 +10,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace wim {
+namespace wimi {
 
 struct GrpcSecurityConfig {
   std::string environment{"development"};
@@ -87,4 +87,4 @@ inline std::shared_ptr<grpc::ServerCredentials> BuildServerCredentials(
   return grpc::SslServerCredentials(options);
 }
 
-}  // namespace wim
+}  // namespace wimi

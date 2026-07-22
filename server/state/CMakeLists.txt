@@ -42,6 +42,6 @@ target_link_libraries(state PRIVATE imState)
 
 target_compile_options(state PRIVATE -Wall)
 
-if(WIM_BUILD_UNIT_TESTS)
+if(WIMI_BUILD_UNIT_TESTS)
   add_subdirectory(test)
 endif()

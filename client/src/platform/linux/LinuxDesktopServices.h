@@ -2,7 +2,7 @@
 
 #include "ports/IPlatformServices.h"
 
-namespace wim::client {
+namespace wimi::client {
 
 class LinuxDesktopServices final : public IPlatformServices {
  public:
@@ -12,4 +12,4 @@ class LinuxDesktopServices final : public IPlatformServices {
                                const QString &body) override;
 };
 
-}  // namespace wim::client
+}  // namespace wimi::client

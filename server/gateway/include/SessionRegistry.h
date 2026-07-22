@@ -9,7 +9,7 @@
 #include <string>
 #include <unordered_map>
 
-namespace wim::connection {
+namespace wimi::connection {
 
 class GatewaySession;
 
@@ -41,4 +41,4 @@ class SessionRegistry {
   std::unordered_map<int64_t, LocalSession> sessions;
 };
 
-}  // namespace wim::connection
+}  // namespace wimi::connection

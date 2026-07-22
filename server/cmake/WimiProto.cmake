@@ -1,6 +1,6 @@
 find_program(GRPC_CPP_PLUGIN grpc_cpp_plugin REQUIRED)
 
-function(wim_generate_grpc_proto out_var proto_file)
+function(wimi_generate_grpc_proto out_var proto_file)
   get_filename_component(proto_abs "${proto_file}" ABSOLUTE)
   get_filename_component(proto_dir "${proto_abs}" DIRECTORY)
   get_filename_component(proto_name "${proto_abs}" NAME_WE)

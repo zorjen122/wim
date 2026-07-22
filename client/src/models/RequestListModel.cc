@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <utility>
 
-namespace wim::client {
+namespace wimi::client {
 namespace {
 
 bool IsPendingStatus(const QString &status) {
@@ -89,4 +89,4 @@ bool RequestListModel::SetStatus(int row, const QString &status) {
   return true;
 }
 
-}  // namespace wim::client
+}  // namespace wimi::client

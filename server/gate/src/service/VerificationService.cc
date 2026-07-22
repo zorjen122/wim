@@ -13,7 +13,7 @@
 #include <mutex>
 #include <random>
 
-namespace wim {
+namespace wimi {
 namespace {
 
 bool ParseBool(const char *value, bool fallback) {
@@ -72,13 +72,13 @@ VerificationService::VerificationService() {
   }
 
   emailEnabled_ =
-      ParseBool(std::getenv("WIM_VERIFY_SEND_EMAIL"), emailEnabled_);
+      ParseBool(std::getenv("WIMI_VERIFY_SEND_EMAIL"), emailEnabled_);
   exposeCodeInResponse_ =
-      ParseBool(std::getenv("WIM_VERIFY_EXPOSE_CODE"), exposeCodeInResponse_);
-  smtpUrl_ = EnvironmentOr("WIM_VERIFY_SMTP_URL", std::move(smtpUrl_));
-  emailUser_ = EnvironmentOr("WIM_VERIFY_EMAIL_USER", std::move(emailUser_));
+      ParseBool(std::getenv("WIMI_VERIFY_EXPOSE_CODE"), exposeCodeInResponse_);
+  smtpUrl_ = EnvironmentOr("WIMI_VERIFY_SMTP_URL", std::move(smtpUrl_));
+  emailUser_ = EnvironmentOr("WIMI_VERIFY_EMAIL_USER", std::move(emailUser_));
   emailPassword_ =
-      EnvironmentOr("WIM_VERIFY_EMAIL_PASS", std::move(emailPassword_));
+      EnvironmentOr("WIMI_VERIFY_EMAIL_PASS", std::move(emailPassword_));
 }
 
 std::string VerificationService::NormalizeEmail(const std::string &email) {
@@ -192,9 +192,9 @@ bool VerificationService::SendEmail(const std::string &recipient,
   const std::string sender = "<" + emailUser_ + ">";
   const std::string receiver = "<" + recipient + ">";
   EmailPayload payload{"To: " + recipient + "\r\nFrom: " + emailUser_ +
-                       "\r\nSubject: WIM verification code\r\n"
+                       "\r\nSubject: WIMI verification code\r\n"
                        "Content-Type: text/plain; charset=utf-8\r\n\r\n"
-                       "Your WIM verification code is " +
+                       "Your WIMI verification code is " +
                        code + ". It expires in " +
                        std::to_string(codeTtlSeconds_) + " seconds.\r\n"};
   curl_slist *recipients = nullptr;
@@ -224,4 +224,4 @@ bool VerificationService::SendEmail(const std::string &recipient,
   return true;
 }
 
-}  // namespace wim
+}  // namespace wimi

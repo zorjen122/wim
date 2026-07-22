@@ -5,12 +5,12 @@
 #include <QByteArray>
 #include <QString>
 
-namespace wim::client {
+namespace wimi::client {
 
-bool SerializeProtobufPacket(const wim::protocol::Packet &packet,
+bool SerializeProtobufPacket(const wimi::protocol::Packet &packet,
                              QByteArray *payload);
 bool ParseProtobufPacket(const QByteArray &payload,
-                         wim::protocol::Packet *packet);
-QString PacketSendDateTimeOrEmpty(const wim::protocol::Packet &packet);
+                         wimi::protocol::Packet *packet);
+QString PacketSendDateTimeOrEmpty(const wimi::protocol::Packet &packet);
 
-}  // namespace wim::client
+}  // namespace wimi::client

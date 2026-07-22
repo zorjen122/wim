@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <string_view>
 
-namespace wim {
+namespace wimi {
 
 enum class Metric : std::size_t {
   RequestsStarted,
@@ -33,10 +33,10 @@ class Metrics {
   static std::string_view Name(Metric metric);
 
  private:
-  using CounterArray =
-      std::array<std::atomic<uint64_t>, static_cast<std::size_t>(Metric::Count)>;
+  using CounterArray = std::array<std::atomic<uint64_t>,
+                                  static_cast<std::size_t>(Metric::Count)>;
 
   static CounterArray &Counters();
 };
 
-}  // namespace wim
+}  // namespace wimi

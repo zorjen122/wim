@@ -10,7 +10,7 @@ using ::grpc::Channel;
 using ::grpc::ClientContext;
 using ::grpc::Status;
 
-namespace wim::rpc {
+namespace wimi::rpc {
 using ::state::ConnectUser;
 
 using ::state::ConnectUserRsp;
@@ -42,4 +42,4 @@ class StateClient : public Singleton<StateClient> {
   std::unique_ptr<RpcPool<StateService>> rpcPool = nullptr;
 };
 
-};  // namespace wim::rpc
+};  // namespace wimi::rpc

@@ -9,11 +9,11 @@
 #include <string>
 #include <unordered_map>
 
-namespace wim::db {
+namespace wimi::db {
 struct SessionLease;
 }
 
-namespace wim::rpc {
+namespace wimi::rpc {
 
 class GatewayStreamReactor;
 
@@ -55,4 +55,4 @@ class GatewayStreamService final
   std::unordered_map<std::string, RegisteredStream> streams;
 };
 
-}  // namespace wim::rpc
+}  // namespace wimi::rpc

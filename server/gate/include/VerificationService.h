@@ -4,7 +4,7 @@
 
 #include <string>
 
-namespace wim {
+namespace wimi {
 
 struct VerificationCodeIssue {
   int error{ErrorCodes::Success};
@@ -38,4 +38,4 @@ class VerificationService : public Singleton<VerificationService> {
   std::string emailPassword_;
 };
 
-}  // namespace wim
+}  // namespace wimi

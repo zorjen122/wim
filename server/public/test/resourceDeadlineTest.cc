@@ -25,9 +25,9 @@ bool Require(bool condition, const char *message) {
 }
 
 bool TestThreadPoolDeadline() {
-  wim::ThreadPoolOptions options;
+  wimi::ThreadPoolOptions options;
   options.maxQueueSize = 1;
-  wim::ThreadPool pool("deadline-test", 1, options);
+  wimi::ThreadPool pool("deadline-test", 1, options);
   std::promise<void> release;
   auto releaseFuture = release.get_future().share();
   std::promise<void> started;
@@ -45,7 +45,7 @@ bool TestThreadPoolDeadline() {
   pool.Stop();
 
   return Require(first && second, "failed to fill thread pool") &&
-         Require(status == wim::ThreadPool::PostStatus::TimedOut,
+         Require(status == wimi::ThreadPool::PostStatus::TimedOut,
                  "full thread pool did not time out") &&
          Require(elapsed >= 30ms && elapsed < 500ms,
                  "thread pool acquire ignored its deadline") &&
@@ -54,47 +54,49 @@ bool TestThreadPoolDeadline() {
 }
 
 bool TestMysqlPoolDeadline() {
-  wim::db::MysqlPool pool("127.0.0.1", 33060, "zorjen", "root",
-                          "chatServ", 1);
-  auto held = pool.GetConnectionUntil(wim::RequestContext::Clock::now() + 1s);
+  wimi::db::MysqlPool pool("127.0.0.1", 33060, "zorjen", "root", "chatServ", 1);
+  auto held = pool.GetConnectionUntil(wimi::RequestContext::Clock::now() + 1s);
   if (!Require(held != nullptr, "unable to acquire MySQL test connection")) {
     return false;
   }
-  auto before = wim::RequestContext::Clock::now();
+  auto before = wimi::RequestContext::Clock::now();
   auto blocked = pool.GetConnectionUntil(before + 40ms);
-  bool ok = Require(blocked == nullptr, "exhausted MySQL pool did not time out") &&
-            Require(wim::RequestContext::Clock::now() - before < 500ms,
-                    "MySQL pool ignored its deadline");
+  bool ok =
+      Require(blocked == nullptr, "exhausted MySQL pool did not time out") &&
+      Require(wimi::RequestContext::Clock::now() - before < 500ms,
+              "MySQL pool ignored its deadline");
   pool.ReturnConnection(std::move(held));
   return ok;
 }
 
 bool TestRedisPoolDeadline() {
-  wim::db::RedisPool pool("127.0.0.1", 6380, "root", 1);
-  auto held = pool.GetConnectionUntil(wim::RequestContext::Clock::now() + 1s);
+  wimi::db::RedisPool pool("127.0.0.1", 6380, "root", 1);
+  auto held = pool.GetConnectionUntil(wimi::RequestContext::Clock::now() + 1s);
   if (!Require(held != nullptr, "unable to acquire Redis test connection")) {
     return false;
   }
-  auto before = wim::RequestContext::Clock::now();
+  auto before = wimi::RequestContext::Clock::now();
   auto blocked = pool.GetConnectionUntil(before + 40ms);
-  bool ok = Require(blocked == nullptr, "exhausted Redis pool did not time out") &&
-            Require(wim::RequestContext::Clock::now() - before < 500ms,
-                    "Redis pool ignored its deadline");
+  bool ok =
+      Require(blocked == nullptr, "exhausted Redis pool did not time out") &&
+      Require(wimi::RequestContext::Clock::now() - before < 500ms,
+              "Redis pool ignored its deadline");
   pool.ReturnConnection(std::move(held));
   return ok;
 }
 
 bool TestRpcPoolDeadline() {
   RpcPool<im::ImService> pool(1, "127.0.0.1", "50055");
-  auto held = pool.getConnectionUntil(wim::RequestContext::Clock::now() + 1s);
+  auto held = pool.getConnectionUntil(wimi::RequestContext::Clock::now() + 1s);
   if (!Require(held != nullptr, "unable to acquire RPC test connection")) {
     return false;
   }
-  auto before = wim::RequestContext::Clock::now();
+  auto before = wimi::RequestContext::Clock::now();
   auto blocked = pool.getConnectionUntil(before + 40ms);
-  bool ok = Require(blocked == nullptr, "exhausted RPC pool did not time out") &&
-            Require(wim::RequestContext::Clock::now() - before < 500ms,
-                    "RPC pool ignored its deadline");
+  bool ok =
+      Require(blocked == nullptr, "exhausted RPC pool did not time out") &&
+      Require(wimi::RequestContext::Clock::now() - before < 500ms,
+              "RPC pool ignored its deadline");
   pool.returnConnection(std::move(held));
   return ok;
 }
@@ -103,7 +105,7 @@ bool TestRpcPoolDeadline() {
 
 int main() {
   bool ok = TestThreadPoolDeadline();
-  if (std::getenv("WIM_RUN_POOL_INTEGRATION_TESTS") != nullptr) {
+  if (std::getenv("WIMI_RUN_POOL_INTEGRATION_TESTS") != nullptr) {
     ok = TestMysqlPoolDeadline() && TestRedisPoolDeadline() &&
          TestRpcPoolDeadline() && ok;
   }

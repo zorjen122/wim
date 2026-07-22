@@ -44,6 +44,6 @@ target_link_libraries(chat PRIVATE imChat)
 
 target_compile_options(chat PRIVATE -Wall)
 
-if(WIM_BUILD_UNIT_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/CMakeLists.txt")
+if(WIMI_BUILD_UNIT_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/CMakeLists.txt")
   add_subdirectory(test)
 endif()

@@ -44,7 +44,7 @@ target_link_libraries(gate PRIVATE imGate)
 
 target_compile_options(gate PRIVATE -Wall)
 
-if(WIM_BUILD_UNIT_TESTS)
+if(WIMI_BUILD_UNIT_TESTS)
   add_subdirectory(test)
 endif()
 

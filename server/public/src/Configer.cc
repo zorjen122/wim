@@ -8,7 +8,7 @@ bool Configer::loadConfig(const std::string &configFile) {
   try {
     YAML::Node config = YAML::LoadFile(configFile);
     if (config.IsNull()) {
-      LOG_WARN(wim::businessLogger, "无效配置文件，文件名: {}", configFile);
+      LOG_WARN(wimi::businessLogger, "无效配置文件，文件名: {}", configFile);
       return false;
     }
 
@@ -16,7 +16,7 @@ bool Configer::loadConfig(const std::string &configFile) {
       configMap[it->first.as<std::string>()] = it->second;
     }
 
-    LOG_INFO(wim::businessLogger, "配置文件加载成功，文件名: {}", configFile);
+    LOG_INFO(wimi::businessLogger, "配置文件加载成功，文件名: {}", configFile);
     return true;
   } catch (const std::exception &e) {
     spdlog::error("Error load config file: {}", e.what());
@@ -27,7 +27,7 @@ bool Configer::loadConfig(const std::string &configFile) {
 YAML::Node Configer::getNode(const std::string &filed) {
   auto it = configMap.find(filed);
   if (it == configMap.end()) {
-    LOG_DEBUG(wim::businessLogger, "配置文件中没有这样的字段: {}", filed);
+    LOG_DEBUG(wimi::businessLogger, "配置文件中没有这样的字段: {}", filed);
     return YAML::Node();
   }
 

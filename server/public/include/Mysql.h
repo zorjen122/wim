@@ -30,7 +30,7 @@
 #include "Metrics.h"
 #include "RequestContext.h"
 
-namespace wim::db {
+namespace wimi::db {
 
 struct MessageAcceptResult {
   int error{ErrorCodes::MysqlFailed};
@@ -104,14 +104,14 @@ class MysqlPool {
         pool.push(std::make_unique<SqlConnection>(sqlSession, leaseTime));
 
       } catch (mysqlx::Error &e) {
-        LOG_WARN(wim::dbLogger, "Mysql-client init(number-{}) error: {}", i,
+        LOG_WARN(wimi::dbLogger, "Mysql-client init(number-{}) error: {}", i,
                  e.what());
         continue;
       }
     }
 
     if (pool.empty()) {
-      LOG_DEBUG(wim::dbLogger, "Mysql-client pool init error! | poolSize: {}",
+      LOG_DEBUG(wimi::dbLogger, "Mysql-client pool init error! | poolSize: {}",
                 maxSize);
       return;
     }
@@ -145,7 +145,7 @@ class MysqlPool {
     });
     if (!ready) {
       Metrics::Increment(Metric::MysqlAcquireTimeout);
-      LOG_WARN(wim::dbLogger, "MySQL连接池获取超时, available: {}",
+      LOG_WARN(wimi::dbLogger, "MySQL连接池获取超时, available: {}",
                pool.size());
       return nullptr;
     }
@@ -189,7 +189,7 @@ class MysqlPool {
     std::unique_lock<std::mutex> lock(sqlMutex);
     while (!pool.empty()) {
       pool.pop();
-      LOG_INFO(wim::dbLogger, "Mysql-client pool destroy! | poolSize: {}",
+      LOG_INFO(wimi::dbLogger, "Mysql-client pool destroy! | poolSize: {}",
                pool.size());
     }
     if (keepThread.joinable()) {
@@ -238,7 +238,7 @@ class MysqlPool {
         con->leaseTime = leaseTime;
         pool.push(std::move(con));
       } catch (mysqlx::Error &e) {
-        LOG_INFO(wim::dbLogger,
+        LOG_INFO(wimi::dbLogger,
                  "Error keeping connection alive: {}, reconnect now...",
                  e.what());
         try {
@@ -247,7 +247,7 @@ class MysqlPool {
           con.reset();
           pool.push(std::make_unique<SqlConnection>(newSession, leaseTime));
         } catch (mysqlx::Error &e) {
-          LOG_INFO(wim::dbLogger, "Error reconnecting: {}", e.what());
+          LOG_INFO(wimi::dbLogger, "Error reconnecting: {}", e.what());
           return;
         }
       }
@@ -290,18 +290,18 @@ class MysqlDao : public Singleton<MysqlDao>,
           new MysqlPool(host, port, user, password, schema, clientCount));
 
       if (!mysqlPool->Empty()) {
-        LOG_INFO(wim::dbLogger,
+        LOG_INFO(wimi::dbLogger,
                  "Mysql-Client pool init success! | host: {}, port: {}, "
                  "user: {}, schema: {}, poolSize: {}",
                  host, port, user, schema, mysqlPool->Size());
       } else {
-        LOG_WARN(wim::dbLogger,
+        LOG_WARN(wimi::dbLogger,
                  "Mysql-Client pool init failed! | host: {}, port: {}, "
                  "user: {}, schema: {}, poolSize: {}",
                  host, port, user, schema, mysqlPool->Size());
       }
     } catch (std::exception &e) {
-      LOG_ERROR(wim::dbLogger, "MysqlDao init error: {}", e.what());
+      LOG_ERROR(wimi::dbLogger, "MysqlDao init error: {}", e.what());
     }
   }
   ~MysqlDao() {}
@@ -1486,4 +1486,4 @@ class MysqlDao : public Singleton<MysqlDao>,
     });
   }
 };
-};  // namespace wim::db
+};  // namespace wimi::db

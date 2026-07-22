@@ -7,7 +7,7 @@
 #include <exception>
 #include <grpcpp/client_context.h>
 #include <string>
-namespace wim::rpc {
+namespace wimi::rpc {
 FileRpc::FileRpc() {
   try {
     auto conf = Configer::getNode("server");
@@ -55,4 +55,4 @@ grpc::Status FileRpc::forwardUpload(const UploadRequest &req,
 auto FileRpc::getPoolSize() const {
   return pool->getPoolSize();
 }
-};  // namespace wim::rpc
+};  // namespace wimi::rpc

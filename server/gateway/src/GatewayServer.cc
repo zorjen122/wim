@@ -9,7 +9,7 @@
 #include <boost/asio/use_awaitable.hpp>
 #include <chrono>
 
-namespace wim::connection {
+namespace wimi::connection {
 namespace asio = boost::asio;
 
 GatewayServer::GatewayServer(asio::io_context &ioContext, unsigned short port,
@@ -49,4 +49,4 @@ asio::awaitable<void> GatewayServer::Run() {
   }
 }
 
-}  // namespace wim::connection
+}  // namespace wimi::connection

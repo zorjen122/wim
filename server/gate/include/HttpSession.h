@@ -4,7 +4,7 @@
 #include <boost/asio.hpp>
 #include <boost/beast.hpp>
 
-namespace wim {
+namespace wimi {
 
 using tcp = boost::asio::ip::tcp;
 namespace beast = boost::beast;
@@ -51,4 +51,4 @@ class HttpSession : public std::enable_shared_from_this<HttpSession> {
   std::string url;
   std::unordered_map<std::string, std::string> paramMap;
 };
-};  // namespace wim
+};  // namespace wimi

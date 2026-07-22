@@ -8,7 +8,7 @@
 #include <QSqlQuery>
 #include <QUuid>
 
-namespace wim::client {
+namespace wimi::client {
 namespace {
 
 int DeliveryStateValue(MessageDeliveryState state) {
@@ -53,7 +53,7 @@ SqliteClientRepository::SqliteClientRepository(QString databasePath,
                                                bool seedDemoData)
     : database_path_(std::move(databasePath)),
       connection_name_(
-          QStringLiteral("wim-client-%1")
+          QStringLiteral("wimi-client-%1")
               .arg(QUuid::createUuid().toString(QUuid::WithoutBraces))),
       seed_demo_data_(seedDemoData) {
   Open();
@@ -828,4 +828,4 @@ void SqliteClientRepository::SetError(const QString &error) const {
   last_error_ = error;
 }
 
-}  // namespace wim::client
+}  // namespace wimi::client

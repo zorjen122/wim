@@ -16,7 +16,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace wim::connection {
+namespace wimi::connection {
 
 class MessageLink;
 
@@ -94,4 +94,4 @@ class MessageLinkManager {
   DeliveryHandler deliveryHandler;
 };
 
-}  // namespace wim::connection
+}  // namespace wimi::connection

@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import Wim.Client
+import WimiClient
 
 ApplicationWindow {
     id: window
@@ -11,7 +11,7 @@ ApplicationWindow {
     minimumWidth: 360
     minimumHeight: 360
     visible: true
-    title: qsTr("WIM")
+    title: qsTr("WIMI")
     color: Theme.canvas
 
     palette.window: Theme.canvas

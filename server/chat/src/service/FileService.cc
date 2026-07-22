@@ -9,7 +9,7 @@
 #include <grpcpp/support/status.h>
 #include <string>
 
-namespace wim {
+namespace wimi {
 
 TcpPacket FileService::Upload(uint32_t msgID, TcpPacket &request) {
   TcpPacket rsp;
@@ -75,4 +75,4 @@ TcpPacket FileService::Upload(uint32_t msgID, TcpPacket &request) {
   return rsp;
 }
 
-}  // namespace wim
+}  // namespace wimi

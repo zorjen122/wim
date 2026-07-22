@@ -4,7 +4,7 @@
 
 #include <QStringList>
 
-namespace wim::client {
+namespace wimi::client {
 
 class IClientRepository {
  public:
@@ -53,4 +53,4 @@ class IClientRepository {
   }
 };
 
-}  // namespace wim::client
+}  // namespace wimi::client

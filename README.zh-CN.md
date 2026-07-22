@@ -1,8 +1,8 @@
-# wim
+# wimi
 
 **语言：** [English](README.md) | 中文
 
-wim 是一个 C++20 即时通讯系统，按职责拆分为 Auth/API Gate、Connection
+wimi 是一个 C++20 即时通讯系统，按职责拆分为 Auth/API Gate、Connection
 Gateway、State、Message 和 File 节点。仓库提供本地构建、集中配置、数据库
 初始化、Redis 启动和 smoke 测试脚本。
 
@@ -60,10 +60,10 @@ Gateway、State、Message 和 File 节点。仓库提供本地构建、集中配
 时应关闭 `exposeCodeInResponse`、启用 email 配置，并用环境变量注入密钥：
 
 ```bash
-export WIM_VERIFY_EMAIL_USER="your-email@example.com"
-export WIM_VERIFY_EMAIL_PASS="your-email-app-password"
-export WIM_VERIFY_SEND_EMAIL=1
-export WIM_VERIFY_EXPOSE_CODE=0
+export WIMI_VERIFY_EMAIL_USER="your-email@example.com"
+export WIMI_VERIFY_EMAIL_PASS="your-email-app-password"
+export WIMI_VERIFY_SEND_EMAIL=1
+export WIMI_VERIFY_EXPOSE_CODE=0
 ```
 
 ## 构建
@@ -72,7 +72,7 @@ export WIM_VERIFY_EXPOSE_CODE=0
 ./scripts/build.sh
 ```
 
-构建产物会写入 `build/wim`，protobuf/gRPC 生成文件位于 CMake 构建目录中。
+构建产物会写入 `build/wimi`，protobuf/gRPC 生成文件位于 CMake 构建目录中。
 
 ## 初始化数据
 
@@ -95,9 +95,9 @@ export WIM_VERIFY_EXPOSE_CODE=0
 启动 `G=2、N=2` 本地拓扑：
 
 ```bash
-WIM_STATE_CONFIG="$PWD/server/conf/state-multi.yaml" \
-WIM_CHAT_CONFIGS="$PWD/server/conf/chat-hunan-im.yaml $PWD/server/conf/chat-beijing-im.yaml" \
-WIM_GATEWAY_CONFIGS="$PWD/server/conf/gateway-hunan.yaml $PWD/server/conf/gateway-beijing.yaml" \
+WIMI_STATE_CONFIG="$PWD/server/conf/state-multi.yaml" \
+WIMI_CHAT_CONFIGS="$PWD/server/conf/chat-hunan-im.yaml $PWD/server/conf/chat-beijing-im.yaml" \
+WIMI_GATEWAY_CONFIGS="$PWD/server/conf/gateway-hunan.yaml $PWD/server/conf/gateway-beijing.yaml" \
 ./scripts/run_local_services.sh
 ```
 
