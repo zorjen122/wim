@@ -6,7 +6,7 @@ set -euo pipefail
 #   通过原始 TCP 协议包登录 1001/1002，确认接收方收到 ID_TEXT_SEND_REQ，
 #   ACK 后不会收到 ID_NULL，并检查 MySQL messages 已落库且状态更新为 DONE。
 # 前置条件：
-#   已初始化 MySQL，并启动至少一个 chat 服务；默认连接 127.0.0.1:8090。
+#   已初始化 MySQL，并启动至少一个 Message 服务；默认连接 Connection Gateway 127.0.0.1:8090。
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 

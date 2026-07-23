@@ -23,12 +23,12 @@ Gateway、State、Message 和 File 节点。仓库提供本地构建、集中配
 | `server/gate` | 验证码、注册、登录和节点路由的 HTTP 入口。 |
 | `server/gateway` | 客户端长连接、鉴权、流控和物理推送。 |
 | `server/state` | Gateway 选址和版本化 Message 节点拓扑。 |
-| `server/chat` | Message 节点：关系、会话、消息持久化和投递生成。 |
+| `server/message` | Message 节点：关系、会话、消息持久化和投递生成。 |
 | `server/file` | 文件上传服务。 |
 | `server/public` | 公共 C++ 工具、protobuf、数据库和 Redis 封装。 |
 | `server/conf` | 本地配置文件统一目录。 |
 | `scripts` | 构建、初始化、启动和 smoke 脚本。 |
-| `docs` | 依赖说明和功能验证文档。 |
+| `docs` | 对外依赖说明和配置文档。 |
 
 ## 依赖
 
@@ -52,7 +52,7 @@ Gateway、State、Message 和 File 节点。仓库提供本地构建、集中配
 
 - `server/conf/gate.yaml`
 - `server/conf/state-single.yaml`
-- `server/conf/chat-hunan-im.yaml`
+- `server/conf/message-hunan-im.yaml`
 - `server/conf/gateway-hunan.yaml`
 - `server/conf/test-client.yaml`
 
@@ -96,7 +96,7 @@ export WIMI_VERIFY_EXPOSE_CODE=0
 
 ```bash
 WIMI_STATE_CONFIG="$PWD/server/conf/state-multi.yaml" \
-WIMI_CHAT_CONFIGS="$PWD/server/conf/chat-hunan-im.yaml $PWD/server/conf/chat-beijing-im.yaml" \
+WIMI_MESSAGE_CONFIGS="$PWD/server/conf/message-hunan-im.yaml $PWD/server/conf/message-beijing-im.yaml" \
 WIMI_GATEWAY_CONFIGS="$PWD/server/conf/gateway-hunan.yaml $PWD/server/conf/gateway-beijing.yaml" \
 ./scripts/run_local_services.sh
 ```
@@ -141,8 +141,4 @@ WIMI_GATEWAY_CONFIGS="$PWD/server/conf/gateway-hunan.yaml $PWD/server/conf/gatew
 
 - [docs/requirements.md](docs/requirements.md)：依赖、构建、本地端口和 smoke
   流程。
-- [docs/feature-server-verification.md](docs/feature-server-verification.md)：
-  Server 功能清单、验证状态和代码索引。
-- [docs/client-feature-verification.md](docs/client-feature-verification.md)：
-  Client 功能清单、验证状态和代码索引。
 - [server/conf/README.md](server/conf/README.md)：配置命名和覆盖规则。

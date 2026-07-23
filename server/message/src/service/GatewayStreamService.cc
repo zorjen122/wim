@@ -158,9 +158,9 @@ class GatewayStreamReactor final
       return;
     }
 
-    // 通过后，不在 gRPC reactor 回调线程里直接跑业务，而是投递到 chat
-    // 的后台线程池。 gRPC
-    // 流线程只负责收发和轻量分发，真正消息服务逻辑在线程池里跑。
+    // 通过后，不在 gRPC reactor 回调线程里直接跑业务，
+    // 而是投递到 message 的后台线程池。
+    // gRPC 流线程只负责收发和轻量分发，真正消息服务逻辑在线程池里跑。
     const std::string originGatewayId = gatewayId;
     const std::string originInstanceId = instanceId;
     auto *originReactor = this;

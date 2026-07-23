@@ -13,7 +13,7 @@ Usage: ./scripts/smoke_gateway_message.sh
 Start the multi-node stack first:
   ./scripts/init_mysql.sh
   WIMI_STATE_CONFIG="\$PWD/server/conf/state-multi.yaml" \
-  WIMI_CHAT_CONFIGS="\$PWD/server/conf/chat-hunan-im.yaml \$PWD/server/conf/chat-beijing-im.yaml" \
+  WIMI_MESSAGE_CONFIGS="\$PWD/server/conf/message-hunan-im.yaml \$PWD/server/conf/message-beijing-im.yaml" \
   WIMI_GATEWAY_CONFIGS="\$PWD/server/conf/gateway-hunan.yaml \$PWD/server/conf/gateway-beijing.yaml" \
     ./scripts/run_local_services.sh
 

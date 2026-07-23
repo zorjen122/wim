@@ -26,12 +26,12 @@ The main verified path is:
 | `server/gate` | HTTP entrypoint for verification, registration, sign-in, and routing. |
 | `server/gateway` | Long-lived client connections, authentication, flow control, and physical push. |
 | `server/state` | Gateway placement and versioned Message-node topology. |
-| `server/chat` | Message node: relationships, conversations, persistence, and delivery generation. |
+| `server/message` | Message node: relationships, conversations, persistence, and delivery generation. |
 | `server/file` | File upload service. |
 | `server/public` | Shared C++ utilities, protobuf definitions, database and Redis helpers. |
 | `server/conf` | Canonical local configuration directory. |
 | `scripts` | Build, database initialization, Redis startup, service startup, and smoke tests. |
-| `docs` | Public requirements and feature-verification status. |
+| `docs` | Public requirements and configuration guidance. |
 
 ## Requirements
 
@@ -58,7 +58,7 @@ Scripts default to these files:
 
 - `server/conf/gate.yaml`
 - `server/conf/state-single.yaml`
-- `server/conf/chat-hunan-im.yaml`
+- `server/conf/message-hunan-im.yaml`
 - `server/conf/gateway-hunan.yaml`
 - `server/conf/test-client.yaml`
 
@@ -104,7 +104,7 @@ Start a `G=2, N=2` local topology:
 
 ```bash
 WIMI_STATE_CONFIG="$PWD/server/conf/state-multi.yaml" \
-WIMI_CHAT_CONFIGS="$PWD/server/conf/chat-hunan-im.yaml $PWD/server/conf/chat-beijing-im.yaml" \
+WIMI_MESSAGE_CONFIGS="$PWD/server/conf/message-hunan-im.yaml $PWD/server/conf/message-beijing-im.yaml" \
 WIMI_GATEWAY_CONFIGS="$PWD/server/conf/gateway-hunan.yaml $PWD/server/conf/gateway-beijing.yaml" \
 ./scripts/run_local_services.sh
 ```
@@ -149,10 +149,6 @@ check when running against older clang-format versions.
 
 - [docs/requirements.md](docs/requirements.md): dependency, build, local port,
   and smoke-test details.
-- [docs/feature-server-verification.md](docs/feature-server-verification.md):
-  server feature list, verification status, and code indexes.
-- [docs/client-feature-verification.md](docs/client-feature-verification.md):
-  client feature list, verification status, and code indexes.
 - [CHANGELOG.md](CHANGELOG.md): verified baseline and subsequent architectural
   changes.
 - [server/conf/README.md](server/conf/README.md): configuration naming and

@@ -52,14 +52,14 @@ Service::Service()
   queueAcquireTimeout =
       ResolvePositiveMilliseconds("WIMI_CHAT_QUEUE_ACQUIRE_MS", 2);
   threadPool =
-      std::make_unique<ThreadPool>("chat-biz", ResolveServiceWorkerCount());
+      std::make_unique<ThreadPool>("message-biz", ResolveServiceWorkerCount());
 }
 
 Service::~Service() {
   if (threadPool) {
     auto stats = threadPool->GetStats();
     LOG_INFO(businessLogger,
-             "chat service dispatcher stop, workers: {}, queued: {}, light "
+             "message service dispatcher stop, workers: {}, queued: {}, light "
              "direct: {}, heavy dispatched/rejected: {}/{}, thread pool "
              "submitted/completed/rejected/acquire-timeout/expired: "
              "{}/{}/{}/{}/{}, requests started/succeeded/failed/expired: "

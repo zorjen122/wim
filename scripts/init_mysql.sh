@@ -3,7 +3,7 @@ set -euo pipefail
 
 # 作用：
 #   初始化本地 MySQL 测试数据库和应用账号。
-#   会创建/授权 WIMI_DB_USER，并导入 server/chat/init_mysql_test.sql，
+#   会创建/授权 WIMI_DB_USER，并导入 scripts/sql/init_message_mysql_test.sql，
 #   因此会重置测试库中的表结构和种子数据。
 # 常用方式：
 #   ./scripts/init_mysql.sh
@@ -29,7 +29,7 @@ SQL
 
 mysql --protocol=tcp -h"$MYSQL_HOST" -P"$MYSQL_PORT" \
   -u"$WIMI_DB_USER" -p"$WIMI_DB_PASSWORD" \
-  < "$ROOT_DIR/scripts/sql/init_chat_mysql_test.sql"
+  < "$ROOT_DIR/scripts/sql/init_message_mysql_test.sql"
 
 mysql --protocol=tcp -h"$MYSQL_HOST" -P"$MYSQL_PORT" \
   -u"$WIMI_DB_USER" -p"$WIMI_DB_PASSWORD" \

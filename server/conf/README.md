@@ -5,9 +5,9 @@ nodes and test clients.
 
 Naming follows the owning node or role:
 
-- `chat-hunan-im.yaml`: primary Message node on gRPC `50055`; legacy TCP
+- `message-hunan-im.yaml`: primary Message node on gRPC `50055`; legacy TCP
   rollback port is `8190` and disabled by default.
-- `chat-beijing-im.yaml`: secondary Message node on gRPC `50056`; legacy TCP
+- `message-beijing-im.yaml`: secondary Message node on gRPC `50056`; legacy TCP
   rollback port is `8191` and disabled by default.
 - `gateway-hunan.yaml`: primary Connection Gateway on `8090`.
 - `gateway-beijing.yaml`: secondary Connection Gateway on `8091`.
@@ -18,7 +18,7 @@ Naming follows the owning node or role:
 - `public-test.yaml`: public DAO unit-test config.
 
 Runtime scripts default to this directory. Override paths with environment
-variables such as `WIMI_STATE_CONFIG`, `WIMI_GATE_CONFIG`, `WIMI_CHAT_CONFIGS`, or
+variables such as `WIMI_STATE_CONFIG`, `WIMI_GATE_CONFIG`, `WIMI_MESSAGE_CONFIGS`, or
 `WIMI_GATEWAY_CONFIGS` when a test needs a custom topology.
 
 Development may use `transportSecurity.mode: insecure`. A config with

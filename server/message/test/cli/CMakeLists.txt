@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 
-project(chat_test)
+project(message_test)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -13,7 +13,7 @@ find_package(Boost REQUIRED)
 find_package(GTest REQUIRED)
 include(CTest)
 
-function(add_chat_test target)
+function(add_message_test target)
   add_executable(${target} ${ARGN})
   target_include_directories(${target} PUBLIC include ../../public/include)
   target_link_directories(${target} PUBLIC ../../public/build)

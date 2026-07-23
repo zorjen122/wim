@@ -2,11 +2,11 @@
 set -euo pipefail
 
 # 作用：
-#   验证两个 chat 节点同时运行时的跨节点核心流程。
+#   验证两个 message 节点同时运行时的跨节点核心流程。
 #   用户 A 登录 gateway-1，用户 B 登录 gateway-2，脚本检查 Redis 会话路由、
 #   跨节点文本 ACCEPTED/投递/ACK 落库、跨节点好友申请/回复、好友拉取和消息拉取。
 # 前置条件：
-#   使用 server/conf/state-multi.yaml 和两个 chat config 启动服务。
+#   使用 server/conf/state-multi.yaml 和两个 message config 启动服务。
 #   典型启动方式见 --help 输出。
 # 注意：
 #   该脚本会向测试库写入临时用户、好友申请、好友关系和消息数据。
@@ -17,14 +17,14 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   cat <<EOF
 Usage: ./scripts/smoke_multi_chat.sh
 
-Requires two gateway services, two chat services, and shared dependencies to be running, for example:
+Requires two gateway services, two message services, and shared dependencies to be running, for example:
   ./scripts/init_mysql.sh
   WIMI_STATE_CONFIG="\$PWD/server/conf/state-multi.yaml" \\
-  WIMI_CHAT_CONFIGS="\$PWD/server/conf/chat-hunan-im.yaml \$PWD/server/conf/chat-beijing-im.yaml" \\
+  WIMI_MESSAGE_CONFIGS="\$PWD/server/conf/message-hunan-im.yaml \$PWD/server/conf/message-beijing-im.yaml" \\
   WIMI_GATEWAY_CONFIGS="\$PWD/server/conf/gateway-hunan.yaml \$PWD/server/conf/gateway-beijing.yaml" \\
     ./scripts/run_local_services.sh
 
-Verifies the currently supported multi-chat path:
+Verifies the currently supported multi-message-node path:
   - user A logs in to gateway node 1, user B logs in to gateway node 2
   - Redis records both users on different gateway session leases
   - cross-node text returns ACCEPTED with a message_id
@@ -86,7 +86,7 @@ smoke_multi_chat.sh requires two gateway nodes before it writes test data.
 
 Start the local stack in multi-chat mode:
   WIMI_STATE_CONFIG="\$PWD/server/conf/state-multi.yaml" \\
-  WIMI_CHAT_CONFIGS="\$PWD/server/conf/chat-hunan-im.yaml \$PWD/server/conf/chat-beijing-im.yaml" \\
+  WIMI_MESSAGE_CONFIGS="\$PWD/server/conf/message-hunan-im.yaml \$PWD/server/conf/message-beijing-im.yaml" \\
   WIMI_GATEWAY_CONFIGS="\$PWD/server/conf/gateway-hunan.yaml \$PWD/server/conf/gateway-beijing.yaml" \\
     ./scripts/run_local_services.sh
 

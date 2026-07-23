@@ -170,28 +170,11 @@ cmake --install build/client-clang --prefix /tmp/wimi-client-install
 `share/icons/hicolor/scalable/apps/wimi-client.svg`。Secret Service 暂不接入，等待
 服务端正式 token/refresh 契约确定后再设计密钥生命周期。
 
-## Android 状态
+## Android
 
-工程使用 Qt 的跨平台 executable/QML module 入口。客户端协议已经迁移到
-QtProtobuf，不需要为 Android 单独交叉编译 Google `libprotobuf`。当前已使用 Qt
-6.10.2、NDK r27c、SDK 36 构建并验证 `arm64-v8a` Debug APK：包名为
-`org.wimi.client`，最低 API 28、目标 API 36，QtProtobuf、SQLite 与所需 QML 插件均
-已随包部署，APK v2 调试签名校验通过。
+Android 与桌面端共用 Qt executable 和 QML module，需要匹配的 Qt Android kit、JDK、
+Android SDK 和 NDK。应用标识为 `org.wimi.client`；受支持的 Android 构建与部署配置
+在公开仓库之外维护。
 
-产物路径：
-
-```text
-build/client-android-arm64/android-build/build/outputs/apk/debug/android-build-debug.apk
-```
-
-APK 启动后可在“设置 → 服务端”保存 Auth Gate 地址；地址持久化到 `QSettings`，重启
-后切换真实服务模式。真机必须使用设备可访问的局域网地址，不能填写
-`127.0.0.1`。若错误地址导致登录页无法连接，也可直接在登录页修改并保存。
-
-环境安装、arm64 首包、设备验证和发布 AAB 的具体步骤见
-[`docs/android-build-deployment-plan.md`](../docs/android-build-deployment-plan.md)。
-
-完整路线与协议边界见
-[`docs/qt-qml-client-plan.md`](../docs/qt-qml-client-plan.md)。
-当前架构、网络链路、请求时序和代码组织分析见
-[`docs/client-architecture-analysis.md`](../docs/client-architecture-analysis.md)。
+安装后可在“设置 → 服务端”配置设备可访问的 Auth Gate 地址。除非设备已明确通过端口
+转发连接到开发主机，否则不要使用 `127.0.0.1`。

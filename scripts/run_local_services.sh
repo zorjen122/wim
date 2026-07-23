@@ -10,7 +10,7 @@ set -euo pipefail
 #   ./scripts/run_local_services.sh --stop-existing
 # G=2、N=2 方式：
   # WIMI_STATE_CONFIG="$PWD/server/conf/state-multi.yaml" \
-  # WIMI_CHAT_CONFIGS="$PWD/server/conf/chat-hunan-im.yaml $PWD/server/conf/chat-beijing-im.yaml" \
+  # WIMI_MESSAGE_CONFIGS="$PWD/server/conf/message-hunan-im.yaml $PWD/server/conf/message-beijing-im.yaml" \
   # WIMI_GATEWAY_CONFIGS="$PWD/server/conf/gateway-hunan.yaml $PWD/server/conf/gateway-beijing.yaml" \
   #   ./scripts/run_local_services.sh
 # 前置条件：
@@ -23,9 +23,9 @@ BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/build/wimi}"
 : "${WIMI_REDIS_PASSWORD:=root}"
 : "${WIMI_STATE_CONFIG:=$ROOT_DIR/server/conf/state-multi.yaml}"
 : "${WIMI_GATE_CONFIG:=$ROOT_DIR/server/conf/gate.yaml}"
-: "${WIMI_CHAT_CONFIGS:=$ROOT_DIR/server/conf/chat-hunan-im.yaml $ROOT_DIR/server/conf/chat-beijing-im.yaml}"
+: "${WIMI_MESSAGE_CONFIGS:=$ROOT_DIR/server/conf/message-hunan-im.yaml $ROOT_DIR/server/conf/message-beijing-im.yaml}"
 : "${WIMI_GATEWAY_CONFIGS:=$ROOT_DIR/server/conf/gateway-hunan.yaml $ROOT_DIR/server/conf/gateway-beijing.yaml}"
-: "${WIMI_CHAT_LOG_LEVEL:=--info}"
+: "${WIMI_MESSAGE_LOG_LEVEL:=--info}"
 
 usage() {
   cat <<EOF
@@ -58,7 +58,7 @@ while [[ "$#" -gt 0 ]]; do
   shift
 done
 
-for exe in "$BUILD_DIR/state/state" "$BUILD_DIR/file/file" "$BUILD_DIR/chat/chat" "$BUILD_DIR/gateway/gateway" "$BUILD_DIR/gate/gate" ; do
+for exe in "$BUILD_DIR/state/state" "$BUILD_DIR/file/file" "$BUILD_DIR/message/message" "$BUILD_DIR/gateway/gateway" "$BUILD_DIR/gate/gate" ; do
   if [[ ! -x "$exe" ]]; then
     echo "Missing build output: $exe"
     echo "Run ./scripts/build.sh first."
@@ -75,7 +75,7 @@ stop_existing_services() {
   local -a service_commands=(
     "$BUILD_DIR/state/state"
     "$BUILD_DIR/file/file"
-    "$BUILD_DIR/chat/chat"
+    "$BUILD_DIR/message/message"
     "$BUILD_DIR/gateway/gateway"
     "$BUILD_DIR/gate/gate"
   )
@@ -195,10 +195,10 @@ start_service() {
 
 start_service state "$ROOT_DIR/server/state" env WIMI_CONFIG="$WIMI_STATE_CONFIG" "$BUILD_DIR/state/state"
 start_service file "$ROOT_DIR/server/file" "$BUILD_DIR/file/file"
-chat_index=1
-for chat_config in $WIMI_CHAT_CONFIGS; do
-  start_service "chat-$chat_index" "$ROOT_DIR/server/chat" "$BUILD_DIR/chat/chat" "$chat_config" --normal "$WIMI_CHAT_LOG_LEVEL"
-  chat_index=$((chat_index + 1))
+message_index=1
+for message_config in $WIMI_MESSAGE_CONFIGS; do
+  start_service "message-$message_index" "$ROOT_DIR/server/message" "$BUILD_DIR/message/message" "$message_config" --normal "$WIMI_MESSAGE_LOG_LEVEL"
+  message_index=$((message_index + 1))
 done
 gateway_index=1
 for gateway_config in $WIMI_GATEWAY_CONFIGS; do

@@ -1,5 +1,5 @@
 #pragma once
-// ChatServiceManager.h
+// MessageServiceManager.h
 #include "Configer.h"
 #include "Const.h"
 #include "Logger.h"

@@ -7,13 +7,13 @@ Tested on Ubuntu 26.04 with clang.
 | Component | Used by | Packages / runtime |
 | --- | --- | --- |
 | C++ toolchain | all C++ services | `clang`, `cmake`, `build-essential`, `pkg-config` |
-| Protobuf / gRPC | gate, state, chat, file, gateway, protocol smoke scripts | `protobuf-compiler`, `protobuf-compiler-grpc`, `libprotobuf-dev`, `libgrpc++-dev`, `libgrpc-dev`, `python3-protobuf` |
+| Protobuf / gRPC | gate, state, message, file, gateway, protocol smoke scripts | `protobuf-compiler`, `protobuf-compiler-grpc`, `libprotobuf-dev`, `libgrpc++-dev`, `python3-protobuf` |
 | Qt client | Linux desktop client and QtProtobuf code generation | `qt6-base-dev`, `qt6-declarative-dev`, `qt6-svg-dev`, `qt6-grpc-dev` |
-| Boost.Asio / Beast | gate, chat, test client | `libboost-dev`, `libboost-filesystem-dev` |
+| Boost.Asio / Beast | gate, message, test client | `libboost-dev`, `libboost-filesystem-dev` |
 | Config / logging / JSON | all C++ services | `libyaml-cpp-dev`, `libspdlog-dev`, `libfmt-dev`, `libjsoncpp-dev` |
 | Redis | verify codes, authentication handoff, online routing, IDs, bounded text retry deduplication | `redis-server`, `libhiredis-dev` |
 | MySQL | users, relationships, and messages | `mysql-server`, MySQL Connector/C++ X DevAPI packages |
-| Kafka placeholder | chat utility code links librdkafka | `librdkafka-dev` |
+| Kafka placeholder | message utility code links librdkafka | `librdkafka-dev` |
 | SMTP client | Gate email verification delivery | `libcurl4-openssl-dev` |
 
 Install from Ubuntu repositories:
@@ -68,7 +68,7 @@ The build generates gRPC/protobuf C++ sources into the CMake build directory.
 ./scripts/start_redis.sh
 ```
 
-`init_mysql.sh` creates the `zorjen/root` MySQL user and imports `server/chat/init_mysql_test.sql`.
+`init_mysql.sh` creates the `zorjen/root` MySQL user and imports `scripts/sql/init_message_mysql_test.sql`.
 
 ## Run Services
 
@@ -80,11 +80,11 @@ For local smoke tests, Gate stores the code in Redis and includes it in the HTTP
 response because `gate.yaml` enables `exposeCodeInResponse`. Production should
 disable that flag and enable SMTP delivery.
 
-To run two chat nodes for cross-node forwarding:
+To run two Message nodes for cross-node forwarding:
 
 ```bash
 WIMI_STATE_CONFIG="$PWD/server/conf/state-multi.yaml" \
-WIMI_CHAT_CONFIGS="$PWD/server/conf/chat-hunan-im.yaml $PWD/server/conf/chat-beijing-im.yaml" \
+WIMI_MESSAGE_CONFIGS="$PWD/server/conf/message-hunan-im.yaml $PWD/server/conf/message-beijing-im.yaml" \
 WIMI_GATEWAY_CONFIGS="$PWD/server/conf/gateway-hunan.yaml $PWD/server/conf/gateway-beijing.yaml" \
 ./scripts/run_local_services.sh
 ```

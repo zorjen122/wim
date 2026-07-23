@@ -1,7 +1,7 @@
 # Top-level Makefile with debug support
 
 # Configuration
-MODULES := state chat public gate file
+MODULES := state message public gate file
 DEMO_DIR := demo
 TEST_DIR := test
 BUILD_DIR := build
@@ -55,7 +55,7 @@ run-test:
 
 # Individual module targets
 state: build-state run-state
-chat: build-chat run-chat
+message: build-message run-message
 public: build-public run-public
 gate: build-gate run-gate
 file: build-file run-file
@@ -68,10 +68,10 @@ build-%:
 
 # Special targets with common arguments(TODO)
 gate-with-args: ARGS = ../conf/gate.yaml --info
-chat-with-args-1: ARGS = run-chat ../conf/chat-hunan-im.yaml --normal --info
-chat-with-args-2: ARGS = run-chat ../conf/chat-beijing-im.yaml --normal --info
+message-with-args-1: ARGS = run-message ../conf/message-hunan-im.yaml --normal --info
+message-with-args-2: ARGS = run-message ../conf/message-beijing-im.yaml --normal --info
 
 
 # Phony targets
 .PHONY: all build clean run-test $(RUN_TARGETS) $(TEST_TARGETS) $(DEBUG_TARGETS) \
-        $(MODULES) gate-with-args chat-with-args-1 chat-with-args-2
+        $(MODULES) gate-with-args message-with-args-1 message-with-args-2

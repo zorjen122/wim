@@ -19,7 +19,7 @@ endif()
 
 add_subdirectory(public)
 add_subdirectory(file)
-add_subdirectory(chat)
+add_subdirectory(message)
 add_subdirectory(gate)
 add_subdirectory(gateway)
 add_subdirectory(state)
